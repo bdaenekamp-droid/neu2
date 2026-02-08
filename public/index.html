@@ -54,6 +54,8 @@
       const MAX_SUB = 20;
       const MAX_DURATION = 60;
       const MAX_EMPLOYEES = 10;
+      const MAX_PACKAGE_DURATION = 10;
+      const YEAR_CAP_PM = 10.5;
       const STORAGE_KEY = "zim-fe-kostenkalkulation-v3";
 
       const monthNames = [
@@ -131,6 +133,23 @@
         return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
       };
 
+      const formatDate = (date) =>
+        date.toLocaleDateString("de-DE", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+
+      const getMonthStartDate = (startDateValue, index) => {
+        const base = parseDate(startDateValue);
+        return new Date(base.getFullYear(), base.getMonth() + index, 1);
+      };
+
+      const getMonthEndDate = (startDateValue, index) => {
+        const base = parseDate(startDateValue);
+        return new Date(base.getFullYear(), base.getMonth() + index + 1, 0);
+      };
+
       const buildTimeline = (startDateValue, duration) => {
         const startDate = parseDate(startDateValue);
         return Array.from({ length: duration }, (_, index) => {
@@ -155,6 +174,7 @@
         }, []);
       };
 
+
       const App = () => {
         const [startDate, setStartDate] = useState("2026-07-15");
         const [durationMonths, setDurationMonths] = useState(48);
@@ -174,6 +194,8 @@
           },
         ]);
         const [companyData, setCompanyData] = useState(() => normalizeCompanyData());
+        const [planByCompany, setPlanByCompany] = useState({});
+        const [planStaleByCompany, setPlanStaleByCompany] = useState({});
         const [pendingDelete, setPendingDelete] = useState(null);
         const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(false);
 
@@ -215,6 +237,9 @@
                 }));
                 setCompanyData(next);
               }
+              if (parsed?.planByCompany) {
+                setPlanByCompany(parsed.planByCompany);
+              }
             } catch (error) {
               console.warn("Lokaler Zustand konnte nicht geladen werden", error);
             }
@@ -232,6 +257,7 @@
               durationMonths,
               employees,
               companyData,
+              planByCompany,
             })
           );
         }, [
@@ -242,6 +268,7 @@
           durationMonths,
           employees,
           companyData,
+          planByCompany,
         ]);
 
         const activeCompanyIndexes = useMemo(
@@ -254,6 +281,47 @@
           [startDate, durationMonths]
         );
         const yearSegments = useMemo(() => groupYears(timeline), [timeline]);
+        const projectYears = useMemo(
+          () => Array.from(new Set(timeline.map((entry) => entry.year))),
+          [timeline]
+        );
+        const yearCaps = useMemo(() => {
+          const monthsPerYear = timeline.reduce((acc, entry) => {
+            acc[entry.year] = (acc[entry.year] || 0) + 1;
+            return acc;
+          }, {});
+          return Object.entries(monthsPerYear).reduce((acc, [year, months]) => {
+            acc[year] = (YEAR_CAP_PM * months) / 12;
+            return acc;
+          }, {});
+        }, [timeline]);
+
+        const employeeCosts = useMemo(() => {
+          return employees.map((employee) => {
+            const annualCostBase = parseNumber(employee.annualSalary);
+            const typicalHours = parseNumber(employee.weeklyHours);
+            const actualHours = parseNumber(employee.actualHours);
+            const hourFactor =
+              typicalHours > 0 ? actualHours / typicalHours : 1;
+            const partTimeFactor = clampNumber(
+              parseNumber(employee.partTimeFactor),
+              0,
+              1
+            );
+            const projectFactor = clampNumber(
+              parseNumber(employee.projectPercent) / 100,
+              0,
+              1
+            );
+            const annualProjectCost =
+              annualCostBase * hourFactor * partTimeFactor * projectFactor;
+            const costPerPM = annualProjectCost / 12;
+            return {
+              annualProjectCost,
+              costPerPM,
+            };
+          });
+        }, [employees]);
 
         const rows = useMemo(() => {
           const list = [];
@@ -275,17 +343,42 @@
               id: wp.id,
               number: `${wpIndex + 1}`,
               title: wp.title,
+              pmByCompany: wp.pm,
             });
             wp.sub.forEach((sub, subIndex) => {
               list.push({
                 id: sub.id,
                 number: `${wpIndex + 1}.${subIndex + 1}`,
                 title: sub.title,
+                pmByCompany: sub.pm,
               });
             });
           });
           return list;
         }, [workPackages]);
+
+        const filteredWorkPackageRowsByCompany = useMemo(() => {
+          return activeCompanyIndexes.reduce((acc, companyIndex) => {
+            acc[companyIndex] = workPackageRows.filter(
+              (row) => (row.pmByCompany?.[companyIndex] || 0) > 0
+            );
+            return acc;
+          }, {});
+        }, [workPackageRows, activeCompanyIndexes]);
+
+        const markPlanStale = (companyIndex = null) => {
+          setPlanStaleByCompany((prev) => {
+            const next = { ...prev };
+            if (companyIndex === null) {
+              activeCompanyIndexes.forEach((idx) => {
+                next[idx] = true;
+              });
+            } else {
+              next[companyIndex] = true;
+            }
+            return next;
+          });
+        };
 
         const updateWpTitle = (wpIndex, value) => {
           setWorkPackages((prev) => {
@@ -309,6 +402,7 @@
 
         const updatePm = (wpIndex, subIndex, companyIndex, value) => {
           const numeric = parseNumber(value);
+          markPlanStale(companyIndex);
           setWorkPackages((prev) => {
             const next = [...prev];
             if (subIndex === null) {
@@ -405,6 +499,7 @@
         };
 
         const updateEmployeeField = (index, field, value) => {
+          markPlanStale();
           setEmployees((prev) => {
             const next = [...prev];
             next[index] = { ...next[index], [field]: value };
@@ -489,6 +584,13 @@
           "border-l-amber-300",
           "border-l-rose-300",
         ];
+        const companyBarClasses = [
+          "bg-sky-500",
+          "bg-indigo-500",
+          "bg-emerald-500",
+          "bg-amber-500",
+          "bg-rose-500",
+        ];
 
         const getRowTone = (row) => {
           if (row.type === "total") return "bg-slate-100/80";
@@ -512,6 +614,188 @@
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           }).format(value || 0);
+
+        const buildYearMonthCount = (startIndex, duration) => {
+          const counts = {};
+          for (let offset = 0; offset < duration; offset += 1) {
+            const entry = timeline[startIndex + offset];
+            if (!entry) continue;
+            counts[entry.year] = (counts[entry.year] || 0) + 1;
+          }
+          return counts;
+        };
+
+        const buildRemainingCaps = (basePlans, excludeCompanyIndex = null) => {
+          const remaining = employees.map(() => ({ ...yearCaps }));
+          Object.entries(basePlans || {}).forEach(([companyId, plans]) => {
+            const numericCompanyId = parseInt(companyId, 10);
+            if (excludeCompanyIndex !== null && numericCompanyId === excludeCompanyIndex) {
+              return;
+            }
+            Object.values(plans || {}).forEach((plan) => {
+              if (!plan || plan.status === "unplannable") return;
+              const { employeeId, startMonthIndex, durationMonths, pmDemand } = plan;
+              if (employeeId === null || employeeId === undefined) return;
+              const monthCounts = buildYearMonthCount(startMonthIndex, durationMonths);
+              const pmPerMonth = pmDemand / durationMonths;
+              Object.entries(monthCounts).forEach(([year, months]) => {
+                if (!remaining[employeeId]) return;
+                remaining[employeeId][year] =
+                  (remaining[employeeId][year] || 0) - pmPerMonth * months;
+              });
+            });
+          });
+          return remaining;
+        };
+
+        const planCompany = (companyIndex, remainingCaps) => {
+          const demands = workPackages.flatMap((wp, wpIndex) => {
+            const base = [
+              {
+                id: wp.id,
+                number: `${wpIndex + 1}`,
+                title: wp.title,
+                pmDemand: wp.pm[companyIndex] || 0,
+              },
+            ];
+            const subs = wp.sub.map((sub, subIndex) => ({
+              id: sub.id,
+              number: `${wpIndex + 1}.${subIndex + 1}`,
+              title: sub.title,
+              pmDemand: sub.pm[companyIndex] || 0,
+            }));
+            return [...base, ...subs];
+          });
+
+          const filteredDemands = demands
+            .filter((item) => item.pmDemand > 0)
+            .sort((a, b) => b.pmDemand - a.pmDemand);
+
+          const planned = {};
+          filteredDemands.forEach((demand) => {
+            const duration = Math.min(
+              MAX_PACKAGE_DURATION,
+              durationMonths,
+              Math.max(1, Math.ceil(demand.pmDemand))
+            );
+            const maxStart = durationMonths - duration;
+            let assignment = null;
+
+            for (let startIndex = 0; startIndex <= maxStart; startIndex += 1) {
+              const monthCounts = buildYearMonthCount(startIndex, duration);
+              const pmPerMonth = demand.pmDemand / duration;
+              const pmByYear = Object.entries(monthCounts).reduce((acc, [year, months]) => {
+                acc[year] = pmPerMonth * months;
+                return acc;
+              }, {});
+
+              const candidates = employees
+                .map((_, empIndex) => {
+                  const fits = Object.entries(pmByYear).every(([year, pmValue]) => {
+                    const remaining = remainingCaps[empIndex]?.[year] ?? 0;
+                    return remaining + 1e-6 >= pmValue;
+                  });
+                  return fits ? empIndex : null;
+                })
+                .filter((value) => value !== null);
+
+              if (candidates.length) {
+                const best = candidates.sort((a, b) => {
+                  const diff = employeeCosts[b].costPerPM - employeeCosts[a].costPerPM;
+                  return diff !== 0 ? diff : a - b;
+                })[0];
+                assignment = {
+                  employeeId: best,
+                  startMonthIndex: startIndex,
+                  durationMonths: duration,
+                  pmDemand: demand.pmDemand,
+                  pmByYear,
+                  status: "planned",
+                };
+                break;
+              }
+            }
+
+            if (!assignment) {
+              planned[demand.id] = {
+                employeeId: null,
+                startMonthIndex: null,
+                durationMonths: duration,
+                pmDemand: demand.pmDemand,
+                status: "unplannable",
+              };
+              return;
+            }
+
+            Object.entries(assignment.pmByYear).forEach(([year, pmValue]) => {
+              remainingCaps[assignment.employeeId][year] -= pmValue;
+            });
+
+            const startDateValue = getMonthStartDate(
+              startDate,
+              assignment.startMonthIndex
+            );
+            const endDateValue = getMonthEndDate(
+              startDate,
+              assignment.startMonthIndex + assignment.durationMonths - 1
+            );
+
+            planned[demand.id] = {
+              ...assignment,
+              startDate: formatDate(startDateValue),
+              endDate: formatDate(endDateValue),
+              cost: assignment.pmDemand * employeeCosts[assignment.employeeId].costPerPM,
+            };
+          });
+
+          return planned;
+        };
+
+        const handleAutoPlanCompany = (companyIndex) => {
+          setPlanByCompany((prev) => {
+            const remainingCaps = buildRemainingCaps(prev, companyIndex);
+            const planned = planCompany(companyIndex, remainingCaps);
+            return {
+              ...prev,
+              [companyIndex]: planned,
+            };
+          });
+          setPlanStaleByCompany((prev) => ({ ...prev, [companyIndex]: false }));
+        };
+
+        const handleAutoPlanAll = () => {
+          const remainingCaps = employees.map(() => ({ ...yearCaps }));
+          const nextPlans = {};
+          activeCompanyIndexes.forEach((companyIndex) => {
+            const planned = planCompany(companyIndex, remainingCaps);
+            nextPlans[companyIndex] = planned;
+          });
+          setPlanByCompany(nextPlans);
+          setPlanStaleByCompany(
+            activeCompanyIndexes.reduce((acc, idx) => {
+              acc[idx] = false;
+              return acc;
+            }, {})
+          );
+        };
+
+        const usedCapsByEmployeeYear = useMemo(() => {
+          const used = employees.map(() => ({}));
+          Object.values(planByCompany || {}).forEach((plans) => {
+            Object.values(plans || {}).forEach((plan) => {
+              if (!plan || plan.status === "unplannable") return;
+              const { employeeId, startMonthIndex, durationMonths, pmDemand } = plan;
+              if (employeeId === null || employeeId === undefined) return;
+              const monthCounts = buildYearMonthCount(startMonthIndex, durationMonths);
+              const pmPerMonth = pmDemand / durationMonths;
+              Object.entries(monthCounts).forEach(([year, months]) => {
+                used[employeeId][year] =
+                  (used[employeeId][year] || 0) + pmPerMonth * months;
+              });
+            });
+          });
+          return used;
+        }, [planByCompany, employees, timeline]);
 
         return (
           <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -624,7 +908,10 @@
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
+                    onChange={(event) => {
+                      setStartDate(event.target.value);
+                      markPlanStale();
+                    }}
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   />
                 </div>
@@ -639,13 +926,43 @@
                     max={MAX_DURATION}
                     value={durationMonths}
                     onChange={(event) =>
-                      setDurationMonths(
-                        clampNumber(parseInt(event.target.value || "1", 10), 1, MAX_DURATION)
-                      )
+                      {
+                        setDurationMonths(
+                          clampNumber(
+                            parseInt(event.target.value || "1", 10),
+                            1,
+                            MAX_DURATION
+                          )
+                        );
+                        markPlanStale();
+                      }
                     }
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   />
                 </div>
+              </div>
+
+              <div className="mb-6 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-subtle">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Begriffe &amp; Regeln
+                </h2>
+                <ul className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                    <strong>PM</strong> = Personenmonate (Dezimalwerte möglich).
+                  </li>
+                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                    <strong>Projektzeitraum</strong> = Startdatum + Laufzeit (Monate).
+                  </li>
+                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                    <strong>Kalenderjahr-Cap</strong> = max. 10,5 PM/Jahr, anteilig proratiert.
+                  </li>
+                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                    <strong>Arbeitspaketdauer</strong> = max. 10 Monate am Stück.
+                  </li>
+                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
+                    <strong>Ziel</strong> = Personalkosten maximieren bei Einhaltung aller Caps.
+                  </li>
+                </ul>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
@@ -791,6 +1108,10 @@
                       subIndex === null
                         ? workPackages[wpIndex].title
                         : workPackages[wpIndex].sub[subIndex].title;
+                    const rowId =
+                      subIndex === null
+                        ? workPackages[wpIndex].id
+                        : workPackages[wpIndex].sub[subIndex].id;
                     const values =
                       subIndex === null
                         ? workPackages[wpIndex].pm
@@ -805,6 +1126,16 @@
                     const groupBorder = isGroupStart
                       ? "border-t border-slate-200"
                       : "border-t border-slate-100/80";
+                    const ganttPlans = activeCompanyIndexes
+                      .map((companyIndex) => {
+                        const entry = planByCompany?.[companyIndex]?.[rowId];
+                        if (!entry || entry.status === "unplannable") return null;
+                        return {
+                          ...entry,
+                          companyIndex,
+                        };
+                      })
+                      .filter(Boolean);
 
                     return (
                       <div
@@ -928,6 +1259,32 @@
                                     className="h-6 border-r border-dashed border-slate-200"
                                   />
                                 ))}
+                              </div>
+                              <div className="pointer-events-none absolute inset-0">
+                                <div className="gantt-grid h-full" style={monthGridStyle}>
+                                  {ganttPlans.map((plan, index) => (
+                                    <div
+                                      key={`gantt-plan-${rowId}-${plan.companyIndex}`}
+                                      className="relative"
+                                      style={{
+                                        gridColumn: `${plan.startMonthIndex + 1} / span ${
+                                          plan.durationMonths
+                                        }`,
+                                      }}
+                                    >
+                                      <div
+                                        className={`absolute left-0 right-0 rounded-full ${companyBarClasses[plan.companyIndex]}`}
+                                        style={{
+                                          height: "4px",
+                                          top: `${2 + index * 4}px`,
+                                        }}
+                                        title={`Unternehmen ${plan.companyIndex + 1}: ${
+                                          plan.startDate
+                                        } – ${plan.endDate}`}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                               <div className="pointer-events-none absolute inset-0 rounded border border-transparent" />
                             </div>
@@ -1121,6 +1478,78 @@
                 </div>
               </div>
 
+              <div className="mt-8 rounded-xl border border-slate-200 bg-white shadow-subtle">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                  <h3 className="text-lg font-semibold text-slate-850">
+                    Mitarbeiter-Auslastung (pro Jahr)
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Jahres-Cap (10,5 PM anteilig) vs. zugewiesene PM aus der Auto-Planung.
+                  </p>
+                </div>
+                <div className="grid gap-4 p-5 lg:grid-cols-2">
+                  {projectYears.map((year) => (
+                    <div
+                      key={`utilization-${year}`}
+                      className="rounded-lg border border-slate-200 bg-white shadow-subtle"
+                    >
+                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                        Kalenderjahr {year}
+                      </div>
+                      <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr_0.8fr] border-b border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase text-slate-500">
+                        <div>Name</div>
+                        <div>Cap PM</div>
+                        <div>Zugewiesen</div>
+                        <div className="text-right">Auslastung</div>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {employees.map((employee, index) => {
+                          const capPM = yearCaps[year] || 0;
+                          const usedPM = usedCapsByEmployeeYear[index]?.[year] || 0;
+                          const utilization = capPM > 0 ? (usedPM / capPM) * 100 : 0;
+                          return (
+                            <div
+                              key={`utilization-${year}-${index}`}
+                              className={`grid grid-cols-[1.4fr_0.9fr_0.9fr_0.8fr] items-center px-4 py-2 text-sm ${
+                                index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                              }`}
+                            >
+                              <div className="font-medium text-slate-700">
+                                {employee.name || `Mitarbeiter ${index + 1}`}
+                              </div>
+                              <div className="text-slate-600">{capPM.toFixed(2)} PM</div>
+                              <div className="text-slate-600">{usedPM.toFixed(2)} PM</div>
+                              <div className="text-right font-semibold text-slate-700">
+                                {utilization.toFixed(0)}%
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-subtle">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-850">
+                    Automatische Planung
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Die Zuordnung maximiert die Personalkosten unter Jahres-Caps,
+                    Projektzeitraum und maximal 10 Monaten pro Paket.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAutoPlanAll}
+                  className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition hover:bg-slate-800"
+                >
+                  Auto-Plan für alle Unternehmen
+                </button>
+              </div>
+
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
                 {activeCompanyIndexes.map((companyIndex) => {
                   const company = companyData[companyIndex] || createCompanyData();
@@ -1131,13 +1560,29 @@
                       key={`company-section-${companyIndex}`}
                       className="rounded-2xl border border-slate-200 bg-white p-5 shadow-subtle"
                     >
-                      <div className="border-b border-slate-200 pb-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Unternehmen
-                        </p>
-                        <h3 className="mt-2 text-xl font-semibold text-slate-850">
-                          {companyName}
-                        </h3>
+                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Unternehmen
+                          </p>
+                          <h3 className="mt-2 text-xl font-semibold text-slate-850">
+                            {companyName}
+                          </h3>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {planStaleByCompany?.[companyIndex] && (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                              Plan veraltet
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleAutoPlanCompany(companyIndex)}
+                            className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-subtle transition hover:bg-slate-800"
+                          >
+                            Auto-Plan (Kosten maximieren)
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -1258,27 +1703,43 @@
                             Zuordnung Arbeitspakete &amp; Mitarbeitende
                           </h4>
                           <p className="mt-1 text-sm text-slate-600">
-                            Struktur für die spätere Zuordnung von Zeiträumen und
-                            Mitarbeitenden.
+                            Automatisch gefilterte Pakete mit PM &gt; 0 inkl. Zeitraum,
+                            Mitarbeitenden und Personalkosten.
                           </p>
                         </div>
                         <div className="max-h-[320px] overflow-auto">
                           <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-                            <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(160px,1fr)_130px] text-xs font-semibold uppercase text-slate-500">
+                            <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
                               <div className="px-4 py-3">WP-Nr.</div>
                               <div className="px-4 py-3">Arbeitspaket</div>
                               <div className="px-4 py-3">Zeitraum</div>
                               <div className="px-4 py-3">MA-Nr.</div>
+                              <div className="px-4 py-3 text-right">Kosten</div>
                             </div>
                           </div>
                           <div className="divide-y divide-slate-100">
-                            {workPackageRows.map((row, index) => {
-                              const entry =
-                                company.tabellenEintraege?.[row.id] || {};
+                            {(filteredWorkPackageRowsByCompany[companyIndex] || []).map(
+                              (row, index) => {
+                                const entry = company.tabellenEintraege?.[row.id] || {};
+                                const planEntry =
+                                  planByCompany?.[companyIndex]?.[row.id] || null;
+                                const isPlanned = planEntry?.status === "planned";
+                                const isUnplannable = planEntry?.status === "unplannable";
+                                const zeitraumValue = isPlanned
+                                  ? `${planEntry.startDate} – ${planEntry.endDate}`
+                                  : entry.zeitraum || "";
+                                const maValue = isPlanned
+                                  ? planEntry.employeeId + 1
+                                  : entry.mitarbeiterNummer || "";
+                                const costValue = isPlanned
+                                  ? formatCurrency(planEntry.cost)
+                                  : isUnplannable
+                                  ? "Nicht planbar"
+                                  : "–";
                               return (
                                 <div
                                   key={`company-${companyIndex}-row-${row.id}`}
-                                  className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(160px,1fr)_130px] items-center ${
+                                  className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] items-center ${
                                     index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
                                   }`}
                                 >
@@ -1297,17 +1758,10 @@
                                   <div className="px-4 py-2">
                                     <input
                                       type="text"
-                                      value={entry.zeitraum || ""}
-                                      onChange={(event) =>
-                                        updateCompanyTableEntry(
-                                          companyIndex,
-                                          row.id,
-                                          "zeitraum",
-                                          event.target.value
-                                        )
-                                      }
-                                      placeholder="z.B. Jan–Mär 2026"
-                                      className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                      value={zeitraumValue}
+                                      readOnly
+                                      placeholder="Auto-Plan erforderlich"
+                                      className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
                                     />
                                   </div>
                                   <div className="px-4 py-2">
@@ -1315,22 +1769,25 @@
                                       type="number"
                                       min="1"
                                       step="1"
-                                      value={entry.mitarbeiterNummer || ""}
-                                      onChange={(event) =>
-                                        updateCompanyTableEntry(
-                                          companyIndex,
-                                          row.id,
-                                          "mitarbeiterNummer",
-                                          event.target.value
-                                        )
-                                      }
-                                      placeholder="1"
-                                      className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                      value={maValue}
+                                      readOnly
+                                      placeholder="Auto-Plan"
+                                      className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
                                     />
+                                  </div>
+                                  <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                                    {isUnplannable ? (
+                                      <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">
+                                        Nicht planbar
+                                      </span>
+                                    ) : (
+                                      costValue
+                                    )}
                                   </div>
                                 </div>
                               );
-                            })}
+                              }
+                            )}
                           </div>
                         </div>
                       </div>
