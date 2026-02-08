@@ -53,7 +53,7 @@
       const MAX_WP = 20;
       const MAX_SUB = 20;
       const MAX_DURATION = 60;
-      const STORAGE_KEY = "zim-fe-kostenkalkulation-v2";
+      const STORAGE_KEY = "zim-fe-kostenkalkulation-v3";
 
       const monthNames = [
         "Jan",
@@ -76,7 +76,6 @@
         id: `wp-${Date.now()}-${index}`,
         title: "",
         pm: Array(5).fill(0),
-        gantt: { start: 1, end: 12 },
         sub: [],
       });
 
@@ -84,7 +83,6 @@
         id: `sub-${Date.now()}-${wpIndex}-${index}`,
         title: "",
         pm: Array(5).fill(0),
-        gantt: { start: 1, end: 12 },
       });
 
       const parseDate = (value) => {
@@ -123,9 +121,10 @@
       const App = () => {
         const [startDate, setStartDate] = useState("2026-07-15");
         const [durationMonths, setDurationMonths] = useState(48);
-        const [includeWpInSum, setIncludeWpInSum] = useState(true);
-        const [deriveWpGantt, setDeriveWpGantt] = useState(false);
-        const [activeCompanies, setActiveCompanies] = useState(Array(5).fill(true));
+        const [companyCount, setCompanyCount] = useState(5);
+        const [companyNames, setCompanyNames] = useState(
+          Array.from({ length: 5 }, (_, index) => `Unternehmen ${index + 1}`)
+        );
         const [workPackages, setWorkPackages] = useState([createWp(0)]);
         const [pendingDelete, setPendingDelete] = useState(null);
 
@@ -136,15 +135,17 @@
               const parsed = JSON.parse(saved);
               if (parsed?.workPackages?.length) {
                 setWorkPackages(parsed.workPackages);
-                setActiveCompanies(parsed.activeCompanies || activeCompanies);
+                if (parsed.companyNames?.length) {
+                  setCompanyNames(parsed.companyNames);
+                }
+                if (typeof parsed.companyCount === "number") {
+                  setCompanyCount(clampNumber(parsed.companyCount, 1, 5));
+                } else if (Array.isArray(parsed.activeCompanies)) {
+                  const count = parsed.activeCompanies.filter(Boolean).length || 1;
+                  setCompanyCount(clampNumber(count, 1, 5));
+                }
                 setStartDate(parsed.startDate || "2026-07-15");
                 setDurationMonths(parsed.durationMonths || 48);
-                setIncludeWpInSum(
-                  typeof parsed.includeWpInSum === "boolean" ? parsed.includeWpInSum : true
-                );
-                setDeriveWpGantt(
-                  typeof parsed.deriveWpGantt === "boolean" ? parsed.deriveWpGantt : false
-                );
               }
             } catch (error) {
               console.warn("Lokaler Zustand konnte nicht geladen werden", error);
@@ -157,28 +158,23 @@
             STORAGE_KEY,
             JSON.stringify({
               workPackages,
-              activeCompanies,
+              companyCount,
+              companyNames,
               startDate,
               durationMonths,
-              includeWpInSum,
-              deriveWpGantt,
             })
           );
         }, [
           workPackages,
-          activeCompanies,
+          companyCount,
+          companyNames,
           startDate,
           durationMonths,
-          includeWpInSum,
-          deriveWpGantt,
         ]);
 
         const activeCompanyIndexes = useMemo(
-          () =>
-            activeCompanies
-              .map((isActive, index) => (isActive ? index : null))
-              .filter((value) => value !== null),
-          [activeCompanies]
+          () => Array.from({ length: companyCount }, (_, index) => index),
+          [companyCount]
         );
 
         const timeline = useMemo(
@@ -245,43 +241,6 @@
           });
         };
 
-        const updateGantt = (wpIndex, subIndex, field, value) => {
-          const numeric = clampNumber(parseInt(value || "1", 10), 1, durationMonths);
-          setWorkPackages((prev) => {
-            const next = [...prev];
-            if (subIndex === null) {
-              const wp = { ...next[wpIndex] };
-              const gantt = { ...wp.gantt, [field]: numeric };
-              if (gantt.start > gantt.end) {
-                if (field === "start") {
-                  gantt.end = gantt.start;
-                } else {
-                  gantt.start = gantt.end;
-                }
-              }
-              wp.gantt = gantt;
-              next[wpIndex] = wp;
-            } else {
-              const wp = { ...next[wpIndex] };
-              const sub = [...wp.sub];
-              const subItem = { ...sub[subIndex] };
-              const gantt = { ...subItem.gantt, [field]: numeric };
-              if (gantt.start > gantt.end) {
-                if (field === "start") {
-                  gantt.end = gantt.start;
-                } else {
-                  gantt.start = gantt.end;
-                }
-              }
-              subItem.gantt = gantt;
-              sub[subIndex] = subItem;
-              wp.sub = sub;
-              next[wpIndex] = wp;
-            }
-            return next;
-          });
-        };
-
         const addWp = () => {
           setWorkPackages((prev) => {
             if (prev.length >= MAX_WP) return prev;
@@ -325,20 +284,12 @@
           setPendingDelete(null);
         };
 
-        const toggleCompany = (index) => {
-          setActiveCompanies((prev) => {
-            const next = [...prev];
-            next[index] = !next[index];
-            return next;
-          });
-        };
-
         const sumForCompanies = (pmValues) =>
           activeCompanyIndexes.reduce((acc, idx) => acc + (pmValues[idx] || 0), 0);
 
-        const sumByCompany = (wp, includeWp) => {
+        const sumByCompany = (wp) => {
           return activeCompanyIndexes.map((idx) => {
-            const wpValue = includeWp ? wp.pm[idx] || 0 : 0;
+            const wpValue = wp.pm[idx] || 0;
             const subValue = wp.sub.reduce((acc, sub) => acc + (sub.pm[idx] || 0), 0);
             return wpValue + subValue;
           });
@@ -347,27 +298,14 @@
         const totalByCompany = useMemo(() => {
           return activeCompanyIndexes.map((idx) => {
             return workPackages.reduce((acc, wp) => {
-              const wpValue = includeWpInSum ? wp.pm[idx] || 0 : 0;
+              const wpValue = wp.pm[idx] || 0;
               const subValue = wp.sub.reduce((inner, sub) => inner + (sub.pm[idx] || 0), 0);
               return acc + wpValue + subValue;
             }, 0);
           });
-        }, [workPackages, activeCompanyIndexes, includeWpInSum]);
+        }, [workPackages, activeCompanyIndexes]);
 
         const totalSum = totalByCompany.reduce((acc, value) => acc + value, 0);
-
-        const getGanttRange = (wp, isWp) => {
-          if (isWp && deriveWpGantt && wp.sub.length > 0) {
-            const starts = wp.sub.map((sub) => sub.gantt.start);
-            const ends = wp.sub.map((sub) => sub.gantt.end);
-            return {
-              start: Math.min(...starts),
-              end: Math.max(...ends),
-              derived: true,
-            };
-          }
-          return { ...wp.gantt, derived: false };
-        };
 
         const gridTemplate = useMemo(() => {
           const companyColumns = activeCompanyIndexes.length;
@@ -397,55 +335,90 @@
             </header>
 
             <main className="mx-auto max-w-[1700px] px-6 py-8">
-              <div className="mb-6 grid gap-4 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+              <div className="mb-6 grid gap-4 lg:grid-cols-[2.2fr_1.2fr_1fr]">
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
-                  <div className="text-xs font-semibold uppercase text-slate-500">
-                    Unternehmen aktiv
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    {activeCompanies.map((isActive, index) => (
-                      <label
-                        key={`company-${index}`}
-                        className="flex items-center gap-2 text-sm font-medium text-slate-700"
-                      >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Unternehmen
+                      </div>
+                      <label className="mt-3 flex items-center gap-3 text-sm font-medium text-slate-700">
+                        Anzahl Unternehmen
                         <input
-                          type="checkbox"
-                          checked={isActive}
-                          onChange={() => toggleCompany(index)}
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                          type="number"
+                          min="1"
+                          max="5"
+                          value={companyCount}
+                          onChange={(event) =>
+                            setCompanyCount(
+                              clampNumber(parseInt(event.target.value || "1", 10), 1, 5)
+                            )
+                          }
+                          className="h-9 w-20 rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                         />
-                        Unternehmen {index + 1}
                       </label>
-                    ))}
+                    </div>
+                    <div className="min-w-[240px] flex-1">
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Unternehmensnamen
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {activeCompanyIndexes.map((idx) => (
+                          <input
+                            key={`company-name-${idx}`}
+                            type="text"
+                            value={companyNames[idx] || `Unternehmen ${idx + 1}`}
+                            onChange={(event) =>
+                              setCompanyNames((prev) => {
+                                const next = [...prev];
+                                next[idx] = event.target.value;
+                                return next;
+                              })
+                            }
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
-                  <div className="text-xs font-semibold uppercase text-slate-500">
-                    Summenlogik
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={addWp}
+                      disabled={workPackages.length >= MAX_WP}
+                      className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      + Arbeitspaket
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => requestDelete("wp", workPackages.length - 1)}
+                      disabled={workPackages.length === 0}
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-subtle transition hover:border-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+                    >
+                      – Arbeitspaket
+                    </button>
+                    {pendingDelete?.type === "wp" && (
+                      <span className="inline-flex items-center gap-2 text-xs text-rose-600">
+                        Wirklich löschen?
+                        <button
+                          type="button"
+                          onClick={confirmDelete}
+                          className="rounded border border-rose-200 px-2 py-1 text-rose-700"
+                        >
+                          Ja
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelDelete}
+                          className="rounded border border-slate-200 px-2 py-1 text-slate-600"
+                        >
+                          Nein
+                        </button>
+                      </span>
+                    )}
                   </div>
-                  <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={includeWpInSum}
-                      onChange={(event) => setIncludeWpInSum(event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                    />
-                    WP-Werte zusätzlich summieren
-                  </label>
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Zeitplan</div>
-                  <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={deriveWpGantt}
-                      onChange={(event) => setDeriveWpGantt(event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
-                    />
-                    WP-Zeitraum aus Sub-WPs ableiten
-                  </label>
                 </div>
 
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
@@ -477,17 +450,6 @@
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   />
                 </div>
-
-                <div className="flex items-center justify-end">
-                  <button
-                    type="button"
-                    onClick={addWp}
-                    disabled={workPackages.length >= MAX_WP}
-                    className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    + Arbeitspaket
-                  </button>
-                </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
@@ -504,7 +466,7 @@
                         key={`header-company-${idx}`}
                         className="px-2 py-4 text-xs font-semibold uppercase text-slate-500"
                       >
-                        Unternehmen {idx + 1}
+                        {companyNames[idx] || `Unternehmen ${idx + 1}`}
                       </div>
                     ))}
                     <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">
@@ -580,7 +542,7 @@
 
                     if (row.type === "summary") {
                       const wp = workPackages[row.wpIndex];
-                      const companySums = sumByCompany(wp, includeWpInSum);
+                      const companySums = sumByCompany(wp);
                       const rowSum = companySums.reduce((acc, value) => acc + value, 0);
                       return (
                         <div
@@ -620,21 +582,11 @@
                       subIndex === null
                         ? workPackages[wpIndex].pm
                         : workPackages[wpIndex].sub[subIndex].pm;
-                    const rowSum =
-                      isWp && !includeWpInSum ? 0 : sumForCompanies(values);
+                    const rowSum = sumForCompanies(values);
                     const isPending =
                       pendingDelete?.wpIndex === wpIndex &&
-                      pendingDelete?.subIndex === subIndex &&
-                      pendingDelete?.type === (isWp ? "wp" : "sub");
-
-                    const ganttInfo = isWp
-                      ? getGanttRange(workPackages[wpIndex], true)
-                      : workPackages[wpIndex].sub[subIndex].gantt;
-
-                    const ganttStart = ganttInfo.start;
-                    const ganttEnd = ganttInfo.end;
-                    const ganttInvalid = ganttStart < 1 || ganttEnd > durationMonths;
-                    const ganttWidth = ganttEnd - ganttStart + 1;
+                      pendingDelete?.type === "sub" &&
+                      pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
 
                     return (
                       <div
@@ -667,27 +619,34 @@
                               />
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                 {isWp && (
-                                  <button
-                                    type="button"
-                                    onClick={() => addSub(wpIndex)}
-                                    disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
-                                    className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
-                                  >
-                                    + Unterarbeitspaket
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => addSub(wpIndex)}
+                                      disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
+                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
+                                    >
+                                      +
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        requestDelete(
+                                          "sub",
+                                          wpIndex,
+                                          workPackages[wpIndex].sub.length - 1
+                                        )
+                                      }
+                                      disabled={workPackages[wpIndex].sub.length === 0}
+                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300"
+                                    >
+                                      –
+                                    </button>
+                                  </>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    requestDelete(isWp ? "wp" : "sub", wpIndex, subIndex)
-                                  }
-                                  className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600"
-                                >
-                                  – {isWp ? "Arbeitspaket" : "Unterarbeitspaket"}
-                                </button>
-                                {isPending && (
+                                {isWp && isPending && (
                                   <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
-                                    Wirklich löschen?
+                                    Letztes Unterarbeitspaket löschen?
                                     <button
                                       type="button"
                                       onClick={confirmDelete}
@@ -716,7 +675,6 @@
                               min="0"
                               step="0.1"
                               value={values[idx]}
-                              disabled={!includeWpInSum && isWp}
                               onChange={(event) => updatePm(wpIndex, subIndex, idx, event.target.value)}
                               className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
                             />
@@ -728,67 +686,16 @@
                         </div>
 
                         <div className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                            <label className="flex items-center gap-1">
-                              Start
-                              <input
-                                type="number"
-                                min="1"
-                                max={durationMonths}
-                                value={ganttStart}
-                                disabled={isWp && ganttInfo.derived}
-                                onChange={(event) =>
-                                  updateGantt(wpIndex, subIndex, "start", event.target.value)
-                                }
-                                className={`h-7 w-16 rounded border px-2 text-xs ${
-                                  ganttInvalid
-                                    ? "border-rose-400"
-                                    : "border-slate-300"
-                                } ${ganttInfo.derived ? "bg-slate-100" : ""}`}
-                              />
-                            </label>
-                            <label className="flex items-center gap-1">
-                              Ende
-                              <input
-                                type="number"
-                                min="1"
-                                max={durationMonths}
-                                value={ganttEnd}
-                                disabled={isWp && ganttInfo.derived}
-                                onChange={(event) =>
-                                  updateGantt(wpIndex, subIndex, "end", event.target.value)
-                                }
-                                className={`h-7 w-16 rounded border px-2 text-xs ${
-                                  ganttInvalid
-                                    ? "border-rose-400"
-                                    : "border-slate-300"
-                                } ${ganttInfo.derived ? "bg-slate-100" : ""}`}
-                              />
-                            </label>
-                            {ganttInfo.derived && (
-                              <span className="text-[11px] text-slate-400">
-                                automatisch aus Sub-WPs
-                              </span>
-                            )}
-                          </div>
-                          <div className="relative mt-2 overflow-hidden rounded border border-slate-200 bg-white">
+                          <div className="relative overflow-hidden rounded border border-slate-200 bg-white">
                             <div className="gantt-grid" style={monthGridStyle}>
                               {Array.from({ length: durationMonths }, (_, index) => (
                                 <div
                                   key={`cell-${row.type}-${wpIndex}-${subIndex ?? "root"}-${index}`}
-                                  className="h-5 border-r border-dashed border-slate-200"
+                                  className="h-6 border-r border-dashed border-slate-200"
                                 />
                               ))}
                             </div>
-                            <div
-                              className={`absolute top-0 h-5 rounded-sm ${
-                                isWp ? "bg-slate-800/80" : "bg-slate-600/70"
-                              }`}
-                              style={{
-                                left: `calc((100% / ${durationMonths}) * ${ganttStart - 1})`,
-                                width: `calc((100% / ${durationMonths}) * ${ganttWidth})`,
-                              }}
-                            />
+                            <div className="pointer-events-none absolute inset-0 rounded border border-transparent" />
                           </div>
                         </div>
                       </div>
