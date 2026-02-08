@@ -91,6 +91,37 @@
         pm: Array(5).fill(0),
       });
 
+      const createCompanyData = () => ({
+        zuschlagsfaktorPercent: 0,
+        foerderquotePercent: 0,
+        maximalbetrag: 0,
+        ergebnisse: {
+          personalkosten: 0,
+          gemeinkostenzuschlag: 0,
+          projektsumme: 0,
+          foerdersumme: 0,
+          verschenkterGesamtbetrag: 0,
+        },
+        tabellenEintraege: {},
+      });
+
+      const normalizeCompanyData = (data) => {
+        const base = Array.from({ length: 5 }, () => createCompanyData());
+        if (!Array.isArray(data)) return base;
+        return base.map((fallback, index) => {
+          const entry = data[index] || {};
+          return {
+            ...fallback,
+            ...entry,
+            ergebnisse: {
+              ...fallback.ergebnisse,
+              ...(entry.ergebnisse || {}),
+            },
+            tabellenEintraege: entry.tabellenEintraege || {},
+          };
+        });
+      };
+
       const parseDate = (value) => {
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) {
@@ -142,18 +173,7 @@
             annualSalary: 0,
           },
         ]);
-        const [parameters, setParameters] = useState({
-          surchargeFactor: 0,
-          fundingRate: 0,
-          maxAmount: 0,
-        });
-        const [results] = useState({
-          personnelCosts: 0,
-          overheadSurcharge: 0,
-          projectSum: 0,
-          fundingSum: 0,
-          forfeitedAmount: 0,
-        });
+        const [companyData, setCompanyData] = useState(() => normalizeCompanyData());
         const [pendingDelete, setPendingDelete] = useState(null);
         const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(false);
 
@@ -183,8 +203,17 @@
               if (Array.isArray(parsed?.employees) && parsed.employees.length) {
                 setEmployees(parsed.employees);
               }
-              if (parsed?.parameters) {
-                setParameters((prev) => ({ ...prev, ...parsed.parameters }));
+              if (parsed?.companyData) {
+                setCompanyData(normalizeCompanyData(parsed.companyData));
+              } else if (parsed?.parameters) {
+                const legacy = normalizeCompanyData();
+                const next = legacy.map((entry) => ({
+                  ...entry,
+                  zuschlagsfaktorPercent: parseNumber(parsed.parameters.surchargeFactor),
+                  foerderquotePercent: parseNumber(parsed.parameters.fundingRate),
+                  maximalbetrag: parseNumber(parsed.parameters.maxAmount),
+                }));
+                setCompanyData(next);
               }
             } catch (error) {
               console.warn("Lokaler Zustand konnte nicht geladen werden", error);
@@ -202,7 +231,7 @@
               startDate,
               durationMonths,
               employees,
-              parameters,
+              companyData,
             })
           );
         }, [
@@ -212,7 +241,7 @@
           startDate,
           durationMonths,
           employees,
-          parameters,
+          companyData,
         ]);
 
         const activeCompanyIndexes = useMemo(
@@ -236,6 +265,25 @@
             list.push({ type: "summary", wpIndex, subIndex: null });
           });
           list.push({ type: "total" });
+          return list;
+        }, [workPackages]);
+
+        const workPackageRows = useMemo(() => {
+          const list = [];
+          workPackages.forEach((wp, wpIndex) => {
+            list.push({
+              id: wp.id,
+              number: `${wpIndex + 1}`,
+              title: wp.title,
+            });
+            wp.sub.forEach((sub, subIndex) => {
+              list.push({
+                id: sub.id,
+                number: `${wpIndex + 1}.${subIndex + 1}`,
+                title: sub.title,
+              });
+            });
+          });
           return list;
         }, [workPackages]);
 
@@ -370,10 +418,29 @@
           updateEmployeeField(index, field, clamped);
         };
 
-        const updateParameter = (field, value, min, max = null) => {
+        const updateParameter = (companyIndex, field, value, min, max = null) => {
           const numeric = parseNumber(value);
           const clamped = max === null ? Math.max(min, numeric) : clampNumber(numeric, min, max);
-          setParameters((prev) => ({ ...prev, [field]: clamped }));
+          setCompanyData((prev) => {
+            const next = [...prev];
+            const entry = { ...next[companyIndex], [field]: clamped };
+            next[companyIndex] = entry;
+            return next;
+          });
+        };
+
+        const updateCompanyTableEntry = (companyIndex, rowId, field, value) => {
+          setCompanyData((prev) => {
+            const next = [...prev];
+            const entry = { ...next[companyIndex] };
+            const tabellenEintraege = { ...entry.tabellenEintraege };
+            const rowEntry = { ...(tabellenEintraege[rowId] || {}) };
+            rowEntry[field] = value;
+            tabellenEintraege[rowId] = rowEntry;
+            entry.tabellenEintraege = tabellenEintraege;
+            next[companyIndex] = entry;
+            return next;
+          });
         };
 
         const sumForCompanies = (pmValues) =>
@@ -397,7 +464,7 @@
           });
         }, [workPackages, activeCompanyIndexes]);
 
-      const totalSum = totalByCompany.reduce((acc, value) => acc + value, 0);
+        const totalSum = totalByCompany.reduce((acc, value) => acc + value, 0);
 
         const leftGridTemplate = useMemo(() => {
           const companyColumns = activeCompanyIndexes.length;
@@ -1055,96 +1122,221 @@
               </div>
 
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                    <h3 className="text-lg font-semibold text-slate-850">Parameter</h3>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Zuschläge und Förderparameter für die Berechnung.
-                    </p>
-                  </div>
-                  <div className="space-y-4 px-5 py-4">
-                    <label className="block text-sm font-medium text-slate-700">
-                      Zuschlagsfaktor (%)
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={parameters.surchargeFactor}
-                        onChange={(event) =>
-                          updateParameter("surchargeFactor", event.target.value, 0, 100)
-                        }
-                        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
-                    </label>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Förderquote (%)
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={parameters.fundingRate}
-                        onChange={(event) =>
-                          updateParameter("fundingRate", event.target.value, 0, 100)
-                        }
-                        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
-                    </label>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Maximalbetrag (€)
-                      <input
-                        type="number"
-                        min="0"
-                        step="100"
-                        value={parameters.maxAmount}
-                        onChange={(event) => updateParameter("maxAmount", event.target.value, 0)}
-                        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
-                    </label>
-                  </div>
-                </div>
+                {activeCompanyIndexes.map((companyIndex) => {
+                  const company = companyData[companyIndex] || createCompanyData();
+                  const companyName =
+                    companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
+                  return (
+                    <div
+                      key={`company-section-${companyIndex}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-subtle"
+                    >
+                      <div className="border-b border-slate-200 pb-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Unternehmen
+                        </p>
+                        <h3 className="mt-2 text-xl font-semibold text-slate-850">
+                          {companyName}
+                        </h3>
+                      </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                    <h3 className="text-lg font-semibold text-slate-850">Ergebnisse</h3>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Berechnungsvorschau (read-only).
-                    </p>
-                  </div>
-                  <div className="space-y-3 px-5 py-4 text-sm text-slate-700">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <span>Personalkosten</span>
-                      <span className="font-semibold text-slate-900">
-                        {formatCurrency(results.personnelCosts)}
-                      </span>
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                            <h3 className="text-lg font-semibold text-slate-850">Parameter</h3>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Zuschläge und Förderparameter für dieses Unternehmen.
+                            </p>
+                          </div>
+                          <div className="space-y-4 px-5 py-4">
+                            <label className="block text-sm font-medium text-slate-700">
+                              Zuschlagsfaktor (%)
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={company.zuschlagsfaktorPercent}
+                                onChange={(event) =>
+                                  updateParameter(
+                                    companyIndex,
+                                    "zuschlagsfaktorPercent",
+                                    event.target.value,
+                                    0,
+                                    100
+                                  )
+                                }
+                                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </label>
+                            <label className="block text-sm font-medium text-slate-700">
+                              Förderquote (%)
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={company.foerderquotePercent}
+                                onChange={(event) =>
+                                  updateParameter(
+                                    companyIndex,
+                                    "foerderquotePercent",
+                                    event.target.value,
+                                    0,
+                                    100
+                                  )
+                                }
+                                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </label>
+                            <label className="block text-sm font-medium text-slate-700">
+                              Maximalbetrag (€)
+                              <input
+                                type="number"
+                                min="0"
+                                step="100"
+                                value={company.maximalbetrag}
+                                onChange={(event) =>
+                                  updateParameter(
+                                    companyIndex,
+                                    "maximalbetrag",
+                                    event.target.value,
+                                    0
+                                  )
+                                }
+                                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                            <h3 className="text-lg font-semibold text-slate-850">Ergebnisse</h3>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Berechnungsvorschau (read-only).
+                            </p>
+                          </div>
+                          <div className="space-y-3 px-5 py-4 text-sm text-slate-700">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <span>Personalkosten</span>
+                              <span className="font-semibold text-slate-900">
+                                {formatCurrency(company.ergebnisse.personalkosten)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <span>Gemeinkostenzuschlag</span>
+                              <span className="font-semibold text-slate-900">
+                                {formatCurrency(company.ergebnisse.gemeinkostenzuschlag)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <span>Projektsumme</span>
+                              <span className="font-semibold text-slate-900">
+                                {formatCurrency(company.ergebnisse.projektsumme)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <span>Fördersumme</span>
+                              <span className="font-semibold text-slate-900">
+                                {formatCurrency(company.ergebnisse.foerdersumme)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Verschenkter Gesamtbetrag</span>
+                              <span className="font-semibold text-slate-900">
+                                {formatCurrency(company.ergebnisse.verschenkterGesamtbetrag)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-subtle">
+                        <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                          <h4 className="text-lg font-semibold text-slate-850">
+                            Zuordnung Arbeitspakete &amp; Mitarbeitende
+                          </h4>
+                          <p className="mt-1 text-sm text-slate-600">
+                            Struktur für die spätere Zuordnung von Zeiträumen und
+                            Mitarbeitenden.
+                          </p>
+                        </div>
+                        <div className="max-h-[320px] overflow-auto">
+                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+                            <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(160px,1fr)_130px] text-xs font-semibold uppercase text-slate-500">
+                              <div className="px-4 py-3">WP-Nr.</div>
+                              <div className="px-4 py-3">Arbeitspaket</div>
+                              <div className="px-4 py-3">Zeitraum</div>
+                              <div className="px-4 py-3">MA-Nr.</div>
+                            </div>
+                          </div>
+                          <div className="divide-y divide-slate-100">
+                            {workPackageRows.map((row, index) => {
+                              const entry =
+                                company.tabellenEintraege?.[row.id] || {};
+                              return (
+                                <div
+                                  key={`company-${companyIndex}-row-${row.id}`}
+                                  className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(160px,1fr)_130px] items-center ${
+                                    index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                                  }`}
+                                >
+                                  <div className="px-4 py-2 text-sm font-semibold text-slate-700">
+                                    {row.number}
+                                  </div>
+                                  <div className="px-4 py-2">
+                                    <input
+                                      type="text"
+                                      readOnly
+                                      value={row.title || ""}
+                                      placeholder="Arbeitspaket-Titel"
+                                      className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
+                                    />
+                                  </div>
+                                  <div className="px-4 py-2">
+                                    <input
+                                      type="text"
+                                      value={entry.zeitraum || ""}
+                                      onChange={(event) =>
+                                        updateCompanyTableEntry(
+                                          companyIndex,
+                                          row.id,
+                                          "zeitraum",
+                                          event.target.value
+                                        )
+                                      }
+                                      placeholder="z.B. Jan–Mär 2026"
+                                      className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                  <div className="px-4 py-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={entry.mitarbeiterNummer || ""}
+                                      onChange={(event) =>
+                                        updateCompanyTableEntry(
+                                          companyIndex,
+                                          row.id,
+                                          "mitarbeiterNummer",
+                                          event.target.value
+                                        )
+                                      }
+                                      placeholder="1"
+                                      className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <span>Gemeinkostenzuschlag</span>
-                      <span className="font-semibold text-slate-900">
-                        {formatCurrency(results.overheadSurcharge)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <span>Projektsumme</span>
-                      <span className="font-semibold text-slate-900">
-                        {formatCurrency(results.projectSum)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <span>Fördersumme</span>
-                      <span className="font-semibold text-slate-900">
-                        {formatCurrency(results.fundingSum)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Verschenkter Gesamtbetrag</span>
-                      <span className="font-semibold text-slate-900">
-                        {formatCurrency(results.forfeitedAmount)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
             </main>
           </div>
