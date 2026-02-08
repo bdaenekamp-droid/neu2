@@ -3,9 +3,687 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Test</title>
+    <title>ZIM F&E Kostenkalkulation – Seite 1</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "system-ui", "sans-serif"],
+            },
+            colors: {
+              slate: {
+                850: "#0f172a",
+              },
+            },
+            boxShadow: {
+              subtle: "0 1px 2px rgba(15, 23, 42, 0.08)",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        background-color: #f8fafc;
+      }
+
+      .grid-48 {
+        grid-template-columns: repeat(48, minmax(12px, 1fr));
+      }
+    </style>
   </head>
   <body>
-    Test
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel" data-presets="typescript,react">
+      const { useMemo, useState, useEffect } = React;
+
+      const MAX_WP = 20;
+      const MAX_SUB = 20;
+      const STORAGE_KEY = "zim-fe-kostenkalkulation-v1";
+
+      const monthLabels = [
+        "J",
+        "F",
+        "M",
+        "A",
+        "M",
+        "J",
+        "J",
+        "A",
+        "S",
+        "O",
+        "N",
+        "D",
+      ];
+
+      const createWp = (index) => ({
+        id: `wp-${Date.now()}-${index}`,
+        title: "",
+        pm: Array(5).fill(0),
+        gantt: { start: 1, end: 12 },
+        sub: [],
+      });
+
+      const createSub = (wpIndex, index) => ({
+        id: `sub-${Date.now()}-${wpIndex}-${index}`,
+        title: "",
+        pm: Array(5).fill(0),
+        gantt: { start: 1, end: 12 },
+      });
+
+      const clampMonth = (value) => Math.min(48, Math.max(1, value));
+
+      const App = () => {
+        const [startYear, setStartYear] = useState(2026);
+        const [autoSumSub, setAutoSumSub] = useState(true);
+        const [activeCompanies, setActiveCompanies] = useState(
+          Array(5).fill(true)
+        );
+        const [workPackages, setWorkPackages] = useState([createWp(0)]);
+        const [pendingDelete, setPendingDelete] = useState(null);
+
+        useEffect(() => {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            try {
+              const parsed = JSON.parse(saved);
+              if (parsed?.workPackages?.length) {
+                setWorkPackages(parsed.workPackages);
+                setActiveCompanies(parsed.activeCompanies || activeCompanies);
+                setStartYear(parsed.startYear || 2026);
+                setAutoSumSub(
+                  typeof parsed.autoSumSub === "boolean"
+                    ? parsed.autoSumSub
+                    : true
+                );
+              }
+            } catch (error) {
+              console.warn("Lokaler Zustand konnte nicht geladen werden", error);
+            }
+          }
+        }, []);
+
+        useEffect(() => {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              workPackages,
+              activeCompanies,
+              startYear,
+              autoSumSub,
+            })
+          );
+        }, [workPackages, activeCompanies, startYear, autoSumSub]);
+
+        const activeCompanyIndexes = useMemo(
+          () =>
+            activeCompanies
+              .map((isActive, index) => (isActive ? index : null))
+              .filter((value) => value !== null),
+          [activeCompanies]
+        );
+
+        const rows = useMemo(() => {
+          const list = [];
+          workPackages.forEach((wp, wpIndex) => {
+            list.push({ type: "wp", wpIndex, subIndex: null });
+            wp.sub.forEach((_, subIndex) => {
+              list.push({ type: "sub", wpIndex, subIndex });
+            });
+          });
+          return list;
+        }, [workPackages]);
+
+        const updateWpTitle = (wpIndex, value) => {
+          setWorkPackages((prev) => {
+            const next = [...prev];
+            next[wpIndex] = { ...next[wpIndex], title: value };
+            return next;
+          });
+        };
+
+        const updateSubTitle = (wpIndex, subIndex, value) => {
+          setWorkPackages((prev) => {
+            const next = [...prev];
+            const wp = { ...next[wpIndex] };
+            const sub = [...wp.sub];
+            sub[subIndex] = { ...sub[subIndex], title: value };
+            wp.sub = sub;
+            next[wpIndex] = wp;
+            return next;
+          });
+        };
+
+        const updatePm = (wpIndex, subIndex, companyIndex, value) => {
+          const numeric = Number.isNaN(parseFloat(value)) ? 0 : parseFloat(value);
+          setWorkPackages((prev) => {
+            const next = [...prev];
+            if (subIndex === null) {
+              const wp = { ...next[wpIndex] };
+              const pm = [...wp.pm];
+              pm[companyIndex] = numeric;
+              wp.pm = pm;
+              next[wpIndex] = wp;
+            } else {
+              const wp = { ...next[wpIndex] };
+              const sub = [...wp.sub];
+              const subItem = { ...sub[subIndex] };
+              const pm = [...subItem.pm];
+              pm[companyIndex] = numeric;
+              subItem.pm = pm;
+              sub[subIndex] = subItem;
+              wp.sub = sub;
+              next[wpIndex] = wp;
+            }
+            return next;
+          });
+        };
+
+        const updateGantt = (wpIndex, subIndex, field, value) => {
+          const numeric = clampMonth(parseInt(value || "1", 10));
+          setWorkPackages((prev) => {
+            const next = [...prev];
+            if (subIndex === null) {
+              const wp = { ...next[wpIndex] };
+              const gantt = { ...wp.gantt, [field]: numeric };
+              if (gantt.start > gantt.end) {
+                if (field === "start") {
+                  gantt.end = gantt.start;
+                } else {
+                  gantt.start = gantt.end;
+                }
+              }
+              wp.gantt = gantt;
+              next[wpIndex] = wp;
+            } else {
+              const wp = { ...next[wpIndex] };
+              const sub = [...wp.sub];
+              const subItem = { ...sub[subIndex] };
+              const gantt = { ...subItem.gantt, [field]: numeric };
+              if (gantt.start > gantt.end) {
+                if (field === "start") {
+                  gantt.end = gantt.start;
+                } else {
+                  gantt.start = gantt.end;
+                }
+              }
+              subItem.gantt = gantt;
+              sub[subIndex] = subItem;
+              wp.sub = sub;
+              next[wpIndex] = wp;
+            }
+            return next;
+          });
+        };
+
+        const addWp = () => {
+          setWorkPackages((prev) => {
+            if (prev.length >= MAX_WP) return prev;
+            return [...prev, createWp(prev.length)];
+          });
+        };
+
+        const addSub = (wpIndex) => {
+          setWorkPackages((prev) => {
+            const next = [...prev];
+            const wp = { ...next[wpIndex] };
+            if (wp.sub.length >= MAX_SUB) return prev;
+            wp.sub = [...wp.sub, createSub(wpIndex, wp.sub.length)];
+            next[wpIndex] = wp;
+            return next;
+          });
+        };
+
+        const requestDelete = (type, wpIndex, subIndex = null) => {
+          setPendingDelete({ type, wpIndex, subIndex });
+        };
+
+        const cancelDelete = () => setPendingDelete(null);
+
+        const confirmDelete = () => {
+          if (!pendingDelete) return;
+          const { type, wpIndex, subIndex } = pendingDelete;
+          setWorkPackages((prev) => {
+            const next = [...prev];
+            if (type === "wp") {
+              next.splice(wpIndex, 1);
+            } else if (type === "sub") {
+              const wp = { ...next[wpIndex] };
+              const sub = [...wp.sub];
+              sub.splice(subIndex, 1);
+              wp.sub = sub;
+              next[wpIndex] = wp;
+            }
+            return next.length ? next : [createWp(0)];
+          });
+          setPendingDelete(null);
+        };
+
+        const toggleCompany = (index) => {
+          setActiveCompanies((prev) => {
+            const next = [...prev];
+            next[index] = !next[index];
+            return next;
+          });
+        };
+
+        const computeRowSum = (wpIndex, subIndex = null) => {
+          const wp = workPackages[wpIndex];
+          if (!wp) return 0;
+          const sumValues = (arr) =>
+            activeCompanyIndexes.reduce((acc, idx) => acc + (arr[idx] || 0), 0);
+          if (subIndex === null) {
+            const own = sumValues(wp.pm);
+            const sub = wp.sub.reduce((acc, item) => acc + sumValues(item.pm), 0);
+            return autoSumSub ? own + sub : own;
+          }
+          return sumValues(wp.sub[subIndex]?.pm || []);
+        };
+
+        const totalSum = useMemo(() => {
+          if (autoSumSub) {
+            return workPackages.reduce((acc, wp, wpIndex) => acc + computeRowSum(wpIndex), 0);
+          }
+          return workPackages.reduce((acc, wp) => {
+            const wpSum = activeCompanyIndexes.reduce(
+              (inner, idx) => inner + (wp.pm[idx] || 0),
+              0
+            );
+            const subSum = wp.sub.reduce(
+              (inner, sub) =>
+                inner +
+                activeCompanyIndexes.reduce(
+                  (subAcc, idx) => subAcc + (sub.pm[idx] || 0),
+                  0
+                ),
+              0
+            );
+            return acc + wpSum + subSum;
+          }, 0);
+        }, [workPackages, activeCompanyIndexes, autoSumSub]);
+
+        const years = Array.from({ length: 4 }, (_, index) => startYear + index);
+
+        return (
+          <div className="min-h-screen bg-slate-50 text-slate-900">
+            <header className="border-b border-slate-200 bg-white shadow-subtle">
+              <div className="mx-auto max-w-[1600px] px-6 py-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  ZIM F&amp;E Kostenkalkulation
+                </p>
+                <h1 className="mt-2 text-3xl font-semibold text-slate-850">
+                  Seite 1: Arbeitspakete / Personenmonate / Gantt
+                </h1>
+                <p className="mt-3 max-w-3xl text-sm text-slate-600">
+                  Erfassen Sie Arbeitspakete, Personenmonate und Zeiträume pro Unternehmen.
+                  Die Eingaben bleiben lokal gespeichert und sind für Copy/Paste optimiert.
+                </p>
+              </div>
+            </header>
+
+            <main className="mx-auto max-w-[1600px] px-6 py-8">
+              <div className="mb-6 flex flex-wrap items-center gap-4">
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
+                  <div className="text-xs font-semibold uppercase text-slate-500">
+                    Unternehmen aktiv
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {activeCompanies.map((isActive, index) => (
+                      <label
+                        key={`company-${index}`}
+                        className="flex items-center gap-2 text-sm font-medium text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isActive}
+                          onChange={() => toggleCompany(index)}
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                        Unternehmen {index + 1}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
+                  <div className="text-xs font-semibold uppercase text-slate-500">
+                    WP Logik
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={autoSumSub}
+                      onChange={(event) => setAutoSumSub(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                    />
+                    WP summiert Sub-WPs automatisch
+                  </label>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
+                  <div className="text-xs font-semibold uppercase text-slate-500">
+                    Startjahr
+                  </div>
+                  <input
+                    type="number"
+                    value={startYear}
+                    onChange={(event) => setStartYear(parseInt(event.target.value || "0", 10))}
+                    className="mt-2 w-28 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={addWp}
+                  disabled={workPackages.length >= MAX_WP}
+                  className="ml-auto inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  + Arbeitspaket
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                <div className="grid grid-cols-[minmax(320px,1.2fr)_minmax(360px,1fr)_minmax(420px,1.2fr)]">
+                  <section className="border-r border-slate-200">
+                    <div className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+                      Arbeitspakete
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      {rows.map((row) => {
+                        const wpIndex = row.wpIndex;
+                        const subIndex = row.subIndex;
+                        const isWp = row.type === "wp";
+                        const wpNumber = wpIndex + 1;
+                        const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
+                        const title =
+                          subIndex === null
+                            ? workPackages[wpIndex].title
+                            : workPackages[wpIndex].sub[subIndex].title;
+                        const isPending =
+                          pendingDelete?.wpIndex === wpIndex &&
+                          pendingDelete?.subIndex === subIndex &&
+                          pendingDelete?.type === (isWp ? "wp" : "sub");
+
+                        return (
+                          <div
+                            key={`${row.type}-${wpIndex}-${subIndex ?? "root"}`}
+                            className={`flex gap-3 px-4 py-3 ${
+                              isWp ? "bg-slate-50" : "bg-white"
+                            }`}
+                          >
+                            <div className="w-12 text-sm font-semibold text-slate-500">
+                              {isWp ? wpNumber : subNumber}
+                            </div>
+                            <div className="flex-1">
+                              <textarea
+                                value={title}
+                                onChange={(event) =>
+                                  isWp
+                                    ? updateWpTitle(wpIndex, event.target.value)
+                                    : updateSubTitle(
+                                        wpIndex,
+                                        subIndex,
+                                        event.target.value
+                                      )
+                                }
+                                placeholder={
+                                  isWp
+                                    ? "Arbeitspaket beschreiben..."
+                                    : "Unterarbeitspaket hinzufügen..."
+                                }
+                                rows={isWp ? 3 : 2}
+                                className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${
+                                  isWp ? "font-medium" : ""
+                                }`}
+                              />
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                {isWp && (
+                                  <button
+                                    type="button"
+                                    onClick={() => addSub(wpIndex)}
+                                    disabled={
+                                      workPackages[wpIndex].sub.length >= MAX_SUB
+                                    }
+                                    className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
+                                  >
+                                    + Unterpunkt
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    requestDelete(
+                                      isWp ? "wp" : "sub",
+                                      wpIndex,
+                                      subIndex
+                                    )
+                                  }
+                                  className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600"
+                                >
+                                  – {isWp ? "Arbeitspaket" : "Unterpunkt"}
+                                </button>
+                                {isPending && (
+                                  <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
+                                    Wirklich löschen?
+                                    <button
+                                      type="button"
+                                      onClick={confirmDelete}
+                                      className="rounded border border-rose-200 px-2 py-1 text-rose-700"
+                                    >
+                                      Ja
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelDelete}
+                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600"
+                                    >
+                                      Nein
+                                    </button>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="border-r border-slate-200">
+                    <div className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100 px-4 py-3">
+                      <div className="text-sm font-semibold text-slate-700">
+                        Personenmonate
+                      </div>
+                      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))_80px] gap-2 text-xs font-semibold uppercase text-slate-500">
+                        {activeCompanyIndexes.map((idx) => (
+                          <div key={`company-label-${idx}`}>Unternehmen {idx + 1}</div>
+                        ))}
+                        <div className="text-right">Summe</div>
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-slate-200">
+                      {rows.map((row) => {
+                        const wpIndex = row.wpIndex;
+                        const subIndex = row.subIndex;
+                        const isWp = row.type === "wp";
+                        const values =
+                          subIndex === null
+                            ? workPackages[wpIndex].pm
+                            : workPackages[wpIndex].sub[subIndex].pm;
+                        const rowSum = computeRowSum(wpIndex, subIndex);
+
+                        return (
+                          <div
+                            key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
+                            className={`px-4 py-3 ${
+                              isWp ? "bg-slate-50" : "bg-white"
+                            }`}
+                          >
+                            <div className="grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))_80px] items-center gap-2">
+                              {activeCompanyIndexes.map((idx) => (
+                                <input
+                                  key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`}
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={values[idx]}
+                                  onChange={(event) =>
+                                    updatePm(wpIndex, subIndex, idx, event.target.value)
+                                  }
+                                  className="h-9 rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                />
+                              ))}
+                              <div className="text-right text-sm font-semibold text-slate-700">
+                                {rowSum.toFixed(2)}
+                                {isWp && autoSumSub && (
+                                  <div className="text-[11px] font-medium text-slate-400">
+                                    inkl. Sub-WPs
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-slate-200 bg-slate-100 px-4 py-3 text-right text-sm font-semibold text-slate-700">
+                      Gesamtsumme: {totalSum.toFixed(2)} PM
+                    </div>
+                  </section>
+
+                  <section>
+                    <div className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100">
+                      <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700">
+                        Gantt-Übersicht
+                        <span className="text-xs font-medium text-slate-500">
+                          Monate 1–48
+                        </span>
+                      </div>
+                      <div className="border-t border-slate-200">
+                        <div className="grid grid-cols-4 text-center text-xs font-semibold uppercase text-slate-500">
+                          {years.map((year) => (
+                            <div
+                              key={`year-${year}`}
+                              className="border-r border-slate-200 py-2"
+                            >
+                              {year}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-48 gap-0 border-t border-slate-200 text-[10px] text-slate-500">
+                          {Array.from({ length: 48 }, (_, index) => (
+                            <div
+                              key={`month-${index}`}
+                              className="border-r border-slate-200 py-1 text-center"
+                            >
+                              {monthLabels[index % 12]}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-slate-200">
+                      {rows.map((row) => {
+                        const wpIndex = row.wpIndex;
+                        const subIndex = row.subIndex;
+                        const isWp = row.type === "wp";
+                        const gantt =
+                          subIndex === null
+                            ? workPackages[wpIndex].gantt
+                            : workPackages[wpIndex].sub[subIndex].gantt;
+                        return (
+                          <div
+                            key={`gantt-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
+                            className={`px-4 py-3 ${
+                              isWp ? "bg-slate-50" : "bg-white"
+                            }`}
+                          >
+                            <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
+                              <label className="flex items-center gap-1">
+                                Start
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="48"
+                                  value={gantt.start}
+                                  onChange={(event) =>
+                                    updateGantt(
+                                      wpIndex,
+                                      subIndex,
+                                      "start",
+                                      event.target.value
+                                    )
+                                  }
+                                  className="h-7 w-16 rounded border border-slate-300 px-2 text-xs"
+                                />
+                              </label>
+                              <label className="flex items-center gap-1">
+                                Ende
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="48"
+                                  value={gantt.end}
+                                  onChange={(event) =>
+                                    updateGantt(
+                                      wpIndex,
+                                      subIndex,
+                                      "end",
+                                      event.target.value
+                                    )
+                                  }
+                                  className="h-7 w-16 rounded border border-slate-300 px-2 text-xs"
+                                />
+                              </label>
+                            </div>
+                            <div className="relative grid grid-rows-1 gap-0 rounded border border-slate-200 bg-white">
+                              <div className="grid grid-48">
+                                {Array.from({ length: 48 }, (_, index) => (
+                                  <div
+                                    key={`cell-${row.type}-${wpIndex}-${subIndex ?? "root"}-${index}`}
+                                    className="h-5 border-r border-dashed border-slate-200"
+                                  />
+                                ))}
+                              </div>
+                              <div
+                                className={`absolute top-0 h-5 rounded-sm ${
+                                  isWp ? "bg-slate-800/80" : "bg-slate-600/70"
+                                }`}
+                                style={{
+                                  left: `calc((100% / 48) * ${gantt.start - 1})`,
+                                  width: `calc((100% / 48) * ${gantt.end - gantt.start + 1})`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </main>
+          </div>
+        );
+      };
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
   </body>
 </html>
