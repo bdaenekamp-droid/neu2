@@ -142,6 +142,18 @@
             annualSalary: 0,
           },
         ]);
+        const [parameters, setParameters] = useState({
+          surchargeFactor: 0,
+          fundingRate: 0,
+          maxAmount: 0,
+        });
+        const [results] = useState({
+          personnelCosts: 0,
+          overheadSurcharge: 0,
+          projectSum: 0,
+          fundingSum: 0,
+          forfeitedAmount: 0,
+        });
         const [pendingDelete, setPendingDelete] = useState(null);
         const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(false);
 
@@ -150,22 +162,29 @@
           if (saved) {
             try {
               const parsed = JSON.parse(saved);
-                if (parsed?.workPackages?.length) {
-                  setWorkPackages(parsed.workPackages);
-                if (parsed.companyNames?.length) {
-                  setCompanyNames(parsed.companyNames);
-                }
-                if (typeof parsed.companyCount === "number") {
-                  setCompanyCount(clampNumber(parsed.companyCount, 1, 5));
-                } else if (Array.isArray(parsed.activeCompanies)) {
-                  const count = parsed.activeCompanies.filter(Boolean).length || 1;
-                  setCompanyCount(clampNumber(count, 1, 5));
-                }
-                setStartDate(parsed.startDate || "2026-07-15");
-                setDurationMonths(parsed.durationMonths || 48);
+              if (parsed?.workPackages?.length) {
+                setWorkPackages(parsed.workPackages);
+              }
+              if (parsed?.companyNames?.length) {
+                setCompanyNames(parsed.companyNames);
+              }
+              if (typeof parsed?.companyCount === "number") {
+                setCompanyCount(clampNumber(parsed.companyCount, 1, 5));
+              } else if (Array.isArray(parsed?.activeCompanies)) {
+                const count = parsed.activeCompanies.filter(Boolean).length || 1;
+                setCompanyCount(clampNumber(count, 1, 5));
+              }
+              if (parsed?.startDate) {
+                setStartDate(parsed.startDate);
+              }
+              if (parsed?.durationMonths) {
+                setDurationMonths(parsed.durationMonths);
               }
               if (Array.isArray(parsed?.employees) && parsed.employees.length) {
                 setEmployees(parsed.employees);
+              }
+              if (parsed?.parameters) {
+                setParameters((prev) => ({ ...prev, ...parsed.parameters }));
               }
             } catch (error) {
               console.warn("Lokaler Zustand konnte nicht geladen werden", error);
@@ -183,6 +202,7 @@
               startDate,
               durationMonths,
               employees,
+              parameters,
             })
           );
         }, [
@@ -192,6 +212,7 @@
           startDate,
           durationMonths,
           employees,
+          parameters,
         ]);
 
         const activeCompanyIndexes = useMemo(
@@ -349,6 +370,12 @@
           updateEmployeeField(index, field, clamped);
         };
 
+        const updateParameter = (field, value, min, max = null) => {
+          const numeric = parseNumber(value);
+          const clamped = max === null ? Math.max(min, numeric) : clampNumber(numeric, min, max);
+          setParameters((prev) => ({ ...prev, [field]: clamped }));
+        };
+
         const sumForCompanies = (pmValues) =>
           activeCompanyIndexes.reduce((acc, idx) => acc + (pmValues[idx] || 0), 0);
 
@@ -384,6 +411,10 @@
           () => ({ gridTemplateColumns: `repeat(${durationMonths}, minmax(32px, 40px))` }),
           [durationMonths]
         );
+        const fullGridTemplate = useMemo(
+          () => `${leftGridTemplate} minmax(420px, 1fr)`,
+          [leftGridTemplate]
+        );
         const groupAccentClasses = [
           "border-l-sky-300",
           "border-l-indigo-300",
@@ -403,12 +434,17 @@
         };
 
         const getRowHeight = (row) => {
-          if (row.type === "wp") return "h-[96px]";
-          if (row.type === "sub") return "h-[72px]";
-          if (row.type === "summary") return "h-[56px]";
-          if (row.type === "total") return "h-[56px]";
-          return "h-[56px]";
+          if (row.type === "header") return "h-[96px]";
+          return "h-[64px]";
         };
+
+        const formatCurrency = (value) =>
+          new Intl.NumberFormat("de-DE", {
+            style: "currency",
+            currency: "EUR",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(value || 0);
 
         return (
           <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -546,247 +582,39 @@
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                <div className="grid grid-cols-[minmax(520px,1.45fr)_minmax(420px,1fr)]">
-                  <div className="border-r border-slate-200/80">
-                    <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                  <div
+                    className={`grid items-stretch ${getRowHeight({ type: "header" })}`}
+                    style={{ gridTemplateColumns: fullGridTemplate }}
+                  >
+                    <div className="px-4 py-4 text-sm font-semibold text-slate-700">
+                      Arbeitspaket
+                    </div>
+                    {activeCompanyIndexes.map((idx) => (
                       <div
-                        className="grid items-end"
-                        style={{ gridTemplateColumns: leftGridTemplate }}
+                        key={`header-company-${idx}`}
+                        className="px-2 py-4 text-xs font-semibold uppercase text-slate-500"
                       >
-                        <div className="px-4 py-4 text-sm font-semibold text-slate-700">
-                          Arbeitspaket
-                        </div>
-                        {activeCompanyIndexes.map((idx) => (
-                          <div
-                            key={`header-company-${idx}`}
-                            className="px-2 py-4 text-xs font-semibold uppercase text-slate-500"
-                          >
-                            <span
-                              className="block max-w-[260px] whitespace-normal break-words leading-tight"
-                              title={companyNames[idx] || `Unternehmen ${idx + 1}`}
-                            >
-                              {companyNames[idx] || `Unternehmen ${idx + 1}`}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">
-                          Summe
-                        </div>
+                        <span
+                          className="block max-w-[260px] whitespace-normal break-words leading-tight"
+                          title={companyNames[idx] || `Unternehmen ${idx + 1}`}
+                        >
+                          {companyNames[idx] || `Unternehmen ${idx + 1}`}
+                        </span>
                       </div>
+                    ))}
+                    <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">
+                      Summe
                     </div>
-
-                    <div className="divide-y divide-slate-100/70">
-                      {rows.map((row, rowIndex) => {
-                        if (row.type === "total") {
-                          return (
-                            <div
-                              key={`row-total-left-${rowIndex}`}
-                              className={`grid items-center overflow-hidden border-t border-slate-200 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)}`}
-                              style={{ gridTemplateColumns: leftGridTemplate }}
-                            >
-                              <div className="px-4 py-2 text-sm font-semibold text-slate-700">
-                                Gesamtsumme
-                              </div>
-                              {totalByCompany.map((value, idx) => (
-                                <div
-                                  key={`total-company-${idx}`}
-                                  className="px-2 py-2 text-sm font-semibold text-slate-700"
-                                >
-                                  {value.toFixed(2)}
-                                </div>
-                              ))}
-                              <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                                {totalSum.toFixed(2)}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (row.type === "summary") {
-                          const wp = workPackages[row.wpIndex];
-                          const companySums = sumByCompany(wp);
-                          const rowSum = companySums.reduce((acc, value) => acc + value, 0);
-                          const accent =
-                            groupAccentClasses[row.wpIndex % groupAccentClasses.length];
-                          return (
-                            <div
-                              key={`row-summary-left-${row.wpIndex}`}
-                              className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)} hover:bg-slate-100/70`}
-                              style={{ gridTemplateColumns: leftGridTemplate }}
-                            >
-                              <div className="px-4 py-2 text-sm font-semibold text-slate-600">
-                                Summe WP {row.wpIndex + 1}
-                              </div>
-                              {companySums.map((value, idx) => (
-                                <div
-                                  key={`summary-company-${row.wpIndex}-${idx}`}
-                                  className="px-2 py-2 text-sm font-semibold text-slate-600"
-                                >
-                                  {value.toFixed(2)}
-                                </div>
-                              ))}
-                              <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                                {rowSum.toFixed(2)}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        const wpIndex = row.wpIndex;
-                        const subIndex = row.subIndex;
-                        const isWp = row.type === "wp";
-                        const wpNumber = wpIndex + 1;
-                        const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
-                        const title =
-                          subIndex === null
-                            ? workPackages[wpIndex].title
-                            : workPackages[wpIndex].sub[subIndex].title;
-                        const values =
-                          subIndex === null
-                            ? workPackages[wpIndex].pm
-                            : workPackages[wpIndex].sub[subIndex].pm;
-                        const rowSum = sumForCompanies(values);
-                        const isPending =
-                          pendingDelete?.wpIndex === wpIndex &&
-                          pendingDelete?.type === "sub" &&
-                          pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
-                        const accent =
-                          groupAccentClasses[wpIndex % groupAccentClasses.length];
-                        const isGroupStart = row.type === "wp";
-                        const groupBorder = isGroupStart
-                          ? "border-t border-slate-200"
-                          : "border-t border-slate-100/80";
-                        return (
-                            <div
-                              key={`row-left-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
-                              className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`}
-                              style={{ gridTemplateColumns: leftGridTemplate }}
-                            >
-                              <div className="px-4 py-2">
-                                <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
-                                  <div className="pt-1">
-                                  <span
-                                    className={`inline-flex min-w-[36px] items-center justify-center rounded-full px-2 py-1 font-mono text-xs font-semibold ${
-                                      isWp
-                                        ? "bg-slate-900/10 text-slate-700"
-                                        : "bg-slate-500/10 text-slate-500"
-                                    }`}
-                                  >
-                                    {isWp ? wpNumber : subNumber}
-                                  </span>
-                                </div>
-                                <div className="flex-1">
-                                  <textarea
-                                    value={title}
-                                    onChange={(event) =>
-                                      isWp
-                                        ? updateWpTitle(wpIndex, event.target.value)
-                                        : updateSubTitle(wpIndex, subIndex, event.target.value)
-                                    }
-                                    placeholder={
-                                      isWp
-                                        ? "Arbeitspaket beschreiben..."
-                                        : "Unterarbeitspaket hinzufügen..."
-                                    }
-                                    rows={1}
-                                    className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-snug focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${
-                                      isWp ? "font-semibold" : "font-normal"
-                                    } ${isWp ? "h-[52px]" : "h-[44px]"} overflow-y-auto`}
-                                  />
-                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                    {isWp && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => addSub(wpIndex)}
-                                          disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
-                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
-                                        >
-                                          +
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            requestDelete(
-                                              "sub",
-                                              wpIndex,
-                                              workPackages[wpIndex].sub.length - 1
-                                            )
-                                          }
-                                          disabled={workPackages[wpIndex].sub.length === 0}
-                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300"
-                                        >
-                                          –
-                                        </button>
-                                      </>
-                                    )}
-                                    {isWp && isPending && (
-                                      <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
-                                        Letztes Unterarbeitspaket löschen?
-                                        <button
-                                          type="button"
-                                          onClick={confirmDelete}
-                                          className="rounded border border-rose-200 px-2 py-1 text-rose-700"
-                                        >
-                                          Ja
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={cancelDelete}
-                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600"
-                                        >
-                                          Nein
-                                        </button>
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {activeCompanyIndexes.map((idx) => (
-                              <div
-                                key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`}
-                                className="px-2 py-2"
-                              >
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.1"
-                                  value={values[idx]}
-                                  onChange={(event) =>
-                                    updatePm(wpIndex, subIndex, idx, event.target.value)
-                                  }
-                                  className="h-9 min-w-[100px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
-                                />
-                              </div>
-                            ))}
-
-                            <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                              {rowSum.toFixed(2)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50/70">
-                    <div className="gantt-scroll h-full overflow-x-auto border-l-2 border-slate-200">
-                      <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/90 px-4 py-3 backdrop-blur">
-                        <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
-                          Gantt-Zeitleiste
-                          <span className="text-xs font-medium text-slate-500">
-                            Monate 1–{durationMonths}
-                          </span>
-                        </div>
-                        <div className="mt-2 w-max overflow-hidden rounded-md border border-slate-200 bg-white shadow-subtle">
+                    <div className="border-l border-slate-200 px-4 py-3">
+                      <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
+                        Gantt-Zeitleiste
+                        <span className="text-xs font-medium text-slate-500">
+                          Monate 1–{durationMonths}
+                        </span>
+                      </div>
+                      <div className="mt-2 overflow-x-auto">
+                        <div className="w-max overflow-hidden rounded-md border border-slate-200 bg-white shadow-subtle">
                           <div
                             className="grid text-center text-[11px] font-semibold uppercase text-slate-500"
                             style={monthGridStyle}
@@ -816,72 +644,231 @@
                           </div>
                         </div>
                       </div>
-
-                      <div className="divide-y divide-slate-100/70">
-                        {rows.map((row, rowIndex) => {
-                          if (row.type === "total") {
-                            return (
-                            <div
-                              key={`row-total-gantt-${rowIndex}`}
-                              className={`overflow-hidden border-t border-slate-200 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)}`}
-                            >
-                              <div className="px-4 py-2 text-xs text-slate-500">–</div>
-                            </div>
-                          );
-                        }
-
-                          if (row.type === "summary") {
-                            const accent =
-                              groupAccentClasses[row.wpIndex % groupAccentClasses.length];
-                            return (
-                            <div
-                              key={`row-summary-gantt-${row.wpIndex}`}
-                              className={`overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)} hover:bg-slate-100/70`}
-                            >
-                              <div className="px-4 py-2 text-xs text-slate-400">–</div>
-                            </div>
-                          );
-                        }
-
-                          const wpIndex = row.wpIndex;
-                          const subIndex = row.subIndex;
-                          const accent =
-                            groupAccentClasses[wpIndex % groupAccentClasses.length];
-                          const isGroupStart = row.type === "wp";
-                          const groupBorder = isGroupStart
-                            ? "border-t border-slate-200"
-                            : "border-t border-slate-100/80";
-
-                          return (
-                            <div
-                              key={`row-gantt-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
-                              className={`overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`}
-                            >
-                              <div className="px-4 py-2">
-                                <div className="relative w-max overflow-hidden rounded border border-slate-200 bg-white">
-                                  <div className="gantt-grid" style={monthGridStyle}>
-                                    {Array.from({ length: durationMonths }, (_, index) => (
-                                      <div
-                                        key={`cell-${row.type}-${wpIndex}-${subIndex ?? "root"}-${index}`}
-                                        className="h-6 border-r border-dashed border-slate-200"
-                                      />
-                                    ))}
-                                  </div>
-                                  <div className="pointer-events-none absolute inset-0 rounded border border-transparent" />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
                     </div>
                   </div>
+                </div>
+
+                <div className="divide-y divide-slate-100/70">
+                  {rows.map((row, rowIndex) => {
+                    if (row.type === "total") {
+                      return (
+                        <div
+                          key={`row-total-${rowIndex}`}
+                          className={`grid items-center overflow-hidden border-t border-slate-200 ${getRowTone(
+                            row
+                          )} ${getRowHeight(row)}`}
+                          style={{ gridTemplateColumns: fullGridTemplate }}
+                        >
+                          <div className="px-4 py-2 text-sm font-semibold text-slate-700">
+                            Gesamtsumme
+                          </div>
+                          {totalByCompany.map((value, idx) => (
+                            <div
+                              key={`total-company-${idx}`}
+                              className="px-2 py-2 text-sm font-semibold text-slate-700"
+                            >
+                              {value.toFixed(2)}
+                            </div>
+                          ))}
+                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                            {totalSum.toFixed(2)}
+                          </div>
+                          <div className="border-l border-slate-200 px-4 py-2 text-xs text-slate-500">
+                            –
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (row.type === "summary") {
+                      const wp = workPackages[row.wpIndex];
+                      const companySums = sumByCompany(wp);
+                      const rowSum = companySums.reduce((acc, value) => acc + value, 0);
+                      const accent =
+                        groupAccentClasses[row.wpIndex % groupAccentClasses.length];
+                      return (
+                        <div
+                          key={`row-summary-${row.wpIndex}`}
+                          className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(
+                            row
+                          )} ${getRowHeight(row)} hover:bg-slate-100/70`}
+                          style={{ gridTemplateColumns: fullGridTemplate }}
+                        >
+                          <div className="px-4 py-2 text-sm font-semibold text-slate-600">
+                            Summe WP {row.wpIndex + 1}
+                          </div>
+                          {companySums.map((value, idx) => (
+                            <div
+                              key={`summary-company-${row.wpIndex}-${idx}`}
+                              className="px-2 py-2 text-sm font-semibold text-slate-600"
+                            >
+                              {value.toFixed(2)}
+                            </div>
+                          ))}
+                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                            {rowSum.toFixed(2)}
+                          </div>
+                          <div className="border-l border-slate-200 px-4 py-2 text-xs text-slate-400">
+                            –
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const wpIndex = row.wpIndex;
+                    const subIndex = row.subIndex;
+                    const isWp = row.type === "wp";
+                    const wpNumber = wpIndex + 1;
+                    const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
+                    const title =
+                      subIndex === null
+                        ? workPackages[wpIndex].title
+                        : workPackages[wpIndex].sub[subIndex].title;
+                    const values =
+                      subIndex === null
+                        ? workPackages[wpIndex].pm
+                        : workPackages[wpIndex].sub[subIndex].pm;
+                    const rowSum = sumForCompanies(values);
+                    const isPending =
+                      pendingDelete?.wpIndex === wpIndex &&
+                      pendingDelete?.type === "sub" &&
+                      pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
+                    const accent = groupAccentClasses[wpIndex % groupAccentClasses.length];
+                    const isGroupStart = row.type === "wp";
+                    const groupBorder = isGroupStart
+                      ? "border-t border-slate-200"
+                      : "border-t border-slate-100/80";
+
+                    return (
+                      <div
+                        key={`row-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
+                        className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(
+                          row
+                        )} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`}
+                        style={{ gridTemplateColumns: fullGridTemplate }}
+                      >
+                        <div className="px-4 py-2">
+                          <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
+                            <div className="pt-1">
+                              <span
+                                className={`inline-flex min-w-[36px] items-center justify-center rounded-full px-2 py-1 font-mono text-xs font-semibold ${
+                                  isWp
+                                    ? "bg-slate-900/10 text-slate-700"
+                                    : "bg-slate-500/10 text-slate-500"
+                                }`}
+                              >
+                                {isWp ? wpNumber : subNumber}
+                              </span>
+                            </div>
+                            <div className="flex-1">
+                              <textarea
+                                value={title}
+                                onChange={(event) =>
+                                  isWp
+                                    ? updateWpTitle(wpIndex, event.target.value)
+                                    : updateSubTitle(wpIndex, subIndex, event.target.value)
+                                }
+                                placeholder={
+                                  isWp
+                                    ? "Arbeitspaket beschreiben..."
+                                    : "Unterarbeitspaket hinzufügen..."
+                                }
+                                rows={1}
+                                className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-snug focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${
+                                  isWp ? "font-semibold" : "font-normal"
+                                } h-[40px] overflow-y-auto`}
+                              />
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                {isWp && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => addSub(wpIndex)}
+                                      disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
+                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
+                                    >
+                                      +
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        requestDelete(
+                                          "sub",
+                                          wpIndex,
+                                          workPackages[wpIndex].sub.length - 1
+                                        )
+                                      }
+                                      disabled={workPackages[wpIndex].sub.length === 0}
+                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300"
+                                    >
+                                      –
+                                    </button>
+                                  </>
+                                )}
+                                {isWp && isPending && (
+                                  <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
+                                    Letztes Unterarbeitspaket löschen?
+                                    <button
+                                      type="button"
+                                      onClick={confirmDelete}
+                                      className="rounded border border-rose-200 px-2 py-1 text-rose-700"
+                                    >
+                                      Ja
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelDelete}
+                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600"
+                                    >
+                                      Nein
+                                    </button>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {activeCompanyIndexes.map((idx) => (
+                          <div
+                            key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`}
+                            className="px-2 py-2"
+                          >
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={values[idx]}
+                              onChange={(event) =>
+                                updatePm(wpIndex, subIndex, idx, event.target.value)
+                              }
+                              className="h-9 min-w-[100px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
+                            />
+                          </div>
+                        ))}
+
+                        <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                          {rowSum.toFixed(2)}
+                        </div>
+
+                        <div className="border-l border-slate-200 px-4 py-2">
+                          <div className="h-full overflow-x-auto">
+                            <div className="relative w-max overflow-hidden rounded border border-slate-200 bg-white">
+                              <div className="gantt-grid" style={monthGridStyle}>
+                                {Array.from({ length: durationMonths }, (_, index) => (
+                                  <div
+                                    key={`cell-${row.type}-${wpIndex}-${subIndex ?? "root"}-${index}`}
+                                    className="h-6 border-r border-dashed border-slate-200"
+                                  />
+                                ))}
+                              </div>
+                              <div className="pointer-events-none absolute inset-0 rounded border border-transparent" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1063,6 +1050,99 @@
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                    <h3 className="text-lg font-semibold text-slate-850">Parameter</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Zuschläge und Förderparameter für die Berechnung.
+                    </p>
+                  </div>
+                  <div className="space-y-4 px-5 py-4">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Zuschlagsfaktor (%)
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={parameters.surchargeFactor}
+                        onChange={(event) =>
+                          updateParameter("surchargeFactor", event.target.value, 0, 100)
+                        }
+                        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-700">
+                      Förderquote (%)
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={parameters.fundingRate}
+                        onChange={(event) =>
+                          updateParameter("fundingRate", event.target.value, 0, 100)
+                        }
+                        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-700">
+                      Maximalbetrag (€)
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={parameters.maxAmount}
+                        onChange={(event) => updateParameter("maxAmount", event.target.value, 0)}
+                        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                  <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                    <h3 className="text-lg font-semibold text-slate-850">Ergebnisse</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Berechnungsvorschau (read-only).
+                    </p>
+                  </div>
+                  <div className="space-y-3 px-5 py-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span>Personalkosten</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(results.personnelCosts)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span>Gemeinkostenzuschlag</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(results.overheadSurcharge)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span>Projektsumme</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(results.projectSum)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span>Fördersumme</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(results.fundingSum)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Verschenkter Gesamtbetrag</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(results.forfeitedAmount)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
