@@ -72,206 +72,390 @@
         "Dez",
       ];
 
+      const DATA_ARBEITSPAKETE = [
+        {
+          nr: "1",
+          bezeichnung:
+            "Grundlegende Definition der Anforderungen an den Gärautomaten und das Arbeitsfluid inklusive der Auslegung geeigneter Kristallisationskeime.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "1.1",
+          bezeichnung:
+            "Analyse des zeitabhängigen thermischen Lastprofils des Gärautomaten für die Betriebsmodi Heizen, Kühlen und Schnell- /Schockfrosten sowie Erstellung eines Lasten- und Pflichtenheftes auf Basis der resultierenden Kälte- und Wärmeanforderungen.",
+          pm_ungermann: "0,5",
+        },
+        {
+          nr: "1.2",
+          bezeichnung:
+            "Grobe Dimensionierung der drei Speicherbehälter (zwei Eisbreispeicher und ein Warmsolespeicher) für die Temperaturniveaus −10 °C, −25 °C und 30 °C einschließlich der erforderlichen Wärmedämmung. Ableitung der benötigten Kälteleistung - aus dem zeitabhängigen Lastprofil unter Berücksichtigung der geometrischen Randbedingungen des Kühlraums (ca. 2 × 2 m) für die Versorgung von bis zu zwei Stikkenwagen mit typischen Endprodukten.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "1.3",
+          bezeichnung:
+            "Auslegung des Arbeitsfluids durch Analyse geeigneter Fluidkombinationen (z. B. Wasser/Ethanol) hinsichtlich ihrer Phasendiagramme für den Temperaturbereich von −25 bis +30 °C sowie Bewertung rheologischer, thermophysikalischer und sicherheitsrelevanter Eigenschaften, einschließlich Lebensmittelverträglichkeit, Viskosität, Wärmeübertragungsvermögen und Entflammbarkeit.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "1.4",
+          bezeichnung:
+            "Auslegung geeigneter Partikel als gezielte Kristallisationskeime im Arbeitsfluid unter Berücksichtigung ihrer Dichte, Oberflächenchemie zur Förderung heterogener Nukleation, chemischen Beständigkeit, Lebensmittelverträglichkeit sowie ihres Einflusses auf das viskose Strömungsverhalten.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2",
+          bezeichnung:
+            "Stationäre und dynamische Simulation der einzelnen Kältekreisläufe sowie des Gesamtsystems in Engineering Equation Solver oder Python einschließlich der Optimierung von Anlagen- und Betriebsparametern.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.1",
+          bezeichnung:
+            "Festlegung der Betriebsfälle und Modellgrenzen in Engineering Equation Solver (EES) oder Python durch eindeutige Definition der drei Teilsysteme (Primärkältekreis, Unterkühlungs-/Kristallisationskreis, Speicher-/Verbraucherkreis) und deren Darstellung in einem Blockdiagramm sowie einer vollständigen Variablenliste.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.2",
+          bezeichnung:
+            "Erstellung einer Stoffdatenbasis für Kältemittel, Sole und Eisbrei unter Nutzung von EES-Property-Funktionen oder validierten Literaturdaten sowie Definition eines Enthalpiemodells für Eisbrei mit expliziter Berücksichtigung der latenten Schmelzenthalpie.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.3",
+          bezeichnung:
+            "Stationäre Modellierung des Primärkältekreises durch Formulierung der thermodynamischen Gleichungen für Verdichter, Verflüssiger, Expansionsorgan und Verdampfer sowie Berechnung der resultierenden Leistungs- und Exergiegrößen.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.4",
+          bezeichnung:
+            "Stationäre Modellierung des Unterkühlungs- und Kristallisationskreises durch Abbildung der beiden Varianten (Kristallisationsverdampfer oder Verdampfer mit separatem Kristallisator), Entwicklung eines Kristallisationsmodells zur Berechnung von Unterkühlungsenthalpie, Eismassenanteil und Fluidtemperatur sowie thermische Kopplung an den Primärkältekreis.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.5",
+          bezeichnung:
+            "Dynamische Simulation der Wärme- und Kältespeicher durch Formulierung einer zeitdiskreten Energiebilanz unter Berücksichtigung von Lade- und Entladeleistungen sowie Wärmeverlusten und Berechnung der zeitlichen Entwicklung von Temperatur und Eiskonzentration.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.6",
+          bezeichnung:
+            "Stationäre Modellierung des Verbraucherkreislaufs durch Abbildung der Wärmeübertrager mittels UA-Ansätzen und Berechnung der momentanen Kälteleistung in Abhängigkeit der Zu- und Rücklauftemperaturen des Eisbreis.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.7",
+          bezeichnung:
+            "Zusammenführung aller zuvor modellierten Teilsysteme zu einer zeitabhängigen Gesamtsimulation auf Basis eines numerischen Zeitschrittverfahrens; für jeden Zeitschritt Berechnung der thermischen Leistungsanforderung, des Speicherbetriebszustands, der erforderlichen Verdampfungs- und Kälteleistung, der Betriebsparameter von Supercooler, Kristallisationseinheit und Pumpensystem sowie der Einhaltung aller zulässigen Betriebsgrenzen.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "2.8",
+          bezeichnung:
+            "Nutzung des Gesamtmodells zur Durchführung parametrischer Studien zur Anlagenoptimierung durch systematische Variation zentraler Auslegungsparameter (Speichergröße, maximal zulässige Eiskonzentration, Verdichterleistung, Wärmeübertrager-UA des Supercoolers, Unterkühlungsgrad) und Bewertung der resultierenden Energiebedarfe, COP-Werte, Temperatur- und Druckgrenzen sowie der Betriebsstabilität.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "3",
+          bezeichnung:
+            "Thermodynamische und strömungsmechanische Untersuchung der Nukleation und Eisbildung im Arbeitsfluid.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "3.1",
+          bezeichnung:
+            "Erstellung eines thermodynamisch-energetischen Basismodells für die Nukleation und Eisbildung durch Definition von Fluidtemperatur, Gefrierpunkt, Unterkühlungsgrad und Mischenthalpie aus Flüssig- und Eisphase sowie Berücksichtigung spezifischer Wärmekapazitäten und latenter Schmelzenthalpie.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "3.2",
+          bezeichnung:
+            "Erweiterung des Basismodells um stoffliche, oberflächenbezogene und geometrische Einflussgrößen des realen Arbeitsfluids, einschließlich thermophysikalischer Stoffdaten, Oberflächeneigenschaften des Kristallisationsverdampfers bzw. Kristallisators und relevanter Geometrieparameter, sowie Entwicklung separater Modelle für heterogene Volumennukleation und Wandnukleation.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "3.3",
+          bezeichnung:
+            "Kalibrierung und Validierung des Nukleationsmodells durch Abgleich von experimentell bestimmten Unterkühlungsgraden, Eismassenanteilen und Temperaturverläufen mit den Modellvorhersagen und anschließende Anpassung kritischer Modellparameter bis zur Konsistenz zwischen Experiment und Simulation.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "3.4",
+          bezeichnung:
+            "Durchführung einer systematischen Parameterstudie, in der Geometrie- und Oberflächenparameter (Rohrdurchmesser, Krümmungsradien, Einbauten/Drallkörper, Rauigkeit, effektiver Kontaktwinkel, Beschichtungsvarianten) variiert werden, um die optimale Kombination zur Minimierung von Wandnukleation und Maximierung der Volumennukleation zu bestimmen.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "3.5",
+          bezeichnung:
+            "Durchführung von CFD-Simulationen zur Optimierung der Verdampfergeometrie mit dem Ziel, wandnahe Strömungsgeschwindigkeiten und Wandschubspannungen zu maximieren, um Wandvereisung zu unterdrücken und die Ablösung entstehender Eiskristalle zu gewährleisten.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "4",
+          bezeichnung:
+            "Experimentelle Charakterisierung, Validierung und prototypische Umsetzung des Kristallisationsverdampfers im Temperaturbereich von −10 bis −25 °C.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "4.1",
+          bezeichnung:
+            "Charakterisierung des Arbeitsfluids (z. B. Wasser–Ethanol) durch Bestimmung von Viskosität (Kapillarrohr-Viskometer), Dichte, Wärmekapazität, Wärmeleitfähigkeit, Gefrierpunkt und Wärmeübergangskoeffizienten bei variierenden Temperaturen und Eismassenanteilen.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "4.2",
+          bezeichnung:
+            "Experimentelle Untersuchung zuvor simulierter Oberflächenmaterialien hinsichtlich Unterkühlungsstabilität, Nukleationsneigung, Eisadhäsion und Abriebbeständigkeit; Herstellung definierter Platten oder Rohrsegmente mit simulierten Beschichtungen (z. B. PTFE-artige Schichten oder nickelhaltige Metalloberflächen).",
+          pm_ungermann: "2",
+        },
+        {
+          nr: "4.3",
+          bezeichnung:
+            "Bestimmung des Nukleationszeitpunkts durch Eintauchen der Oberflächen in unterkühlte Fluide und Detektion mittels optischer bzw. akustischer Sensorik sowie Analyse der hydrodynamischen Ablösung und Ermittlung der Eisadhäsionsspannung.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "4.4",
+          bezeichnung:
+            "Systematischer Vergleich der Oberflächenvarianten bezüglich Unterkühlungsstabilität, Nukleationsneigung, Adhäsionskraft und Versuchswiederholbarkeit sowie Ableitung von Designregeln zur Minimierung von Wandausfrierung.",
+          pm_ungermann: "2,5",
+        },
+        {
+          nr: "4.5",
+          bezeichnung:
+            "Aufbau des zuvor simulierten Rohrleitungssystems des Kristallisationsverdampfers für experimentelle Untersuchungen zur Abspülbarkeit von Eiskristallen unter realitätsnahen Strömungsbedingungen.",
+          pm_ungermann: "2,5",
+        },
+        {
+          nr: "4.6",
+          bezeichnung:
+            "Variation der Rohrgeometrie in vier definierten Varianten (Coiled Tubes, wellige Rohre, Rohre mit Helixstrukturen, Rohre mit flachen Noppen) zur Erzeugung lokaler Geschwindigkeitsmaxima sowie gezielter Sekundärströmungen und Wirbelstrukturen an der Wand.",
+          pm_ungermann: "3",
+        },
+        {
+          nr: "4.7",
+          bezeichnung:
+            "Aufbau eines transparenten Teststands (Plexiglasrohrsystem) mit Pumpeneinheit, Kältekreislauf, Beleuchtung und Kamerasystem zur Visualisierung von Kristallisation, Wandbedeckung und Ablöseprozessen.",
+          pm_ungermann: "3",
+        },
+        {
+          nr: "4.8",
+          bezeichnung:
+            "Durchführung systematischer Versuchsreihen unter Variation von Geometrie, Strömungsgeschwindigkeit, Temperatur und Keimpartikelkonzentration zur Quantifizierung und Optimierung der hydrodynamischen Kristallabspülung.",
+          pm_ungermann: "2,5",
+        },
+        {
+          nr: "4.9",
+          bezeichnung:
+            "Optische Auswertung der zeitabhängigen Wandbedeckung durch regelmäßige Bildaufnahme, Bestimmung der Zeit bis zur Ausbildung einer geschlossenen Eisbrücke (Blockade) und Auswahl eines optimalen Rohrdesigns.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "4.10",
+          bezeichnung:
+            "Fertigung eines Prototyps des Kristallisationsverdampfers mit der identifizierten optimalen Rohrgeometrie und Oberflächenbeschichtung sowie Wiederholung der Blockadetests zur quantitativen Bewertung der Betriebsstabilität.",
+          pm_ungermann: "3",
+        },
+        {
+          nr: "5",
+          bezeichnung:
+            "Experimentelle Entwicklung und Validierung eines Supercoolers und eines Kristallisators für den Temperaturbereich von −2 bis −5 °C.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "5.1",
+          bezeichnung:
+            "Erneute experimentelle Untersuchung und Optimierung der Oberflächenbeschichtungen unter angepasster Fluidzusammensetzung durch Herstellung definierter Probekörper, Eintauchen in unterkühlte Fluide sowie Bestimmung von Nukleationszeitpunkt und Eisadhäsionsspannung, um die leistungsfähigsten Oberflächenvarianten zu identifizieren.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "5.2",
+          bezeichnung:
+            "Aufbau eines Verdampfers (Supercoolers) mit nicht optimierter Rohrgeometrie, ausgestattet mit den zuvor identifizierten Beschichtungsvarianten, und experimentelle Bestimmung des maximal stabilen Unterkühlungsgrades bis zur Erstkristallisation zur Auswahl eines finalen, unterkühlungsstabilen Beschichtungssystems.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "5.3",
+          bezeichnung:
+            "Entwicklung und Validierung eines Nukleators mit homogenisierter Strömungsführung und beschichteten Kontaktoberflächen sowie Implementierung aktiver Triggermechanismen (Ultraschall, Peltier-Element). Durchführung systematischer Vergleichsversuche zur Bestimmung der Kristallisationsauslösezeit, der Reproduzierbarkeit und der Robustheit gegenüber thermischen und hydraulischen Störgrößen zur Auswahl des optimalen Auslöseverfahrens.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "5.4",
+          bezeichnung:
+            "Auslegung und experimentelle Prüfung eines thermischen Schutzsystems zur Verhinderung des Eindringens der Kristallisationsfront in den Supercooler durch Integration beheizbarer Rohrabschnitte, Nutzung des temperierten Kältemittels aus dem Verflüssiger sowie Entwicklung eines dazugehörigen Bypass- und Regelkonzeptes zur definierten thermischen Stabilisierung der Grenzbereiche.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "5.5",
+          bezeichnung:
+            "Entwicklung eines präzisen Temperaturregelkonzepts für den Supercooler durch Aufbau einer kaskadierten Regelstruktur, bei der der innere Regler das elektronische Expansionsventil (EEV) steuert und der äußere Regler die Austrittstemperatur des Arbeitsfluids stabil im zulässigen Unterkühlungsbereich hält.",
+          pm_ungermann: "2,5",
+        },
+        {
+          nr: "5.6",
+          bezeichnung:
+            "Experimentelle Untersuchung des Gesamtsystems aus Supercooler und Kristallisator durch Variation von Unterkühlungsgrad, Massenstrom und Triggermechanismus, Messung der stabil erreichbaren Unterkühlung im Supercooler, Erfassung der zeitlichen und mengenmäßigen Kristallbildung im Kristallisator sowie Bewertung der Betriebsstabilität hinsichtlich Temperaturführung, Eismassenanteil und Wiederholbarkeit.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "6",
+          bezeichnung:
+            "Entwicklung eines Systems zur Steuerung der Eisbreikonzentration sowie Auslegung von Peripheriekomponenten.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "6.1",
+          bezeichnung:
+            "Entwicklung eines variablen Rührwerks im Eisbreispeicher, bei dem Höhe und Betriebsparameter gezielt angepasst werden, um eine stabile Eiskonzentration von 20–25 % an den Verbrauchern bereitzustellen.",
+          pm_ungermann: "2",
+        },
+        {
+          nr: "6.2",
+          bezeichnung:
+            "Entwicklung einer Methode zur Bestimmung des Eisanteils über Temperaturmessung oder dichtebasierte Sensorik (z. B. Coriolis), unter Berücksichtigung des Dichteunterschieds zwischen Flüssigphase und Eis.",
+          pm_ungermann: "2",
+        },
+        {
+          nr: "6.3",
+          bezeichnung:
+            "Erarbeitung einer Steuer- und Regelstrategie für ein höhenverstellbares, drehzahlgeregeltes Rührwerk, einschließlich Definition geeigneter Betriebsmodi (z. B. Intervallbetrieb, partielles Rühren im unteren Tankbereich).",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "6.4",
+          bezeichnung:
+            "Durchführung systematischer Versuchsreihen zur Untersuchung des Einflusses von Rührhöhe, Drehzahl und Einschaltdauer auf erreichbare Eiskonzentration und elektrischen Energiebedarf sowie Ableitung einer optimalen Regel- und Steuerstrategie.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "6.5",
+          bezeichnung:
+            "Identifikation geeigneter Pumpentypen für hochviskose, kalte und partikelhaltige Fluide sowie Durchführung von Dauerversuchen zur Bewertung von Förderleistung, Druckverlust, Vereisungsanfälligkeit und Verschleißverhalten bei −25 °C und variierenden Eiskonzentrationen und Keimpartikelanteilen.",
+          pm_ungermann: "1",
+        },
+        {
+          nr: "6.6",
+          bezeichnung:
+            "Entwicklung eines Wärmeübertragers auf der Verbraucherseite, der eine störungsfreie Durchströmung von Eispartikeln ermöglicht, durch Anpassung von Kanal- und Rohrdurchmessern, Minimierung enger Umlenkungen sowie Auswahl geeigneter, abrasionsbeständiger Materialien und Oberflächen.",
+          pm_ungermann: "2",
+        },
+        {
+          nr: "6.7",
+          bezeichnung:
+            "Entwicklung eines Systems zur aktiven Anpassung der Fluidzusammensetzung (z. B. Wasser–Ethanol), um über die konzentrationsabhängige Gefrierpunktkurve unterschiedliche Eisbreitemperaturen gezielt einstellen zu können.",
+          pm_ungermann: "2,5",
+        },
+        {
+          nr: "6.8",
+          bezeichnung:
+            "Aufbau der Hardware zur automatisierten Konzentrationsanpassung, bestehend aus Osmoseeinheit zur Wasserabtrennung, zwei Pufferbehältern (konzentrierte Lösung und Reinstwasser), Dosier- und Mischpumpe sowie Inline-Sensorik (Dichte bzw. Refraktometrie und Temperatur) zur kontinuierlichen Konzentrationsbestimmung.",
+          pm_ungermann: "3",
+        },
+        {
+          nr: "6.9",
+          bezeichnung:
+            "Entwicklung einer Steuerlogik zur Einstellung des Soll-Gefrierpunkts bzw. der Soll-Konzentration (Modus −10 °C oder −25 °C) mittels Rückführung der Inline-Sensorik und Erprobung des Gesamtsystems im Betrieb.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "7",
+          bezeichnung:
+            "Prototypischer Aufbau des Gärautomaten und Entwicklung einer Smart-Grid-gestützten Fahrplanlogik.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "7.1",
+          bezeichnung:
+            "Aufbau der Primärkältemaschine bestehend aus Verdichter, Verflüssiger, Expansionsventil und der thermischen Kopplung des Verdampfers an den Sekundärkreislauf sowie Integration des Verdampfers in den Prozessfluss des Arbeitsfluids.",
+          pm_ungermann: "2",
+        },
+        {
+          nr: "7.2",
+          bezeichnung:
+            "Einbindung des Verdampfers als Kristallisationsmodul im Sekundärkreislauf, sodass Unterkühlung und Kristallisation im selben Bauteil stattfinden, sowie Montage der Eisbreispeicher mit höhenverstellbarem Rührwerk und Sensorik zur Temperatur- und Konzentrationsmessung.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "7.3",
+          bezeichnung:
+            "Installation des Verbraucherkreises mit Sole-Luft-Wärmeübertragern für den Gärautomaten, wobei Kanalgeometrien und Materialauswahl auf die strömungsmechanischen Anforderungen von Eisbrei und Keimpartikeln ausgelegt werden.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "7.4",
+          bezeichnung:
+            "Aufbau des Rohrnetzes und der Pumpentechnik unter Berücksichtigung der hohen Viskosität, der abrasiven Partikelanteile und der niedrigen Betriebstemperaturen (−25 °C) sowie Integration erforderlicher Absperr-, Umschalt- und Regelventile für den systemweiten Betrieb.",
+          pm_ungermann: "1",
+        },
+        {
+          nr: "7.5",
+          bezeichnung:
+            "Installation der Sensor- und Regelungstechnik durch Positionierung von Temperatur-, Druck- und Konzentrationssensoren an Ein- und Austritt des Verdampfers, in kritischen Rohrabschnitten sowie im Eisbreispeicher zur kontinuierlichen Prozessüberwachung.",
+          pm_ungermann: "1",
+        },
+        {
+          nr: "7.6",
+          bezeichnung:
+            "Entwicklung einer prädiktiven Steuerungslogik zur modellbasierten Ableitung optimaler Lade- und Befüllstrategien für zwei sequentiell zu ladende Eisbreispeicher unter Einbezug externer Prognosesignale (Energiepreise, PV-Ertrag) sowie Formulierung von Entscheidungsregeln zu Füllreihenfolge, Sollfüllständen und teil- bzw. vollbefüllten Betriebsweisen.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "7.7",
+          bezeichnung:
+            "Entwicklung selbstlernender Algorithmen zur automatisierten Analyse historischer Lastprofile der Bäckerei und deren Abgleich mit Erzeugungsprognosen, um zeitoptimal gesteuerte Ladezeitpunkte sowie energieeffiziente Betriebsstrategien für die Speicher abzuleiten.",
+          pm_ungermann: "2,5",
+        },
+        {
+          nr: "8",
+          bezeichnung:
+            "Experimentelle Gesamtvalidierung, Leistungsbewertung und Langzeiterprobung des Systems.",
+          pm_ungermann: "",
+        },
+        {
+          nr: "8.1",
+          bezeichnung:
+            "Inbetriebnahme und Funktionsprüfung durch Erstbefüllung des Systems mit reiner Sole ohne Eisanteil sowie Durchführung von Dichtheits-, Druck- und Durchflusstests und anschließender Kalibrierung aller Messketten für Temperatur, Druck, Volumenstrom und Dichte.",
+          pm_ungermann: "0,5",
+        },
+        {
+          nr: "8.2",
+          bezeichnung:
+            "Parametrierung des Kristallisationsverdampfers durch schrittweise Absenkung der Verdampfungstemperatur zur Identifikation eines stabilen Unterkühlungsfensters ohne Festfrieren und Verifizierung des Selbstreinigungseffekts (Eisablösung) durch Analyse lokaler Druckverluste und Temperaturprofile.",
+          pm_ungermann: "1",
+        },
+        {
+          nr: "8.3",
+          bezeichnung:
+            "Test der Eisbreibereitstellung unter realen Betriebsbedingungen durch Durchführung definierter Gärautomat-Zyklen (Gären, Kühlen, Frosten) und Messung der resultierenden Kälteleistung, Eiskonzentration, Produkt-Temperaturverläufe sowie der Strömungsstabilität im Sekundärkältekreislauf.",
+          pm_ungermann: "1",
+        },
+        {
+          nr: "8.4",
+          bezeichnung:
+            "Energetische und hydraulische Bewertung durch Messung der elektrischen Leistungsaufnahme von Verdichter, Pumpen und Rührwerken in verschiedenen Betriebsmodi sowie quantitativer Erfassung der Druckverluste, Identifikation von Bereichen mit erhöhtem Clogging-Risiko und Bestimmung des COP.",
+          pm_ungermann: "1",
+        },
+        {
+          nr: "8.5",
+          bezeichnung:
+            "Langzeittest über mehrere Wochen zur Untersuchung der Stabilität von Eiskonzentration und Fluidzusammensetzung, der Abrasion und des Verschleißverhaltens von Pumpen und Verdampfer sowie des Auftretens möglicher Clogging-Ereignisse und Ableitung geeigneter Reinigungs- und Wartungsintervalle.",
+          pm_ungermann: "1,5",
+        },
+        {
+          nr: "8.6",
+          bezeichnung:
+            "Validierung des Gesamtsystems durch Vergleich der experimentell ermittelten Eismassenanteile, Temperaturprofile und Druckverluste mit den Simulationsergebnissen, Anpassung wesentlicher Modellparameter wie Wärmeübergangs- und rheologischer Kennwerte und Ableitung finaler Auslegungsrichtlinien für die Serienentwicklung.",
+          pm_ungermann: "2,5",
+        },
+      ];
+
       const company1PresetFromAttachments = {
         projectStartDate: "2026-06-01",
         durationMonths: 30,
-        workPackages: [
-          {
-            title: "WP 1",
-            subs: [
-              {
-                title:
-                  "1.1 Analyse des zeitabhängigen thermischen Lastprofils des Gärrautomaten für die Betriebsmodi Heizen, Kühlen und Schnell- / Schockfrosten sowie Erstellung eines Lasten- und Pflichtenheftes auf Basis der resultierenden Kälte- und Wärmeanforderungen.",
-                pmCompany1: 0.5,
-              },
-            ],
-          },
-          {
-            title: "WP 4",
-            subs: [
-              {
-                title:
-                  "4.2 Experimentelle Untersuchung zuvor simulierter Oberflächenmaterialien hinsichtlich Unterkühlungsstabilität, Nukleationsneigung, Eisadhäsion und Abriebbeständigkeit; Herstellung definierter Platten oder Rohrsegmente mit simulierten Beschichtungen (z. B. PTFE-artige Schichten oder nickelhaltige Metalloberflächen).",
-                pmCompany1: 2,
-              },
-              {
-                title:
-                  "4.3 Bestimmung des Nukleationszeitpunkts durch Eintauchen der Oberflächen in unterkühlte Fluide und Detektion mittels optischer bzw. akustischer Sensorik sowie Analyse der hydrodynamischen Ablösung und Ermittlung der Eisadhäsionsspannung.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "4.4 Systematischer Vergleich der Oberflächenvarianten bezüglich Unterkühlungsstabilität, Nukleationsneigung, Adhäsionskraft und Versuchswiederholbarkeit sowie Ableitung von Designregeln zur Minimierung von Wandaufrauung.",
-                pmCompany1: 2.5,
-              },
-              {
-                title:
-                  "4.5 Aufbau des zuvor simulierten Rohrleitungssystems des Kristallisationsverdampfers für experimentelle Untersuchungen zur Abspülbarkeit von Eiskristallen unter realitätsnahen Strömungsbedingungen.",
-                pmCompany1: 2.5,
-              },
-              {
-                title:
-                  "4.6 Variation der Rohrgeometrie in vier definierten Varianten (Coiled Tubes, wellige Rohre, Rohre mit Helixstrukturen, Rohre mit flachen Noppen) zur Erzeugung lokaler Geschwindigkeitsmaxima sowie gezielter Sekundärströmungen und Wirbelstrukturen an der Wand.",
-                pmCompany1: 3,
-              },
-              {
-                title:
-                  "4.7 Aufbau eines transparenten Wandstands (Plexiglasrohrsystem) mit Pumpeneinheit, Kältekreislauf, Beleuchtung und Kamerasystem zur Visualisierung von Kristallisation, Wandbedeckung und Ablöseprozessen.",
-                pmCompany1: 3,
-              },
-              {
-                title:
-                  "4.8 Durchführung systematischer Versuchsreihen unter Variation von Geometrie, Strömungsgeschwindigkeit, Temperatur und Keimpartikelkonzentration zur Quantifizierung und Optimierung.",
-                pmCompany1: 2.5,
-              },
-              {
-                title:
-                  "4.9 Optische Auswertung der zeitabhängigen Wandbedeckung durch regelmäßige Bildaufnahme. Bestimmung der Zeit bis zur Ausbildung einer geschlossenen Eisschicht (Blockade) und Auswahl eines optimalen Rohrdesigns.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "4.10 Fertigung eines Prototyps des Kristallisationsverdampfers mit der identifizierten optimalen Rohrgeometrie und Oberflächenschutzfunktion sowie Bewertung der Blockadetests zur quantitativen Bewertung.",
-                pmCompany1: 3,
-              },
-            ],
-          },
-          {
-            title: "WP 5",
-            subs: [
-              {
-                title:
-                  "5.5 Entwicklung eines präzisen Temperaturregelkonzepts für den Supercooler durch Aufbau einer kaskadierten Regelstruktur, bei der der innere Regler das elektronische Expansionsventil (EEV) steuert und der äußere Regler die Austrittstemperatur des Arbeitsfluids stabil im zulässigen Unterkühlungsbereich hält.",
-                pmCompany1: 2.5,
-              },
-            ],
-          },
-          {
-            title: "WP 6",
-            subs: [
-              {
-                title:
-                  "6.1 Entwicklung eines variablen Rührwerks im Eisbereich, bei dem die Betriebsparameter gezielt angepasst werden, um eine stabile Eiskonzentration von 20–25 % an den Verbrauchern bereitzustellen.",
-                pmCompany1: 2,
-              },
-              {
-                title:
-                  "6.2 Entwicklung einer Methode zur Bestimmung des Eisanteils über Temperaturmessung oder dielektrische Sensorik (z. B. Coriolis), unter Berücksichtigung des",
-                pmCompany1: 2,
-              },
-              {
-                title:
-                  "6.3 Erarbeitung einer Steuer- und Regelstrategie für ein höhenverstellbares, druckgeregeltes Rührwerk, einschließlich Definition geeigneter Betriebsmodi (z. B. Intervallbetrieb, partielles Rühren im unteren Tankbereich).",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "6.4 Durchführung systematischer Versuchsreihen zur Untersuchung des Einflusses von Rührhöhe, Drehzahl und Einschaltpause auf erreichbare Eiskonzentration und elektrischen Energiebedarf sowie Ableitung einer optimalen Regel- und Steuerstrategie.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "6.5 Identifikation geeigneter Pumpentypen für hochviskose, kalte und partikelhaltige Fluide sowie Durchführung von Dauer- und Belastungstests von Förderleistung, Druckverlust, Vereisungsanfälligkeit und Verschleißverhalten bei -25 °C und variierenden Eiskonzentrationen und Keimpartikelanteilen.",
-                pmCompany1: 1,
-              },
-              {
-                title:
-                  "6.6 Entwicklung eines Wärmeübertragers auf der Verbraucherseite, der eine störungsfreie Durchströmung von Eiskristallen ermöglicht, durch Anpassung von Kanal- und Rohrdurchmessern, Minimierung enger Umlenkungen sowie Auswahl geeigneter, abrasionbeständiger Materialien und Oberflächen.",
-                pmCompany1: 2,
-              },
-              {
-                title:
-                  "6.7 Entwicklung eines Systems zur aktiven Anpassung der Fluidzusammensetzung (z. B. Wasser-Ethanol), um über die konzentrationsabhängige Gefrierpunkte für unterschiedliche Eisbereitungsanforderungen einstellen zu können.",
-                pmCompany1: 2.5,
-              },
-              {
-                title:
-                  "6.8 Aufbau der Hardware zur automatisierten Konzentrationsanpassung, bestehend aus Osmoseeinheit zur Wasserabtrennung, zwei Pufferbehältern (konzentrierte Lösung und Restwasser), Dosierr- und Mischpumpe sowie Inline-Sensorik (Dichte bzw. Refraktometrie und Temperatur) zur kontinuierlichen Konzentrationsbestimmung.",
-                pmCompany1: 3,
-              },
-              {
-                title:
-                  "6.9 Entwicklung einer Steuerlogik zur Einstellung des Soll-Gefrierpunkts bzw. der Soll-Konzentration (Modus ~10 °C oder -25 °C) mittels Rückführung der Inline-Sensorik und Erprobung des Gesamtsystems im Betrieb.",
-                pmCompany1: 1.5,
-              },
-            ],
-          },
-          {
-            title: "WP 7",
-            subs: [
-              {
-                title:
-                  "7.1 Aufbau der Primärkältemaschine bestehend aus Verdichter, Verflüssiger, Expansionsventil und thermischer Kopplung des Verdampfers an den Sekundärkreislauf sowie Integration des Verdampfers in den Prozessfluss des Arbeitsfluids.",
-                pmCompany1: 2,
-              },
-              {
-                title:
-                  "7.2 Einbindung des Verdampfers als Kristallisationselement im Sekundärkreislauf, sodass Unterkühlung und Kristallisation im selben Bauteil stattfinden, sowie Montage der Eisbereicher mit höhenverstellbarem Rührwerk und Sensorik zur Temperatur- und Konzentrationsmessung.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "7.3 Installation des Verbraucherkreises mit Sole-Luft-Wärmeübertragern für den Gärraumtunnel, wobei Kanalgeometrien und Materialauswahl auf die strömungsmechanischen Anforderungen von Eisbrei und Keimpartikeln ausgelegt werden.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "7.4 Aufbau des Rohrnetzes und der Pumpentechnik unter Berücksichtigung der hohen Viskosität, der abrasiven Partikelanteile und niedrigen Betriebstemperaturen (-25 °C) sowie Integration erforderlicher Absperr-, Umschalt- und Regelelemente.",
-                pmCompany1: 1,
-              },
-              {
-                title:
-                  "7.5 Installation der Sensor- und Regelungstechnik durch Positionierung von Temperatur-, Druck- und Konzentrationssensoren an Ein- und Austritt des Verdampfers, in kritischen Rohrabschnitten sowie im Eisbereich zur kontinuierlichen Prozessüberwachung.",
-                pmCompany1: 1,
-              },
-              {
-                title:
-                  "7.6 Entwicklung einer prädiktiven Steuerlogik zur modellbasierten Ableitung optimaler Lade- und Befüllstrategien für zwei gleichzeitig zu ladende Eisbreispeicher unter Einbezug externer Prognosesignale (Energiepreise, PV-Ertrag) sowie Formulierung von Entscheidungsregeln für Füll- und Sollfüllstände und teil- bzw. vollbefüllte Betriebsweisen.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "7.7 Entwicklung selbstlernender Algorithmen zur automatisierten Analyse historischer Lastprofile der Bäckerei und deren Abgleich mit Erzeugungsprognosen, um zeitoptimierte und gesteuerte Ladezeitpunkte sowie energieeffiziente Betriebsstrategien für die Speicher abzuleiten.",
-                pmCompany1: 2.5,
-              },
-            ],
-          },
-          {
-            title: "WP 8",
-            subs: [
-              {
-                title:
-                  "8.1 Inbetriebnahme und Funktionsprüfung durch Erstbefüllung des Systems mit reiner Sole ohne Eiskristalle sowie Durchführung von Dichtheits-, Druck- und Durchflusstests einschließlich Kalibrierung aller Messkette für Temperatur, Druck, Volumenstrom und Dichte.",
-                pmCompany1: 0.5,
-              },
-              {
-                title:
-                  "8.2 Parametrierung des Kristallisationsverdampfers durch schrittweise Absenkung der Verdampfungstemperatur zur Identifikation eines stabilen Unterkühlungsfensters.",
-                pmCompany1: 1,
-              },
-              {
-                title:
-                  "8.3 Test der Betriebsbereitschaft unter realen Betriebsbedingungen durch Durchführung definierter Gärraum-Zyklen (Gären, Kühlen, Frosten) und Messung der resultierenden Kälteleistung, Eiskonzentration, Produkt-Temperaturverläufe sowie der Strömungsstabilität im Sekundärkreislauf.",
-                pmCompany1: 3,
-              },
-              {
-                title:
-                  "8.4 Energetische und hydraulische Bewertung durch Messung der elektrischen Leistungsaufnahme von Verdichter, Pumpe und Rührwerken in verschiedenen Betriebsmodi sowie quantitative Erfassung der Druckverluste und Identifikation der Bereiche mit erhöhtem Druckniveau.",
-                pmCompany1: 3,
-              },
-              {
-                title:
-                  "8.5 Langzeittest über mehrere Wochen zur Untersuchung der Stabilität von Eiskonzentration und Fluidzusammensetzung, der Abrasion und des Verschleißverhaltens von Pumpen und Verdampfer sowie des Auftretens möglicher Clogging-Ereignisse und Ableitung geeigneter Reinigungs- und Wartungsintervalle.",
-                pmCompany1: 1.5,
-              },
-              {
-                title:
-                  "8.6 Validierung des Gesamtsystems durch Vergleich der experimentell ermittelten Eismassenströme, Temperaturprofile und Druckverluste mit den Simulationsergebnissen, Anpassung wesentlicher Modellparameter wie Wärmeübergangs- und rheologischer Kennwerte und Ableitung finaler Auslegungsrichtlinien für die Serienentwicklung.",
-                pmCompany1: 2.5,
-              },
-            ],
-          },
-        ],
         company1Employees: [
           {
             partTimeFactor: 1,
@@ -359,18 +543,40 @@
         annualSalary: 0,
       });
 
-      const buildPresetWorkPackages = (preset) => {
-        const buildPmRow = (value) => [value, 0, 0, 0, 0];
-        return preset.workPackages.map((wp, wpIndex) => ({
-          id: `wp-preset-${Date.now()}-${wpIndex}`,
-          title: wp.title,
-          pm: buildPmRow(0),
-          sub: wp.subs.map((sub, subIndex) => ({
-            id: `sub-preset-${Date.now()}-${wpIndex}-${subIndex}`,
-            title: sub.title,
-            pm: buildPmRow(sub.pmCompany1),
-          })),
-        }));
+      const parsePresetPmValue = (value) => {
+        if (value === "" || value === null || value === undefined) return "";
+        const trimmed = `${value}`.trim();
+        if (!trimmed) return "";
+        const normalized = trimmed.replace(",", ".");
+        const parsed = Number.parseFloat(normalized);
+        return Number.isNaN(parsed) ? "" : parsed;
+      };
+
+      const buildPresetWorkPackages = (data) => {
+        const buildPmRow = (value = "") => [value, "", "", "", ""];
+        const result = [];
+        let currentWp = null;
+        data.forEach((entry, index) => {
+          const isHeader = !entry.nr.includes(".");
+          if (isHeader) {
+            currentWp = {
+              id: `wp-preset-${Date.now()}-${index}`,
+              title: entry.bezeichnung,
+              pm: buildPmRow(""),
+              sub: [],
+            };
+            result.push(currentWp);
+            return;
+          }
+          if (!currentWp) return;
+          const pmValue = parsePresetPmValue(entry.pm_ungermann);
+          currentWp.sub.push({
+            id: `sub-preset-${Date.now()}-${index}`,
+            title: entry.bezeichnung,
+            pm: buildPmRow(pmValue),
+          });
+        });
+        return result;
       };
 
       const createEmployeesByCompany = () =>
@@ -808,7 +1014,7 @@
             next[0] = "Ungermann GmbH";
             return next;
           });
-          setWorkPackages(buildPresetWorkPackages(company1PresetFromAttachments));
+          setWorkPackages(buildPresetWorkPackages(DATA_ARBEITSPAKETE));
           setEmployeesByCompany((prev) => {
             const next = [...prev];
             next[0] = company1PresetFromAttachments.company1Employees.map((employee) => ({
