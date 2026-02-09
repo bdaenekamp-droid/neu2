@@ -54,7 +54,6 @@
       const MAX_SUB = 20;
       const MAX_DURATION = 60;
       const MAX_EMPLOYEES = 10;
-      const MAX_PACKAGE_DURATION = 10;
       const YEAR_CAP_PM = 10.5;
       const STORAGE_KEY = "zim-fe-kostenkalkulation-v3";
 
@@ -107,6 +106,18 @@
         tabellenEintraege: {},
       });
 
+      const createEmployee = () => ({
+        partTimeFactor: 1,
+        projectPercent: 100,
+        name: "",
+        weeklyHours: 40,
+        actualHours: 40,
+        annualSalary: 0,
+      });
+
+      const createEmployeesByCompany = () =>
+        Array.from({ length: 5 }, () => [createEmployee()]);
+
       const normalizeCompanyData = (data) => {
         const base = Array.from({ length: 5 }, () => createCompanyData());
         if (!Array.isArray(data)) return base;
@@ -131,23 +142,6 @@
           return new Date(fallback.getFullYear(), fallback.getMonth(), 1);
         }
         return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
-      };
-
-      const formatDate = (date) =>
-        date.toLocaleDateString("de-DE", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-
-      const getMonthStartDate = (startDateValue, index) => {
-        const base = parseDate(startDateValue);
-        return new Date(base.getFullYear(), base.getMonth() + index, 1);
-      };
-
-      const getMonthEndDate = (startDateValue, index) => {
-        const base = parseDate(startDateValue);
-        return new Date(base.getFullYear(), base.getMonth() + index + 1, 0);
       };
 
       const buildTimeline = (startDateValue, duration) => {
@@ -183,21 +177,16 @@
           Array.from({ length: 5 }, (_, index) => `Unternehmen ${index + 1}`)
         );
         const [workPackages, setWorkPackages] = useState([createWp(0)]);
-        const [employees, setEmployees] = useState([
-          {
-            partTimeFactor: 1,
-            projectPercent: 100,
-            name: "",
-            weeklyHours: 40,
-            actualHours: 40,
-            annualSalary: 0,
-          },
-        ]);
+        const [employeesByCompany, setEmployeesByCompany] = useState(() =>
+          createEmployeesByCompany()
+        );
         const [companyData, setCompanyData] = useState(() => normalizeCompanyData());
-        const [planByCompany, setPlanByCompany] = useState({});
-        const [planStaleByCompany, setPlanStaleByCompany] = useState({});
         const [pendingDelete, setPendingDelete] = useState(null);
-        const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(false);
+        const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(null);
+        const ganttScrollRef = React.useRef(null);
+        const ganttTimelineRef = React.useRef(null);
+        const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
+        const [ganttMaxScroll, setGanttMaxScroll] = useState(0);
 
         useEffect(() => {
           const saved = localStorage.getItem(STORAGE_KEY);
@@ -222,8 +211,18 @@
               if (parsed?.durationMonths) {
                 setDurationMonths(parsed.durationMonths);
               }
-              if (Array.isArray(parsed?.employees) && parsed.employees.length) {
-                setEmployees(parsed.employees);
+              if (Array.isArray(parsed?.employeesByCompany)) {
+                const base = createEmployeesByCompany();
+                setEmployeesByCompany(
+                  base.map((fallback, index) => {
+                    const list = parsed.employeesByCompany[index];
+                    return Array.isArray(list) && list.length ? list : fallback;
+                  })
+                );
+              } else if (Array.isArray(parsed?.employees) && parsed.employees.length) {
+                const base = createEmployeesByCompany();
+                base[0] = parsed.employees;
+                setEmployeesByCompany(base);
               }
               if (parsed?.companyData) {
                 setCompanyData(normalizeCompanyData(parsed.companyData));
@@ -236,9 +235,6 @@
                   maximalbetrag: parseNumber(parsed.parameters.maxAmount),
                 }));
                 setCompanyData(next);
-              }
-              if (parsed?.planByCompany) {
-                setPlanByCompany(parsed.planByCompany);
               }
             } catch (error) {
               console.warn("Lokaler Zustand konnte nicht geladen werden", error);
@@ -255,9 +251,8 @@
               companyNames,
               startDate,
               durationMonths,
-              employees,
+              employeesByCompany,
               companyData,
-              planByCompany,
             })
           );
         }, [
@@ -266,10 +261,26 @@
           companyNames,
           startDate,
           durationMonths,
-          employees,
+          employeesByCompany,
           companyData,
-          planByCompany,
         ]);
+
+        useEffect(() => {
+          const updateMetrics = () => {
+            if (!ganttScrollRef.current) return;
+            const { scrollWidth, clientWidth, scrollLeft } = ganttScrollRef.current;
+            const maxScroll = Math.max(0, scrollWidth - clientWidth);
+            setGanttMaxScroll(maxScroll);
+            setGanttScrollLeft(Math.min(scrollLeft, maxScroll));
+            if (ganttTimelineRef.current) {
+              ganttTimelineRef.current.scrollLeft = scrollLeft;
+            }
+          };
+
+          updateMetrics();
+          window.addEventListener("resize", updateMetrics);
+          return () => window.removeEventListener("resize", updateMetrics);
+        }, [durationMonths]);
 
         const activeCompanyIndexes = useMemo(
           () => Array.from({ length: companyCount }, (_, index) => index),
@@ -296,32 +307,34 @@
           }, {});
         }, [timeline]);
 
-        const employeeCosts = useMemo(() => {
-          return employees.map((employee) => {
-            const annualCostBase = parseNumber(employee.annualSalary);
-            const typicalHours = parseNumber(employee.weeklyHours);
-            const actualHours = parseNumber(employee.actualHours);
-            const hourFactor =
-              typicalHours > 0 ? actualHours / typicalHours : 1;
-            const partTimeFactor = clampNumber(
-              parseNumber(employee.partTimeFactor),
-              0,
-              1
-            );
-            const projectFactor = clampNumber(
-              parseNumber(employee.projectPercent) / 100,
-              0,
-              1
-            );
-            const annualProjectCost =
-              annualCostBase * hourFactor * partTimeFactor * projectFactor;
-            const costPerPM = annualProjectCost / 12;
-            return {
-              annualProjectCost,
-              costPerPM,
-            };
-          });
-        }, [employees]);
+        const employeeCostsByCompany = useMemo(() => {
+          return employeesByCompany.map((companyEmployees) =>
+            companyEmployees.map((employee) => {
+              const annualCostBase = parseNumber(employee.annualSalary);
+              const typicalHours = parseNumber(employee.weeklyHours);
+              const actualHours = parseNumber(employee.actualHours);
+              const hourFactor =
+                typicalHours > 0 ? actualHours / typicalHours : 1;
+              const partTimeFactor = clampNumber(
+                parseNumber(employee.partTimeFactor),
+                0,
+                1
+              );
+              const projectFactor = clampNumber(
+                parseNumber(employee.projectPercent) / 100,
+                0,
+                1
+              );
+              const annualProjectCost =
+                annualCostBase * hourFactor * partTimeFactor * projectFactor;
+              const costPerPM = annualProjectCost / 12;
+              return {
+                annualProjectCost,
+                costPerPM,
+              };
+            })
+          );
+        }, [employeesByCompany]);
 
         const rows = useMemo(() => {
           const list = [];
@@ -366,20 +379,6 @@
           }, {});
         }, [workPackageRows, activeCompanyIndexes]);
 
-        const markPlanStale = (companyIndex = null) => {
-          setPlanStaleByCompany((prev) => {
-            const next = { ...prev };
-            if (companyIndex === null) {
-              activeCompanyIndexes.forEach((idx) => {
-                next[idx] = true;
-              });
-            } else {
-              next[companyIndex] = true;
-            }
-            return next;
-          });
-        };
-
         const updateWpTitle = (wpIndex, value) => {
           setWorkPackages((prev) => {
             const next = [...prev];
@@ -402,7 +401,6 @@
 
         const updatePm = (wpIndex, subIndex, companyIndex, value) => {
           const numeric = parseNumber(value);
-          markPlanStale(companyIndex);
           setWorkPackages((prev) => {
             const next = [...prev];
             if (subIndex === null) {
@@ -469,59 +467,63 @@
           setPendingDelete(null);
         };
 
-        const addEmployee = () => {
-          setEmployees((prev) => {
-            if (prev.length >= MAX_EMPLOYEES) return prev;
-            return [
-              ...prev,
-              {
-                partTimeFactor: 1,
-                projectPercent: 100,
-                name: "",
-                weeklyHours: 40,
-                actualHours: 40,
-                annualSalary: 0,
-              },
-            ];
+        const addEmployee = (companyIndex) => {
+          setEmployeesByCompany((prev) => {
+            const next = [...prev];
+            const companyEmployees = [...(next[companyIndex] || [])];
+            if (companyEmployees.length >= MAX_EMPLOYEES) return prev;
+            companyEmployees.push(createEmployee());
+            next[companyIndex] = companyEmployees;
+            return next;
           });
         };
 
-        const requestEmployeeRemove = () => {
-          if (!employees.length) return;
-          setPendingEmployeeDelete(true);
+        const requestEmployeeRemove = (companyIndex) => {
+          const companyEmployees = employeesByCompany[companyIndex] || [];
+          if (!companyEmployees.length) return;
+          setPendingEmployeeDelete(companyIndex);
         };
 
-        const cancelEmployeeRemove = () => setPendingEmployeeDelete(false);
+        const cancelEmployeeRemove = () => setPendingEmployeeDelete(null);
 
         const confirmEmployeeRemove = () => {
-          setEmployees((prev) => prev.slice(0, -1));
-          setPendingEmployeeDelete(false);
+          if (pendingEmployeeDelete === null) return;
+          setEmployeesByCompany((prev) => {
+            const next = [...prev];
+            const companyEmployees = [...(next[pendingEmployeeDelete] || [])];
+            companyEmployees.pop();
+            next[pendingEmployeeDelete] = companyEmployees.length
+              ? companyEmployees
+              : [createEmployee()];
+            return next;
+          });
+          setPendingEmployeeDelete(null);
         };
 
-        const updateEmployeeField = (index, field, value) => {
-          markPlanStale();
-          setEmployees((prev) => {
+        const updateEmployeeField = (companyIndex, employeeIndex, field, value) => {
+          setEmployeesByCompany((prev) => {
             const next = [...prev];
-            next[index] = { ...next[index], [field]: value };
+            const companyEmployees = [...(next[companyIndex] || [])];
+            companyEmployees[employeeIndex] = {
+              ...companyEmployees[employeeIndex],
+              [field]: value,
+            };
+            next[companyIndex] = companyEmployees;
             return next;
           });
         };
 
-        const updateEmployeeNumber = (index, field, value, min, max = null) => {
+        const updateEmployeeNumber = (
+          companyIndex,
+          employeeIndex,
+          field,
+          value,
+          min,
+          max = null
+        ) => {
           const numeric = parseNumber(value);
           const clamped = max === null ? Math.max(min, numeric) : clampNumber(numeric, min, max);
-          updateEmployeeField(index, field, clamped);
-        };
-
-        const updateParameter = (companyIndex, field, value, min, max = null) => {
-          const numeric = parseNumber(value);
-          const clamped = max === null ? Math.max(min, numeric) : clampNumber(numeric, min, max);
-          setCompanyData((prev) => {
-            const next = [...prev];
-            const entry = { ...next[companyIndex], [field]: clamped };
-            next[companyIndex] = entry;
-            return next;
-          });
+          updateEmployeeField(companyIndex, employeeIndex, field, clamped);
         };
 
         const updateCompanyTableEntry = (companyIndex, rowId, field, value) => {
@@ -536,6 +538,24 @@
             next[companyIndex] = entry;
             return next;
           });
+        };
+
+        const handleGanttScroll = (event) => {
+          setGanttScrollLeft(event.currentTarget.scrollLeft);
+          if (ganttTimelineRef.current) {
+            ganttTimelineRef.current.scrollLeft = event.currentTarget.scrollLeft;
+          }
+        };
+
+        const handleGanttSliderChange = (event) => {
+          const value = parseInt(event.target.value, 10) || 0;
+          setGanttScrollLeft(value);
+          if (ganttScrollRef.current) {
+            ganttScrollRef.current.scrollLeft = value;
+          }
+          if (ganttTimelineRef.current) {
+            ganttTimelineRef.current.scrollLeft = value;
+          }
         };
 
         const sumForCompanies = (pmValues) =>
@@ -573,23 +593,12 @@
           () => ({ gridTemplateColumns: `repeat(${durationMonths}, minmax(32px, 40px))` }),
           [durationMonths]
         );
-        const fullGridTemplate = useMemo(
-          () => `${leftGridTemplate} minmax(420px, 1fr)`,
-          [leftGridTemplate]
-        );
         const groupAccentClasses = [
           "border-l-sky-300",
           "border-l-indigo-300",
           "border-l-emerald-300",
           "border-l-amber-300",
           "border-l-rose-300",
-        ];
-        const companyBarClasses = [
-          "bg-sky-500",
-          "bg-indigo-500",
-          "bg-emerald-500",
-          "bg-amber-500",
-          "bg-rose-500",
         ];
 
         const getRowTone = (row) => {
@@ -603,7 +612,7 @@
         };
 
         const getRowHeight = (row) => {
-          if (row.type === "header") return "h-[96px]";
+          if (row.type === "header") return "h-[120px]";
           return "h-[64px]";
         };
 
@@ -615,187 +624,43 @@
             maximumFractionDigits: 2,
           }).format(value || 0);
 
-        const buildYearMonthCount = (startIndex, duration) => {
-          const counts = {};
-          for (let offset = 0; offset < duration; offset += 1) {
-            const entry = timeline[startIndex + offset];
-            if (!entry) continue;
-            counts[entry.year] = (counts[entry.year] || 0) + 1;
-          }
-          return counts;
-        };
+        const projectMonthsByYear = useMemo(() => {
+          return timeline.reduce((acc, entry) => {
+            acc[entry.year] = (acc[entry.year] || 0) + 1;
+            return acc;
+          }, {});
+        }, [timeline]);
 
-        const buildRemainingCaps = (basePlans, excludeCompanyIndex = null) => {
-          const remaining = employees.map(() => ({ ...yearCaps }));
-          Object.entries(basePlans || {}).forEach(([companyId, plans]) => {
-            const numericCompanyId = parseInt(companyId, 10);
-            if (excludeCompanyIndex !== null && numericCompanyId === excludeCompanyIndex) {
-              return;
-            }
-            Object.values(plans || {}).forEach((plan) => {
-              if (!plan || plan.status === "unplannable") return;
-              const { employeeId, startMonthIndex, durationMonths, pmDemand } = plan;
-              if (employeeId === null || employeeId === undefined) return;
-              const monthCounts = buildYearMonthCount(startMonthIndex, durationMonths);
-              const pmPerMonth = pmDemand / durationMonths;
-              Object.entries(monthCounts).forEach(([year, months]) => {
-                if (!remaining[employeeId]) return;
-                remaining[employeeId][year] =
-                  (remaining[employeeId][year] || 0) - pmPerMonth * months;
+        const usedPmByCompanyEmployeeYear = useMemo(() => {
+          return activeCompanyIndexes.reduce((acc, companyIndex) => {
+            const companyEmployees = employeesByCompany[companyIndex] || [];
+            const used = companyEmployees.map(() => ({}));
+            const totalMonths = durationMonths || 1;
+            (filteredWorkPackageRowsByCompany[companyIndex] || []).forEach((row) => {
+              const pmDemand = row.pmByCompany?.[companyIndex] || 0;
+              if (!pmDemand) return;
+              const entry = companyData[companyIndex]?.tabellenEintraege?.[row.id] || {};
+              const employeeNumber = parseInt(entry.mitarbeiterNummer, 10);
+              if (!employeeNumber || employeeNumber < 1) return;
+              const employeeIndex = employeeNumber - 1;
+              if (!used[employeeIndex]) return;
+              const pmPerMonth = pmDemand / totalMonths;
+              Object.entries(projectMonthsByYear).forEach(([year, months]) => {
+                used[employeeIndex][year] =
+                  (used[employeeIndex][year] || 0) + pmPerMonth * months;
               });
             });
-          });
-          return remaining;
-        };
-
-        const planCompany = (companyIndex, remainingCaps) => {
-          const demands = workPackages.flatMap((wp, wpIndex) => {
-            const base = [
-              {
-                id: wp.id,
-                number: `${wpIndex + 1}`,
-                title: wp.title,
-                pmDemand: wp.pm[companyIndex] || 0,
-              },
-            ];
-            const subs = wp.sub.map((sub, subIndex) => ({
-              id: sub.id,
-              number: `${wpIndex + 1}.${subIndex + 1}`,
-              title: sub.title,
-              pmDemand: sub.pm[companyIndex] || 0,
-            }));
-            return [...base, ...subs];
-          });
-
-          const filteredDemands = demands
-            .filter((item) => item.pmDemand > 0)
-            .sort((a, b) => b.pmDemand - a.pmDemand);
-
-          const planned = {};
-          filteredDemands.forEach((demand) => {
-            const duration = Math.min(
-              MAX_PACKAGE_DURATION,
-              durationMonths,
-              Math.max(1, Math.ceil(demand.pmDemand))
-            );
-            const maxStart = durationMonths - duration;
-            let assignment = null;
-
-            for (let startIndex = 0; startIndex <= maxStart; startIndex += 1) {
-              const monthCounts = buildYearMonthCount(startIndex, duration);
-              const pmPerMonth = demand.pmDemand / duration;
-              const pmByYear = Object.entries(monthCounts).reduce((acc, [year, months]) => {
-                acc[year] = pmPerMonth * months;
-                return acc;
-              }, {});
-
-              const candidates = employees
-                .map((_, empIndex) => {
-                  const fits = Object.entries(pmByYear).every(([year, pmValue]) => {
-                    const remaining = remainingCaps[empIndex]?.[year] ?? 0;
-                    return remaining + 1e-6 >= pmValue;
-                  });
-                  return fits ? empIndex : null;
-                })
-                .filter((value) => value !== null);
-
-              if (candidates.length) {
-                const best = candidates.sort((a, b) => {
-                  const diff = employeeCosts[b].costPerPM - employeeCosts[a].costPerPM;
-                  return diff !== 0 ? diff : a - b;
-                })[0];
-                assignment = {
-                  employeeId: best,
-                  startMonthIndex: startIndex,
-                  durationMonths: duration,
-                  pmDemand: demand.pmDemand,
-                  pmByYear,
-                  status: "planned",
-                };
-                break;
-              }
-            }
-
-            if (!assignment) {
-              planned[demand.id] = {
-                employeeId: null,
-                startMonthIndex: null,
-                durationMonths: duration,
-                pmDemand: demand.pmDemand,
-                status: "unplannable",
-              };
-              return;
-            }
-
-            Object.entries(assignment.pmByYear).forEach(([year, pmValue]) => {
-              remainingCaps[assignment.employeeId][year] -= pmValue;
-            });
-
-            const startDateValue = getMonthStartDate(
-              startDate,
-              assignment.startMonthIndex
-            );
-            const endDateValue = getMonthEndDate(
-              startDate,
-              assignment.startMonthIndex + assignment.durationMonths - 1
-            );
-
-            planned[demand.id] = {
-              ...assignment,
-              startDate: formatDate(startDateValue),
-              endDate: formatDate(endDateValue),
-              cost: assignment.pmDemand * employeeCosts[assignment.employeeId].costPerPM,
-            };
-          });
-
-          return planned;
-        };
-
-        const handleAutoPlanCompany = (companyIndex) => {
-          setPlanByCompany((prev) => {
-            const remainingCaps = buildRemainingCaps(prev, companyIndex);
-            const planned = planCompany(companyIndex, remainingCaps);
-            return {
-              ...prev,
-              [companyIndex]: planned,
-            };
-          });
-          setPlanStaleByCompany((prev) => ({ ...prev, [companyIndex]: false }));
-        };
-
-        const handleAutoPlanAll = () => {
-          const remainingCaps = employees.map(() => ({ ...yearCaps }));
-          const nextPlans = {};
-          activeCompanyIndexes.forEach((companyIndex) => {
-            const planned = planCompany(companyIndex, remainingCaps);
-            nextPlans[companyIndex] = planned;
-          });
-          setPlanByCompany(nextPlans);
-          setPlanStaleByCompany(
-            activeCompanyIndexes.reduce((acc, idx) => {
-              acc[idx] = false;
-              return acc;
-            }, {})
-          );
-        };
-
-        const usedCapsByEmployeeYear = useMemo(() => {
-          const used = employees.map(() => ({}));
-          Object.values(planByCompany || {}).forEach((plans) => {
-            Object.values(plans || {}).forEach((plan) => {
-              if (!plan || plan.status === "unplannable") return;
-              const { employeeId, startMonthIndex, durationMonths, pmDemand } = plan;
-              if (employeeId === null || employeeId === undefined) return;
-              const monthCounts = buildYearMonthCount(startMonthIndex, durationMonths);
-              const pmPerMonth = pmDemand / durationMonths;
-              Object.entries(monthCounts).forEach(([year, months]) => {
-                used[employeeId][year] =
-                  (used[employeeId][year] || 0) + pmPerMonth * months;
-              });
-            });
-          });
-          return used;
-        }, [planByCompany, employees, timeline]);
+            acc[companyIndex] = used;
+            return acc;
+          }, {});
+        }, [
+          activeCompanyIndexes,
+          employeesByCompany,
+          filteredWorkPackageRowsByCompany,
+          companyData,
+          projectMonthsByYear,
+          durationMonths,
+        ]);
 
         return (
           <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -910,7 +775,6 @@
                     value={startDate}
                     onChange={(event) => {
                       setStartDate(event.target.value);
-                      markPlanStale();
                     }}
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   />
@@ -934,7 +798,6 @@
                             MAX_DURATION
                           )
                         );
-                        markPlanStale();
                       }
                     }
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -942,63 +805,279 @@
                 </div>
               </div>
 
-              <div className="mb-6 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-subtle">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Begriffe &amp; Regeln
-                </h2>
-                <ul className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                    <strong>PM</strong> = Personenmonate (Dezimalwerte möglich).
-                  </li>
-                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                    <strong>Projektzeitraum</strong> = Startdatum + Laufzeit (Monate).
-                  </li>
-                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                    <strong>Kalenderjahr-Cap</strong> = max. 10,5 PM/Jahr, anteilig proratiert.
-                  </li>
-                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                    <strong>Arbeitspaketdauer</strong> = max. 10 Monate am Stück.
-                  </li>
-                  <li className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
-                    <strong>Ziel</strong> = Personalkosten maximieren bei Einhaltung aller Caps.
-                  </li>
-                </ul>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Projektplanung
+                  </p>
+                  <h2 className="text-xl font-semibold text-slate-850">
+                    Projektplanung gesamt
+                  </h2>
+                </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
-                  <div
-                    className={`grid items-stretch ${getRowHeight({ type: "header" })}`}
-                    style={{ gridTemplateColumns: fullGridTemplate }}
-                  >
-                    <div className="px-4 py-4 text-sm font-semibold text-slate-700">
-                      Arbeitspaket
-                    </div>
-                    {activeCompanyIndexes.map((idx) => (
+                <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                  <div className="border-b border-slate-200 lg:border-b-0 lg:border-r">
+                    <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
                       <div
-                        key={`header-company-${idx}`}
-                        className="px-2 py-4 text-xs font-semibold uppercase text-slate-500"
+                        className={`grid items-stretch ${getRowHeight({ type: "header" })}`}
+                        style={{ gridTemplateColumns: leftGridTemplate }}
                       >
-                        <span
-                          className="block max-w-[260px] whitespace-normal break-words leading-tight"
-                          title={companyNames[idx] || `Unternehmen ${idx + 1}`}
-                        >
-                          {companyNames[idx] || `Unternehmen ${idx + 1}`}
-                        </span>
+                        <div className="px-4 py-4 text-sm font-semibold text-slate-700">
+                          Arbeitspaket
+                        </div>
+                        {activeCompanyIndexes.map((idx) => (
+                          <div
+                            key={`header-company-${idx}`}
+                            className="px-2 py-4 text-xs font-semibold uppercase text-slate-500"
+                          >
+                            <span
+                              className="block max-w-[260px] whitespace-normal break-words leading-tight"
+                              title={companyNames[idx] || `Unternehmen ${idx + 1}`}
+                            >
+                              {companyNames[idx] || `Unternehmen ${idx + 1}`}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">
+                          Summe
+                        </div>
                       </div>
-                    ))}
-                    <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">
-                      Summe
                     </div>
-                    <div className="border-l border-slate-200 px-4 py-3">
-                      <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
-                        Gantt-Zeitleiste
-                        <span className="text-xs font-medium text-slate-500">
-                          Monate 1–{durationMonths}
-                        </span>
-                      </div>
-                      <div className="mt-2 overflow-x-auto">
-                        <div className="w-max overflow-hidden rounded-md border border-slate-200 bg-white shadow-subtle">
+
+                    <div className="divide-y divide-slate-100/70">
+                      {rows.map((row, rowIndex) => {
+                        if (row.type === "total") {
+                          return (
+                            <div
+                              key={`row-total-${rowIndex}`}
+                              className={`grid items-center overflow-hidden border-t border-slate-200 ${getRowTone(
+                                row
+                              )} ${getRowHeight(row)}`}
+                              style={{ gridTemplateColumns: leftGridTemplate }}
+                            >
+                              <div className="px-4 py-2 text-sm font-semibold text-slate-700">
+                                Gesamtsumme
+                              </div>
+                              {totalByCompany.map((value, idx) => (
+                                <div
+                                  key={`total-company-${idx}`}
+                                  className="px-2 py-2 text-sm font-semibold text-slate-700"
+                                >
+                                  {value.toFixed(2)}
+                                </div>
+                              ))}
+                              <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                                {totalSum.toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (row.type === "summary") {
+                          const wp = workPackages[row.wpIndex];
+                          const companySums = sumByCompany(wp);
+                          const rowSum = companySums.reduce((acc, value) => acc + value, 0);
+                          const accent =
+                            groupAccentClasses[row.wpIndex % groupAccentClasses.length];
+                          return (
+                            <div
+                              key={`row-summary-${row.wpIndex}`}
+                              className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(
+                                row
+                              )} ${getRowHeight(row)} hover:bg-slate-100/70`}
+                              style={{ gridTemplateColumns: leftGridTemplate }}
+                            >
+                              <div className="px-4 py-2 text-sm font-semibold text-slate-600">
+                                Summe WP {row.wpIndex + 1}
+                              </div>
+                              {companySums.map((value, idx) => (
+                                <div
+                                  key={`summary-company-${row.wpIndex}-${idx}`}
+                                  className="px-2 py-2 text-sm font-semibold text-slate-600"
+                                >
+                                  {value.toFixed(2)}
+                                </div>
+                              ))}
+                              <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                                {rowSum.toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const wpIndex = row.wpIndex;
+                        const subIndex = row.subIndex;
+                        const isWp = row.type === "wp";
+                        const wpNumber = wpIndex + 1;
+                        const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
+                        const title =
+                          subIndex === null
+                            ? workPackages[wpIndex].title
+                            : workPackages[wpIndex].sub[subIndex].title;
+                        const values =
+                          subIndex === null
+                            ? workPackages[wpIndex].pm
+                            : workPackages[wpIndex].sub[subIndex].pm;
+                        const rowSum = sumForCompanies(values);
+                        const isPending =
+                          pendingDelete?.wpIndex === wpIndex &&
+                          pendingDelete?.type === "sub" &&
+                          pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
+                        const accent = groupAccentClasses[wpIndex % groupAccentClasses.length];
+                        const isGroupStart = row.type === "wp";
+                        const groupBorder = isGroupStart
+                          ? "border-t border-slate-200"
+                          : "border-t border-slate-100/80";
+
+                        return (
+                          <div
+                            key={`row-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
+                            className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(
+                              row
+                            )} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`}
+                            style={{ gridTemplateColumns: leftGridTemplate }}
+                          >
+                            <div className="px-4 py-2">
+                              <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
+                                <div className="pt-1">
+                                  <span
+                                    className={`inline-flex min-w-[36px] items-center justify-center rounded-full px-2 py-1 font-mono text-xs font-semibold ${
+                                      isWp
+                                        ? "bg-slate-900/10 text-slate-700"
+                                        : "bg-slate-500/10 text-slate-500"
+                                    }`}
+                                  >
+                                    {isWp ? wpNumber : subNumber}
+                                  </span>
+                                </div>
+                                <div className="flex-1">
+                                  <textarea
+                                    value={title}
+                                    onChange={(event) =>
+                                      isWp
+                                        ? updateWpTitle(wpIndex, event.target.value)
+                                        : updateSubTitle(wpIndex, subIndex, event.target.value)
+                                    }
+                                    placeholder={
+                                      isWp
+                                        ? "Arbeitspaket beschreiben..."
+                                        : "Unterarbeitspaket hinzufügen..."
+                                    }
+                                    rows={1}
+                                    className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-snug focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${
+                                      isWp ? "font-semibold" : "font-normal"
+                                    } h-[40px] overflow-y-auto`}
+                                  />
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                    {isWp && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => addSub(wpIndex)}
+                                          disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
+                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
+                                        >
+                                          +
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            requestDelete(
+                                              "sub",
+                                              wpIndex,
+                                              workPackages[wpIndex].sub.length - 1
+                                            )
+                                          }
+                                          disabled={workPackages[wpIndex].sub.length === 0}
+                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300"
+                                        >
+                                          –
+                                        </button>
+                                      </>
+                                    )}
+                                    {isWp && isPending && (
+                                      <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
+                                        Letztes Unterarbeitspaket löschen?
+                                        <button
+                                          type="button"
+                                          onClick={confirmDelete}
+                                          className="rounded border border-rose-200 px-2 py-1 text-rose-700"
+                                        >
+                                          Ja
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={cancelDelete}
+                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600"
+                                        >
+                                          Nein
+                                        </button>
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {activeCompanyIndexes.map((idx) => (
+                              <div
+                                key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`}
+                                className="px-2 py-2"
+                              >
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={values[idx]}
+                                  onChange={(event) =>
+                                    updatePm(wpIndex, subIndex, idx, event.target.value)
+                                  }
+                                  className="h-9 min-w-[100px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
+                                />
+                              </div>
+                            ))}
+
+                            <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                              {rowSum.toFixed(2)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                      <div
+                        className={`flex h-full flex-col px-4 py-3 ${getRowHeight({
+                          type: "header",
+                        })}`}
+                      >
+                        <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
+                          Gantt-Zeitleiste
+                          <span className="text-xs font-medium text-slate-500">
+                            Monate 1–{durationMonths}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0"
+                            max={ganttMaxScroll}
+                            value={ganttScrollLeft}
+                            onChange={handleGanttSliderChange}
+                            className="h-2 w-full accent-slate-600"
+                          />
+                          <span className="text-[11px] font-medium text-slate-500">
+                            Scroll
+                          </span>
+                        </div>
+                        <div
+                          ref={ganttTimelineRef}
+                          className="mt-2 w-full overflow-hidden rounded-md border border-slate-200 bg-white"
+                        >
                           <div
                             className="grid text-center text-[11px] font-semibold uppercase text-slate-500"
                             style={monthGridStyle}
@@ -1029,769 +1108,432 @@
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="divide-y divide-slate-100/70">
-                  {rows.map((row, rowIndex) => {
-                    if (row.type === "total") {
-                      return (
-                        <div
-                          key={`row-total-${rowIndex}`}
-                          className={`grid items-center overflow-hidden border-t border-slate-200 ${getRowTone(
-                            row
-                          )} ${getRowHeight(row)}`}
-                          style={{ gridTemplateColumns: fullGridTemplate }}
-                        >
-                          <div className="px-4 py-2 text-sm font-semibold text-slate-700">
-                            Gesamtsumme
-                          </div>
-                          {totalByCompany.map((value, idx) => (
-                            <div
-                              key={`total-company-${idx}`}
-                              className="px-2 py-2 text-sm font-semibold text-slate-700"
-                            >
-                              {value.toFixed(2)}
-                            </div>
-                          ))}
-                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                            {totalSum.toFixed(2)}
-                          </div>
-                          <div className="border-l border-slate-200 px-4 py-2 text-xs text-slate-500">
-                            –
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (row.type === "summary") {
-                      const wp = workPackages[row.wpIndex];
-                      const companySums = sumByCompany(wp);
-                      const rowSum = companySums.reduce((acc, value) => acc + value, 0);
-                      const accent =
-                        groupAccentClasses[row.wpIndex % groupAccentClasses.length];
-                      return (
-                        <div
-                          key={`row-summary-${row.wpIndex}`}
-                          className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(
-                            row
-                          )} ${getRowHeight(row)} hover:bg-slate-100/70`}
-                          style={{ gridTemplateColumns: fullGridTemplate }}
-                        >
-                          <div className="px-4 py-2 text-sm font-semibold text-slate-600">
-                            Summe WP {row.wpIndex + 1}
-                          </div>
-                          {companySums.map((value, idx) => (
-                            <div
-                              key={`summary-company-${row.wpIndex}-${idx}`}
-                              className="px-2 py-2 text-sm font-semibold text-slate-600"
-                            >
-                              {value.toFixed(2)}
-                            </div>
-                          ))}
-                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                            {rowSum.toFixed(2)}
-                          </div>
-                          <div className="border-l border-slate-200 px-4 py-2 text-xs text-slate-400">
-                            –
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    const wpIndex = row.wpIndex;
-                    const subIndex = row.subIndex;
-                    const isWp = row.type === "wp";
-                    const wpNumber = wpIndex + 1;
-                    const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
-                    const title =
-                      subIndex === null
-                        ? workPackages[wpIndex].title
-                        : workPackages[wpIndex].sub[subIndex].title;
-                    const rowId =
-                      subIndex === null
-                        ? workPackages[wpIndex].id
-                        : workPackages[wpIndex].sub[subIndex].id;
-                    const values =
-                      subIndex === null
-                        ? workPackages[wpIndex].pm
-                        : workPackages[wpIndex].sub[subIndex].pm;
-                    const rowSum = sumForCompanies(values);
-                    const isPending =
-                      pendingDelete?.wpIndex === wpIndex &&
-                      pendingDelete?.type === "sub" &&
-                      pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
-                    const accent = groupAccentClasses[wpIndex % groupAccentClasses.length];
-                    const isGroupStart = row.type === "wp";
-                    const groupBorder = isGroupStart
-                      ? "border-t border-slate-200"
-                      : "border-t border-slate-100/80";
-                    const ganttPlans = activeCompanyIndexes
-                      .map((companyIndex) => {
-                        const entry = planByCompany?.[companyIndex]?.[rowId];
-                        if (!entry || entry.status === "unplannable") return null;
-                        return {
-                          ...entry,
-                          companyIndex,
-                        };
-                      })
-                      .filter(Boolean);
-
-                    return (
-                      <div
-                        key={`row-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
-                        className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(
-                          row
-                        )} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`}
-                        style={{ gridTemplateColumns: fullGridTemplate }}
-                      >
-                        <div className="px-4 py-2">
-                          <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
-                            <div className="pt-1">
-                              <span
-                                className={`inline-flex min-w-[36px] items-center justify-center rounded-full px-2 py-1 font-mono text-xs font-semibold ${
-                                  isWp
-                                    ? "bg-slate-900/10 text-slate-700"
-                                    : "bg-slate-500/10 text-slate-500"
-                                }`}
-                              >
-                                {isWp ? wpNumber : subNumber}
-                              </span>
-                            </div>
-                            <div className="flex-1">
-                              <textarea
-                                value={title}
-                                onChange={(event) =>
-                                  isWp
-                                    ? updateWpTitle(wpIndex, event.target.value)
-                                    : updateSubTitle(wpIndex, subIndex, event.target.value)
-                                }
-                                placeholder={
-                                  isWp
-                                    ? "Arbeitspaket beschreiben..."
-                                    : "Unterarbeitspaket hinzufügen..."
-                                }
-                                rows={1}
-                                className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-snug focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${
-                                  isWp ? "font-semibold" : "font-normal"
-                                } h-[40px] overflow-y-auto`}
-                              />
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                {isWp && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => addSub(wpIndex)}
-                                      disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
-                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
-                                    >
-                                      +
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        requestDelete(
-                                          "sub",
-                                          wpIndex,
-                                          workPackages[wpIndex].sub.length - 1
-                                        )
-                                      }
-                                      disabled={workPackages[wpIndex].sub.length === 0}
-                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300"
-                                    >
-                                      –
-                                    </button>
-                                  </>
-                                )}
-                                {isWp && isPending && (
-                                  <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
-                                    Letztes Unterarbeitspaket löschen?
-                                    <button
-                                      type="button"
-                                      onClick={confirmDelete}
-                                      className="rounded border border-rose-200 px-2 py-1 text-rose-700"
-                                    >
-                                      Ja
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={cancelDelete}
-                                      className="rounded border border-slate-200 px-2 py-1 text-slate-600"
-                                    >
-                                      Nein
-                                    </button>
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {activeCompanyIndexes.map((idx) => (
-                          <div
-                            key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`}
-                            className="px-2 py-2"
-                          >
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={values[idx]}
-                              onChange={(event) =>
-                                updatePm(wpIndex, subIndex, idx, event.target.value)
-                              }
-                              className="h-9 min-w-[100px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
-                            />
-                          </div>
-                        ))}
-
-                        <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                          {rowSum.toFixed(2)}
-                        </div>
-
-                        <div className="border-l border-slate-200 px-4 py-2">
-                          <div className="h-full overflow-x-auto">
-                            <div className="relative w-max overflow-hidden rounded border border-slate-200 bg-white">
-                              <div className="gantt-grid" style={monthGridStyle}>
-                                {Array.from({ length: durationMonths }, (_, index) => (
-                                  <div
-                                    key={`cell-${row.type}-${wpIndex}-${subIndex ?? "root"}-${index}`}
-                                    className="h-6 border-r border-dashed border-slate-200"
-                                  />
-                                ))}
-                              </div>
-                              <div className="pointer-events-none absolute inset-0">
-                                <div className="gantt-grid h-full" style={monthGridStyle}>
-                                  {ganttPlans.map((plan, index) => (
-                                    <div
-                                      key={`gantt-plan-${rowId}-${plan.companyIndex}`}
-                                      className="relative"
-                                      style={{
-                                        gridColumn: `${plan.startMonthIndex + 1} / span ${
-                                          plan.durationMonths
-                                        }`,
-                                      }}
-                                    >
-                                      <div
-                                        className={`absolute left-0 right-0 rounded-full ${companyBarClasses[plan.companyIndex]}`}
-                                        style={{
-                                          height: "4px",
-                                          top: `${2 + index * 4}px`,
-                                        }}
-                                        title={`Unternehmen ${plan.companyIndex + 1}: ${
-                                          plan.startDate
-                                        } – ${plan.endDate}`}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="pointer-events-none absolute inset-0 rounded border border-transparent" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-10 rounded-xl border border-slate-200 bg-white shadow-subtle">
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-850">Mitarbeiter</h2>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Planung von Teilzeitfaktoren, Projekteinsatz und Personalkosten.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={addEmployee}
-                      disabled={employees.length >= MAX_EMPLOYEES}
-                      className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      + Mitarbeiter
-                    </button>
-                    <button
-                      type="button"
-                      onClick={requestEmployeeRemove}
-                      disabled={employees.length === 0}
-                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-subtle transition hover:border-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
-                    >
-                      – Mitarbeiter
-                    </button>
-                  </div>
-                </div>
-                {pendingEmployeeDelete && (
-                  <div className="flex flex-wrap items-center justify-end gap-2 border-b border-slate-200 px-5 py-2 text-xs text-rose-600">
-                    Letzten Mitarbeiter wirklich löschen?
-                    <button
-                      type="button"
-                      onClick={confirmEmployeeRemove}
-                      className="rounded border border-rose-200 px-2 py-1 text-rose-700"
-                    >
-                      Ja
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEmployeeRemove}
-                      className="rounded border border-slate-200 px-2 py-1 text-slate-600"
-                    >
-                      Nein
-                    </button>
-                  </div>
-                )}
-
-                <div className="max-h-[360px] overflow-y-auto">
-                  <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
                     <div
-                      className="grid items-center text-xs font-semibold uppercase text-slate-500"
-                      style={{ gridTemplateColumns: employeeGridTemplate }}
+                      ref={ganttScrollRef}
+                      onScroll={handleGanttScroll}
+                      className="overflow-x-auto"
                     >
-                      <div className="px-4 py-3">Teilzeitfaktor</div>
-                      <div className="px-4 py-3">Projekteinsatz %</div>
-                      <div className="px-4 py-3">Name</div>
-                      <div className="px-4 py-3">Typische Wochenstunden</div>
-                      <div className="px-4 py-3">Tatsächliche Wochenstunden</div>
-                      <div className="px-4 py-3">Jahresgehalt</div>
-                    </div>
-                  </div>
-
-                  <div className="divide-y divide-slate-100">
-                    {employees.map((employee, index) => (
-                      <div
-                        key={`employee-${index}`}
-                        className={`grid items-center h-[56px] bg-white ${
-                          index % 2 === 0 ? "" : "bg-slate-50/60"
-                        }`}
-                        style={{ gridTemplateColumns: employeeGridTemplate }}
-                      >
-                        <div className="px-4">
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={employee.partTimeFactor}
-                            onChange={(event) =>
-                              updateEmployeeNumber(
-                                index,
-                                "partTimeFactor",
-                                event.target.value,
-                                0,
-                                1
-                              )
-                            }
-                            className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        </div>
-                        <div className="px-4">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={employee.projectPercent}
-                            onChange={(event) =>
-                              updateEmployeeNumber(
-                                index,
-                                "projectPercent",
-                                event.target.value,
-                                0,
-                                100
-                              )
-                            }
-                            className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        </div>
-                        <div className="px-4">
-                          <input
-                            type="text"
-                            value={employee.name}
-                            onChange={(event) =>
-                              updateEmployeeField(index, "name", event.target.value)
-                            }
-                            placeholder={`Mitarbeiter ${index + 1}`}
-                            className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        </div>
-                        <div className="px-4">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={employee.weeklyHours}
-                            onChange={(event) =>
-                              updateEmployeeNumber(
-                                index,
-                                "weeklyHours",
-                                event.target.value,
-                                0
-                              )
-                            }
-                            className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        </div>
-                        <div className="px-4">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={employee.actualHours}
-                            onChange={(event) =>
-                              updateEmployeeNumber(
-                                index,
-                                "actualHours",
-                                event.target.value,
-                                0
-                              )
-                            }
-                            className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        </div>
-                        <div className="px-4">
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              step="100"
-                              value={employee.annualSalary}
-                              onChange={(event) =>
-                                updateEmployeeNumber(
-                                  index,
-                                  "annualSalary",
-                                  event.target.value,
-                                  0
-                                )
-                              }
-                              className="h-9 w-full rounded-md border border-slate-300 px-2 pr-7 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                            />
-                            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-slate-500">
-                              €
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 rounded-xl border border-slate-200 bg-white shadow-subtle">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                  <h3 className="text-lg font-semibold text-slate-850">
-                    Mitarbeiter-Auslastung (pro Jahr)
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Jahres-Cap (10,5 PM anteilig) vs. zugewiesene PM aus der Auto-Planung.
-                  </p>
-                </div>
-                <div className="grid gap-4 p-5 lg:grid-cols-2">
-                  {projectYears.map((year) => (
-                    <div
-                      key={`utilization-${year}`}
-                      className="rounded-lg border border-slate-200 bg-white shadow-subtle"
-                    >
-                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-                        Kalenderjahr {year}
-                      </div>
-                      <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr_0.8fr] border-b border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase text-slate-500">
-                        <div>Name</div>
-                        <div>Cap PM</div>
-                        <div>Zugewiesen</div>
-                        <div className="text-right">Auslastung</div>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                        {employees.map((employee, index) => {
-                          const capPM = yearCaps[year] || 0;
-                          const usedPM = usedCapsByEmployeeYear[index]?.[year] || 0;
-                          const utilization = capPM > 0 ? (usedPM / capPM) * 100 : 0;
+                      <div className="w-max divide-y divide-slate-100/70">
+                        {rows.map((row, rowIndex) => {
+                          const wpIndex = row.wpIndex;
+                          const accent =
+                            row.type === "summary" || row.type === "wp" || row.type === "sub"
+                              ? groupAccentClasses[wpIndex % groupAccentClasses.length]
+                              : "";
+                          const isGroupStart = row.type === "wp";
+                          const groupBorder = isGroupStart
+                            ? "border-t border-slate-200"
+                            : "border-t border-slate-100/80";
                           return (
                             <div
-                              key={`utilization-${year}-${index}`}
-                              className={`grid grid-cols-[1.4fr_0.9fr_0.9fr_0.8fr] items-center px-4 py-2 text-sm ${
-                                index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
-                              }`}
+                              key={`gantt-row-${row.type}-${rowIndex}`}
+                              className={`px-4 py-2 ${groupBorder} ${accent} ${getRowTone(
+                                row
+                              )} ${getRowHeight(row)}`}
                             >
-                              <div className="font-medium text-slate-700">
-                                {employee.name || `Mitarbeiter ${index + 1}`}
-                              </div>
-                              <div className="text-slate-600">{capPM.toFixed(2)} PM</div>
-                              <div className="text-slate-600">{usedPM.toFixed(2)} PM</div>
-                              <div className="text-right font-semibold text-slate-700">
-                                {utilization.toFixed(0)}%
+                              <div className="relative w-max overflow-hidden rounded border border-slate-200 bg-white">
+                                <div className="gantt-grid" style={monthGridStyle}>
+                                  {Array.from({ length: durationMonths }, (_, index) => (
+                                    <div
+                                      key={`cell-${row.type}-${rowIndex}-${index}`}
+                                      className="h-6 border-r border-dashed border-slate-200"
+                                    />
+                                  ))}
+                                </div>
                               </div>
                             </div>
                           );
                         })}
                       </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-subtle">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-850">
-                    Automatische Planung
-                  </h3>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Die Zuordnung maximiert die Personalkosten unter Jahres-Caps,
-                    Projektzeitraum und maximal 10 Monaten pro Paket.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAutoPlanAll}
-                  className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition hover:bg-slate-800"
-                >
-                  Auto-Plan für alle Unternehmen
-                </button>
-              </div>
-
-              <div className="mt-6 grid gap-4 lg:grid-cols-2">
+              <div className="mt-10 space-y-8">
                 {activeCompanyIndexes.map((companyIndex) => {
-                  const company = companyData[companyIndex] || createCompanyData();
                   const companyName =
                     companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
+                  const companyEmployees = employeesByCompany[companyIndex] || [];
+                  const companyCosts = employeeCostsByCompany[companyIndex] || [];
+                  const companyRows = filteredWorkPackageRowsByCompany[companyIndex] || [];
+                  const usedPmByEmployee = usedPmByCompanyEmployeeYear[companyIndex] || [];
                   return (
-                    <div
-                      key={`company-section-${companyIndex}`}
+                    <section
+                      key={`company-planning-${companyIndex}`}
                       className="rounded-2xl border border-slate-200 bg-white p-5 shadow-subtle"
                     >
-                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Unternehmen
-                          </p>
-                          <h3 className="mt-2 text-xl font-semibold text-slate-850">
-                            {companyName}
-                          </h3>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {planStaleByCompany?.[companyIndex] && (
-                            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                              Plan veraltet
-                            </span>
+                      <div className="border-b border-slate-200 pb-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Unternehmensplanung
+                        </p>
+                        <h3 className="mt-2 text-xl font-semibold text-slate-850">
+                          Unternehmensplanung: {companyName}
+                        </h3>
+                      </div>
+
+                      <div className="mt-6 space-y-6">
+                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+                            <div>
+                              <h4 className="text-lg font-semibold text-slate-850">
+                                Mitarbeiter
+                              </h4>
+                              <p className="mt-1 text-sm text-slate-600">
+                                Mitarbeitende für {companyName} (max. {MAX_EMPLOYEES}).
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => addEmployee(companyIndex)}
+                                disabled={companyEmployees.length >= MAX_EMPLOYEES}
+                                className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-subtle transition disabled:cursor-not-allowed disabled:bg-slate-300"
+                              >
+                                + Mitarbeiter
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => requestEmployeeRemove(companyIndex)}
+                                disabled={companyEmployees.length === 0}
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-subtle transition hover:border-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+                              >
+                                – Mitarbeiter
+                              </button>
+                            </div>
+                          </div>
+                          {pendingEmployeeDelete === companyIndex && (
+                            <div className="flex flex-wrap items-center justify-end gap-2 border-b border-slate-200 px-5 py-2 text-xs text-rose-600">
+                              Letzten Mitarbeiter wirklich löschen?
+                              <button
+                                type="button"
+                                onClick={confirmEmployeeRemove}
+                                className="rounded border border-rose-200 px-2 py-1 text-rose-700"
+                              >
+                                Ja
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEmployeeRemove}
+                                className="rounded border border-slate-200 px-2 py-1 text-slate-600"
+                              >
+                                Nein
+                              </button>
+                            </div>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => handleAutoPlanCompany(companyIndex)}
-                            className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-subtle transition hover:bg-slate-800"
-                          >
-                            Auto-Plan (Kosten maximieren)
-                          </button>
-                        </div>
-                      </div>
 
-                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                            <h3 className="text-lg font-semibold text-slate-850">Parameter</h3>
-                            <p className="mt-1 text-sm text-slate-600">
-                              Zuschläge und Förderparameter für dieses Unternehmen.
-                            </p>
-                          </div>
-                          <div className="space-y-4 px-5 py-4">
-                            <label className="block text-sm font-medium text-slate-700">
-                              Zuschlagsfaktor (%)
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                                value={company.zuschlagsfaktorPercent}
-                                onChange={(event) =>
-                                  updateParameter(
-                                    companyIndex,
-                                    "zuschlagsfaktorPercent",
-                                    event.target.value,
-                                    0,
-                                    100
-                                  )
-                                }
-                                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                              />
-                            </label>
-                            <label className="block text-sm font-medium text-slate-700">
-                              Förderquote (%)
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                                value={company.foerderquotePercent}
-                                onChange={(event) =>
-                                  updateParameter(
-                                    companyIndex,
-                                    "foerderquotePercent",
-                                    event.target.value,
-                                    0,
-                                    100
-                                  )
-                                }
-                                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                              />
-                            </label>
-                            <label className="block text-sm font-medium text-slate-700">
-                              Maximalbetrag (€)
-                              <input
-                                type="number"
-                                min="0"
-                                step="100"
-                                value={company.maximalbetrag}
-                                onChange={(event) =>
-                                  updateParameter(
-                                    companyIndex,
-                                    "maximalbetrag",
-                                    event.target.value,
-                                    0
-                                  )
-                                }
-                                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                              />
-                            </label>
-                          </div>
-                        </div>
+                          <div className="max-h-[360px] overflow-y-auto">
+                            <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                              <div
+                                className="grid items-center text-xs font-semibold uppercase text-slate-500"
+                                style={{ gridTemplateColumns: employeeGridTemplate }}
+                              >
+                                <div className="px-4 py-3">Teilzeitfaktor</div>
+                                <div className="px-4 py-3">Projekteinsatz %</div>
+                                <div className="px-4 py-3">Name</div>
+                                <div className="px-4 py-3">Typische Wochenstunden</div>
+                                <div className="px-4 py-3">
+                                  Tatsächliche Wochenstunden
+                                </div>
+                                <div className="px-4 py-3">Jahresgehalt</div>
+                              </div>
+                            </div>
 
-                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                            <h3 className="text-lg font-semibold text-slate-850">Ergebnisse</h3>
-                            <p className="mt-1 text-sm text-slate-600">
-                              Berechnungsvorschau (read-only).
-                            </p>
-                          </div>
-                          <div className="space-y-3 px-5 py-4 text-sm text-slate-700">
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                              <span>Personalkosten</span>
-                              <span className="font-semibold text-slate-900">
-                                {formatCurrency(company.ergebnisse.personalkosten)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                              <span>Gemeinkostenzuschlag</span>
-                              <span className="font-semibold text-slate-900">
-                                {formatCurrency(company.ergebnisse.gemeinkostenzuschlag)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                              <span>Projektsumme</span>
-                              <span className="font-semibold text-slate-900">
-                                {formatCurrency(company.ergebnisse.projektsumme)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                              <span>Fördersumme</span>
-                              <span className="font-semibold text-slate-900">
-                                {formatCurrency(company.ergebnisse.foerdersumme)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span>Verschenkter Gesamtbetrag</span>
-                              <span className="font-semibold text-slate-900">
-                                {formatCurrency(company.ergebnisse.verschenkterGesamtbetrag)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-subtle">
-                        <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-                          <h4 className="text-lg font-semibold text-slate-850">
-                            Zuordnung Arbeitspakete &amp; Mitarbeitende
-                          </h4>
-                          <p className="mt-1 text-sm text-slate-600">
-                            Automatisch gefilterte Pakete mit PM &gt; 0 inkl. Zeitraum,
-                            Mitarbeitenden und Personalkosten.
-                          </p>
-                        </div>
-                        <div className="max-h-[320px] overflow-auto">
-                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-                            <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
-                              <div className="px-4 py-3">WP-Nr.</div>
-                              <div className="px-4 py-3">Arbeitspaket</div>
-                              <div className="px-4 py-3">Zeitraum</div>
-                              <div className="px-4 py-3">MA-Nr.</div>
-                              <div className="px-4 py-3 text-right">Kosten</div>
-                            </div>
-                          </div>
-                          <div className="divide-y divide-slate-100">
-                            {(filteredWorkPackageRowsByCompany[companyIndex] || []).map(
-                              (row, index) => {
-                                const entry = company.tabellenEintraege?.[row.id] || {};
-                                const planEntry =
-                                  planByCompany?.[companyIndex]?.[row.id] || null;
-                                const isPlanned = planEntry?.status === "planned";
-                                const isUnplannable = planEntry?.status === "unplannable";
-                                const zeitraumValue = isPlanned
-                                  ? `${planEntry.startDate} – ${planEntry.endDate}`
-                                  : entry.zeitraum || "";
-                                const maValue = isPlanned
-                                  ? planEntry.employeeId + 1
-                                  : entry.mitarbeiterNummer || "";
-                                const costValue = isPlanned
-                                  ? formatCurrency(planEntry.cost)
-                                  : isUnplannable
-                                  ? "Nicht planbar"
-                                  : "–";
-                              return (
+                            <div className="divide-y divide-slate-100">
+                              {companyEmployees.map((employee, index) => (
                                 <div
-                                  key={`company-${companyIndex}-row-${row.id}`}
-                                  className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] items-center ${
-                                    index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                                  key={`company-${companyIndex}-employee-${index}`}
+                                  className={`grid items-center h-[56px] bg-white ${
+                                    index % 2 === 0 ? "" : "bg-slate-50/60"
                                   }`}
+                                  style={{ gridTemplateColumns: employeeGridTemplate }}
                                 >
-                                  <div className="px-4 py-2 text-sm font-semibold text-slate-700">
-                                    {row.number}
-                                  </div>
-                                  <div className="px-4 py-2">
-                                    <input
-                                      type="text"
-                                      readOnly
-                                      value={row.title || ""}
-                                      placeholder="Arbeitspaket-Titel"
-                                      className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
-                                    />
-                                  </div>
-                                  <div className="px-4 py-2">
-                                    <input
-                                      type="text"
-                                      value={zeitraumValue}
-                                      readOnly
-                                      placeholder="Auto-Plan erforderlich"
-                                      className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
-                                    />
-                                  </div>
-                                  <div className="px-4 py-2">
+                                  <div className="px-4">
                                     <input
                                       type="number"
-                                      min="1"
-                                      step="1"
-                                      value={maValue}
-                                      readOnly
-                                      placeholder="Auto-Plan"
-                                      className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
+                                      min="0"
+                                      max="1"
+                                      step="0.1"
+                                      value={employee.partTimeFactor}
+                                      onChange={(event) =>
+                                        updateEmployeeNumber(
+                                          companyIndex,
+                                          index,
+                                          "partTimeFactor",
+                                          event.target.value,
+                                          0,
+                                          1
+                                        )
+                                      }
+                                      className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                                     />
                                   </div>
-                                  <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                                    {isUnplannable ? (
-                                      <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">
-                                        Nicht planbar
+                                  <div className="px-4">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      step="0.1"
+                                      value={employee.projectPercent}
+                                      onChange={(event) =>
+                                        updateEmployeeNumber(
+                                          companyIndex,
+                                          index,
+                                          "projectPercent",
+                                          event.target.value,
+                                          0,
+                                          100
+                                        )
+                                      }
+                                      className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                  <div className="px-4">
+                                    <input
+                                      type="text"
+                                      value={employee.name}
+                                      onChange={(event) =>
+                                        updateEmployeeField(
+                                          companyIndex,
+                                          index,
+                                          "name",
+                                          event.target.value
+                                        )
+                                      }
+                                      placeholder={`Mitarbeiter ${index + 1}`}
+                                      className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                  <div className="px-4">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.5"
+                                      value={employee.weeklyHours}
+                                      onChange={(event) =>
+                                        updateEmployeeNumber(
+                                          companyIndex,
+                                          index,
+                                          "weeklyHours",
+                                          event.target.value,
+                                          0
+                                        )
+                                      }
+                                      className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                  <div className="px-4">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.5"
+                                      value={employee.actualHours}
+                                      onChange={(event) =>
+                                        updateEmployeeNumber(
+                                          companyIndex,
+                                          index,
+                                          "actualHours",
+                                          event.target.value,
+                                          0
+                                        )
+                                      }
+                                      className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                  <div className="px-4">
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="100"
+                                        value={employee.annualSalary}
+                                        onChange={(event) =>
+                                          updateEmployeeNumber(
+                                            companyIndex,
+                                            index,
+                                            "annualSalary",
+                                            event.target.value,
+                                            0
+                                          )
+                                        }
+                                        className="h-9 w-full rounded-md border border-slate-300 px-2 pr-7 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                      />
+                                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-slate-500">
+                                        €
                                       </span>
-                                    ) : (
-                                      costValue
-                                    )}
+                                    </div>
                                   </div>
                                 </div>
-                              );
-                              }
-                            )}
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                            <h4 className="text-lg font-semibold text-slate-850">
+                              Zuordnung Arbeitspakete und Mitarbeitende
+                            </h4>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Zeigt nur Arbeitspakete mit PM &gt; 0 aus der Projektplanung.
+                            </p>
+                          </div>
+                          <div className="max-h-[320px] overflow-auto">
+                            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+                              <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
+                                <div className="px-4 py-3">WP-Nr.</div>
+                                <div className="px-4 py-3">Arbeitspaket</div>
+                                <div className="px-4 py-3">Zeitraum</div>
+                                <div className="px-4 py-3">MA-Nr.</div>
+                                <div className="px-4 py-3 text-right">Kosten</div>
+                              </div>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {companyRows.map((row, index) => {
+                                const entry =
+                                  companyData[companyIndex]?.tabellenEintraege?.[row.id] || {};
+                                const employeeNumber = parseInt(entry.mitarbeiterNummer, 10);
+                                const employeeIndex = employeeNumber ? employeeNumber - 1 : null;
+                                const pmDemand = row.pmByCompany?.[companyIndex] || 0;
+                                const costPerPM =
+                                  employeeIndex !== null
+                                    ? companyCosts[employeeIndex]?.costPerPM || 0
+                                    : 0;
+                                const costValue =
+                                  employeeIndex !== null && pmDemand > 0
+                                    ? formatCurrency(pmDemand * costPerPM)
+                                    : "–";
+                                return (
+                                  <div
+                                    key={`company-${companyIndex}-row-${row.id}`}
+                                    className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] items-center ${
+                                      index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                                    }`}
+                                  >
+                                    <div className="px-4 py-2 text-sm font-semibold text-slate-700">
+                                      {row.number}
+                                    </div>
+                                    <div className="px-4 py-2">
+                                      <input
+                                        type="text"
+                                        readOnly
+                                        value={row.title || ""}
+                                        placeholder="Arbeitspaket-Titel"
+                                        className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
+                                      />
+                                    </div>
+                                    <div className="px-4 py-2">
+                                      <input
+                                        type="text"
+                                        value={entry.zeitraum || ""}
+                                        onChange={(event) =>
+                                          updateCompanyTableEntry(
+                                            companyIndex,
+                                            row.id,
+                                            "zeitraum",
+                                            event.target.value
+                                          )
+                                        }
+                                        placeholder="Zeitraum (später)"
+                                        className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                      />
+                                    </div>
+                                    <div className="px-4 py-2">
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max={companyEmployees.length || 1}
+                                        step="1"
+                                        value={entry.mitarbeiterNummer || ""}
+                                        onChange={(event) =>
+                                          updateCompanyTableEntry(
+                                            companyIndex,
+                                            row.id,
+                                            "mitarbeiterNummer",
+                                            event.target.value
+                                          )
+                                        }
+                                        placeholder="MA-Nr."
+                                        className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                      />
+                                    </div>
+                                    <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                                      {costValue}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
+                          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                            <h4 className="text-lg font-semibold text-slate-850">
+                              Mitarbeiter-Auslastung
+                            </h4>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Pro Kalenderjahr: PM (oben) und prozentuale Auslastung.
+                            </p>
+                          </div>
+                          <div className="overflow-auto">
+                            <div
+                              className="grid min-w-[480px] items-center border-b border-slate-200 bg-white text-xs font-semibold uppercase text-slate-500"
+                              style={{
+                                gridTemplateColumns: `140px repeat(${projectYears.length}, minmax(160px, 1fr))`,
+                              }}
+                            >
+                              <div className="px-4 py-3">MA-Nr.</div>
+                              {projectYears.map((year) => (
+                                <div key={`util-head-${companyIndex}-${year}`} className="px-4 py-3">
+                                  Auslastung ({year})
+                                </div>
+                              ))}
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {companyEmployees.map((employee, employeeIndex) => (
+                                <div
+                                  key={`util-row-${companyIndex}-${employeeIndex}`}
+                                  className={`grid items-center text-sm ${
+                                    employeeIndex % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                                  }`}
+                                  style={{
+                                    gridTemplateColumns: `140px repeat(${projectYears.length}, minmax(160px, 1fr))`,
+                                  }}
+                                >
+                                  <div className="px-4 py-3 font-semibold text-slate-700">
+                                    {employeeIndex + 1}
+                                  </div>
+                                  {projectYears.map((year) => {
+                                    const capPM = yearCaps[year] || 0;
+                                    const usedPM =
+                                      usedPmByEmployee?.[employeeIndex]?.[year] || 0;
+                                    const utilization =
+                                      capPM > 0 ? (usedPM / capPM) * 100 : 0;
+                                    return (
+                                      <div
+                                        key={`util-${companyIndex}-${employeeIndex}-${year}`}
+                                        className="px-4 py-3"
+                                      >
+                                        <div className="flex flex-col text-xs">
+                                          <span className="font-semibold text-slate-700">
+                                            {usedPM.toFixed(2)} PM
+                                          </span>
+                                          <span className="text-slate-500">
+                                            {utilization.toFixed(0)}%
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </section>
                   );
                 })}
               </div>
