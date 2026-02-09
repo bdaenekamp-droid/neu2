@@ -502,6 +502,47 @@
         workPackageSource: DATA_ARBEITSPAKETE,
       };
 
+      const COMPANY1_ASSIGNMENTS = [
+        { number: "1.1", start: "06.2026", end: "12.2026", employee: "1" },
+        { number: "4.2", start: "01.2027", end: "07.2027", employee: "1" },
+        { number: "4.3", start: "01.2027", end: "07.2027", employee: "1" },
+        { number: "4.4", start: "01.2027", end: "07.2027", employee: "1" },
+        { number: "4.5", start: "01.2027", end: "07.2027", employee: "2" },
+        { number: "4.6", start: "01.2027", end: "07.2027", employee: "2" },
+        { number: "4.7", start: "01.2027", end: "07.2027", employee: "3" },
+        { number: "4.8", start: "01.2027", end: "07.2027", employee: "4" },
+        { number: "4.9", start: "01.2027", end: "07.2027", employee: "4" },
+        { number: "4.10", start: "01.2027", end: "07.2027", employee: "4" },
+        { number: "5.5", start: "07.2027", end: "12.2027", employee: "3" },
+        { number: "6.1", start: "07.2027", end: "02.2028", employee: "3" },
+        { number: "6.2", start: "07.2027", end: "02.2028", employee: "3" },
+        { number: "6.3", start: "07.2027", end: "02.2028", employee: "4" },
+        { number: "6.4", start: "07.2027", end: "02.2028", employee: "4" },
+        { number: "6.5", start: "07.2027", end: "02.2028", employee: "4" },
+        { number: "6.6", start: "07.2027", end: "02.2028", employee: "5" },
+        { number: "6.7", start: "07.2027", end: "02.2028", employee: "5" },
+        { number: "6.8", start: "07.2027", end: "02.2028", employee: "5" },
+        { number: "6.9", start: "07.2027", end: "02.2028", employee: "5" },
+        { number: "7.1", start: "02.2028", end: "08.2028", employee: "5" },
+        { number: "7.2", start: "02.2028", end: "08.2028", employee: "5" },
+        { number: "7.3", start: "02.2028", end: "08.2028", employee: "5" },
+        { number: "7.4", start: "02.2028", end: "08.2028", employee: "4" },
+        { number: "7.5", start: "02.2028", end: "08.2028", employee: "4" },
+        { number: "7.6", start: "02.2028", end: "08.2028", employee: "4" },
+        { number: "7.7", start: "02.2028", end: "08.2028", employee: "4" },
+        { number: "8.1", start: "07.2028", end: "11.2028", employee: "4" },
+        { number: "8.2", start: "07.2028", end: "11.2028", employee: "3" },
+        { number: "8.3", start: "07.2028", end: "11.2028", employee: "3" },
+        { number: "8.4", start: "07.2028", end: "11.2028", employee: "3" },
+        { number: "8.5", start: "07.2028", end: "11.2028", employee: "2" },
+        { number: "8.6", start: "07.2028", end: "11.2028", employee: "2" },
+      ];
+
+      const COMPANY1_ASSIGNMENT_MAP = COMPANY1_ASSIGNMENTS.reduce((acc, entry) => {
+        acc[entry.number] = entry;
+        return acc;
+      }, {});
+
       const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
       const parseNumber = (value) => {
         if (value === "" || value === null || value === undefined) return 0;
@@ -618,6 +659,15 @@
           return new Date(fallback.getFullYear(), fallback.getMonth(), 1);
         }
         return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+      };
+
+      const areTableEntriesEqual = (current, next) => {
+        const currentKeys = Object.keys(current || {});
+        const nextKeys = Object.keys(next || {});
+        if (currentKeys.length !== nextKeys.length) return false;
+        return currentKeys.every(
+          (key) => JSON.stringify(current[key] || {}) === JSON.stringify(next[key] || {})
+        );
       };
 
       const buildTimeline = (startDateValue, duration) => {
@@ -869,6 +919,43 @@
             return acc;
           }, {});
         }, [workPackageRows, activeCompanyIndexes]);
+
+        useEffect(() => {
+          setCompanyData((prev) => {
+            let hasChanges = false;
+            const next = prev.map((entry, companyIndex) => {
+              if (!activeCompanyIndexes.includes(companyIndex)) {
+                return entry;
+              }
+              const rows = filteredWorkPackageRowsByCompany[companyIndex] || [];
+              const existingEntries = entry.tabellenEintraege || {};
+              const updatedEntries = rows.reduce((acc, row) => {
+                const currentEntry = existingEntries[row.id] || {};
+                if (companyIndex === 0 && isCompany1PresetApplied) {
+                  const assignment = COMPANY1_ASSIGNMENT_MAP[row.number];
+                  acc[row.id] = assignment
+                    ? {
+                        ...currentEntry,
+                        start: assignment.start,
+                        ende: assignment.end,
+                        mitarbeiterNummer: assignment.employee,
+                      }
+                    : currentEntry;
+                } else {
+                  acc[row.id] = currentEntry;
+                }
+                return acc;
+              }, {});
+
+              if (!areTableEntriesEqual(existingEntries, updatedEntries)) {
+                hasChanges = true;
+                return { ...entry, tabellenEintraege: updatedEntries };
+              }
+              return entry;
+            });
+            return hasChanges ? next : prev;
+          });
+        }, [filteredWorkPackageRowsByCompany, isCompany1PresetApplied, activeCompanyIndexes]);
 
         const updateWpTitle = (wpIndex, value) => {
           setWorkPackages((prev) => {
@@ -1994,10 +2081,11 @@
                           </div>
                           <div className="max-h-[320px] overflow-auto">
                             <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-                              <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
+                              <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(140px,0.7fr)_minmax(140px,0.7fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
                                 <div className="px-4 py-3">WP-Nr.</div>
                                 <div className="px-4 py-3">Arbeitspaket</div>
-                                <div className="px-4 py-3">Zeitraum</div>
+                                <div className="px-4 py-3">Start</div>
+                                <div className="px-4 py-3">Ende</div>
                                 <div className="px-4 py-3">MA-Nr.</div>
                                 <div className="px-4 py-3 text-right">Kosten</div>
                               </div>
@@ -2023,7 +2111,7 @@
                                 return (
                                   <div
                                     key={`company-${companyIndex}-row-${row.id}`}
-                                    className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(190px,1fr)_130px_minmax(150px,0.9fr)] items-center ${
+                                    className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(140px,0.7fr)_minmax(140px,0.7fr)_130px_minmax(150px,0.9fr)] items-center ${
                                       index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
                                     }`}
                                   >
@@ -2042,17 +2130,34 @@
                                     <div className="px-4 py-2">
                                       <input
                                         type="text"
-                                        value={isPlaceholder ? "" : entry.zeitraum || ""}
+                                        value={isPlaceholder ? "" : entry.start || ""}
                                         onChange={(event) =>
                                           updateCompanyTableEntry(
                                             companyIndex,
                                             row.id,
-                                            "zeitraum",
+                                            "start",
                                             event.target.value
                                           )
                                         }
                                         disabled={isPlaceholder}
-                                        placeholder="Zeitraum (später)"
+                                        placeholder="MM.YYYY"
+                                        className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                      />
+                                    </div>
+                                    <div className="px-4 py-2">
+                                      <input
+                                        type="text"
+                                        value={isPlaceholder ? "" : entry.ende || ""}
+                                        onChange={(event) =>
+                                          updateCompanyTableEntry(
+                                            companyIndex,
+                                            row.id,
+                                            "ende",
+                                            event.target.value
+                                          )
+                                        }
+                                        disabled={isPlaceholder}
+                                        placeholder="MM.YYYY"
                                         className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                                       />
                                     </div>
