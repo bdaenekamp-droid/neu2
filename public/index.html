@@ -1393,15 +1393,40 @@
 
           const zuschlagInput = parseNumber(companyData[companyIndex]?.zuschlagsfaktorPercent);
           const maximalbetrag = parseNumber(companyData[companyIndex]?.maximalbetrag);
-          const ceilingPersonnelCosts =
+          const personnelCostTarget =
             1 + zuschlagInput / 100 > 0
               ? maximalbetrag / (1 + zuschlagInput / 100)
               : Number.POSITIVE_INFINITY;
 
-          const yearlyUsage = employeeOrder.reduce((acc, employee) => {
-            acc[employee.employeeIndex] = {};
-            return acc;
-          }, {});
+          const buildYearlyUsage = () =>
+            employeeOrder.reduce((acc, employee) => {
+              acc[employee.employeeIndex] = {};
+              return acc;
+            }, {});
+          const yearlyUsage = buildYearlyUsage();
+          const rowPlanningData = {};
+
+          const isWithinCapacity = (employeeIndex, pmByYear, usageSnapshot = yearlyUsage) => {
+            const employee = employeeOrder.find((entry) => entry.employeeIndex === employeeIndex);
+            if (!employee) return false;
+            return Object.entries(pmByYear).every(([year, pmValue]) => {
+              const alreadyUsed = usageSnapshot[employeeIndex]?.[year] || 0;
+              return alreadyUsed + pmValue <= employee.annualMaxPm + 1e-9;
+            });
+          };
+
+          const applyUsage = (
+            employeeIndex,
+            pmByYear,
+            multiplier = 1,
+            usageSnapshot = yearlyUsage
+          ) => {
+            Object.entries(pmByYear).forEach(([year, pmValue]) => {
+              usageSnapshot[employeeIndex][year] =
+                (usageSnapshot[employeeIndex][year] || 0) + pmValue * multiplier;
+            });
+          };
+
           const assignments = {};
           let plannedPersonnelCosts = 0;
 
@@ -1414,6 +1439,7 @@
             if (end < start) return null;
             return { start, end };
           };
+
           rowsWithPm.forEach(({ row, pmDemand }) => {
             const dateAssignment = plannedByRowId[row.id] || {};
             const existingRowEntry = existingEntries[row.id] || {};
@@ -1436,33 +1462,18 @@
               return acc;
             }, {});
 
-            const candidates = employeeOrder.filter((employee) =>
-              Object.entries(pmByYear).every(([year, pmValue]) => {
-                const alreadyUsed = yearlyUsage[employee.employeeIndex]?.[year] || 0;
-                return alreadyUsed + pmValue <= employee.annualMaxPm + 1e-9;
-              })
-            );
+            rowPlanningData[row.id] = {
+              pmDemand,
+              pmByYear,
+            };
+
+            const candidates = [...employeeOrder]
+              .filter((employee) => isWithinCapacity(employee.employeeIndex, pmByYear))
+              .sort((a, b) => a.annualSalary - b.annualSalary || a.employeeIndex - b.employeeIndex);
             if (!candidates.length) return;
 
-            const selectedEmployee = [...candidates].sort((a, b) => {
-              const salaryCostA = pmDemand * (a.annualSalary / 12);
-              const salaryCostB = pmDemand * (b.annualSalary / 12);
-              const projectedA = plannedPersonnelCosts + salaryCostA;
-              const projectedB = plannedPersonnelCosts + salaryCostB;
-              const overshootA = Math.max(0, projectedA - ceilingPersonnelCosts);
-              const overshootB = Math.max(0, projectedB - ceilingPersonnelCosts);
-              if (overshootA !== overshootB) return overshootA - overshootB;
-              const distanceA = Math.abs(ceilingPersonnelCosts - projectedA);
-              const distanceB = Math.abs(ceilingPersonnelCosts - projectedB);
-              if (distanceA !== distanceB) return distanceA - distanceB;
-              if (b.annualSalary !== a.annualSalary) return b.annualSalary - a.annualSalary;
-              return a.employeeIndex - b.employeeIndex;
-            })[0];
-
-            Object.entries(pmByYear).forEach(([year, pmValue]) => {
-              yearlyUsage[selectedEmployee.employeeIndex][year] =
-                (yearlyUsage[selectedEmployee.employeeIndex][year] || 0) + pmValue;
-            });
+            const selectedEmployee = candidates[0];
+            applyUsage(selectedEmployee.employeeIndex, pmByYear);
             plannedPersonnelCosts += pmDemand * (selectedEmployee.annualSalary / 12);
 
             assignments[row.id] = {
@@ -1470,6 +1481,91 @@
               mitarbeiterNummer: `${selectedEmployee.employeeIndex + 1}`,
             };
           });
+
+          if (shouldOptimizeEmployees) {
+            let improved = true;
+            while (improved) {
+              improved = false;
+              let bestUpgrade = null;
+
+              Object.entries(assignments).forEach(([rowId, assignment]) => {
+                const rowData = rowPlanningData[rowId];
+                const currentEmployeeNumber = parseInt(assignment.mitarbeiterNummer, 10);
+                if (!rowData || !currentEmployeeNumber) return;
+                const currentEmployeeIndex = currentEmployeeNumber - 1;
+                const currentEmployee = employeeOrder.find(
+                  (employee) => employee.employeeIndex === currentEmployeeIndex
+                );
+                if (!currentEmployee) return;
+
+                employeeOrder
+                  .filter((candidate) => candidate.annualSalary > currentEmployee.annualSalary)
+                  .forEach((candidate) => {
+                    applyUsage(currentEmployeeIndex, rowData.pmByYear, -1);
+                    const canUseCandidate = isWithinCapacity(candidate.employeeIndex, rowData.pmByYear);
+                    applyUsage(currentEmployeeIndex, rowData.pmByYear, 1);
+                    if (!canUseCandidate) return;
+
+                    const oldCost = rowData.pmDemand * (currentEmployee.annualSalary / 12);
+                    const newCost = rowData.pmDemand * (candidate.annualSalary / 12);
+                    const nextCost = plannedPersonnelCosts - oldCost + newCost;
+
+                    const currentDistance = Math.abs(plannedPersonnelCosts - personnelCostTarget);
+                    const nextDistance = Math.abs(nextCost - personnelCostTarget);
+                    const improvesDistance =
+                      nextDistance < currentDistance - 1e-9 ||
+                      (Math.abs(nextDistance - currentDistance) <= 1e-9 &&
+                        plannedPersonnelCosts <= personnelCostTarget &&
+                        nextCost <= personnelCostTarget &&
+                        nextCost > plannedPersonnelCosts + 1e-9);
+                    if (!improvesDistance) return;
+
+                    const candidateUpgrade = {
+                      rowId,
+                      currentEmployeeIndex,
+                      targetEmployeeIndex: candidate.employeeIndex,
+                      nextDistance,
+                      nextCost,
+                      costDelta: newCost - oldCost,
+                    };
+
+                    if (!bestUpgrade) {
+                      bestUpgrade = candidateUpgrade;
+                      return;
+                    }
+                    if (candidateUpgrade.nextDistance < bestUpgrade.nextDistance - 1e-9) {
+                      bestUpgrade = candidateUpgrade;
+                      return;
+                    }
+                    if (
+                      Math.abs(candidateUpgrade.nextDistance - bestUpgrade.nextDistance) <= 1e-9 &&
+                      candidateUpgrade.nextCost <= personnelCostTarget &&
+                      bestUpgrade.nextCost > personnelCostTarget
+                    ) {
+                      bestUpgrade = candidateUpgrade;
+                      return;
+                    }
+                    if (
+                      Math.abs(candidateUpgrade.nextDistance - bestUpgrade.nextDistance) <= 1e-9 &&
+                      Math.abs(candidateUpgrade.costDelta) < Math.abs(bestUpgrade.costDelta)
+                    ) {
+                      bestUpgrade = candidateUpgrade;
+                    }
+                  });
+              });
+
+              if (bestUpgrade) {
+                const rowData = rowPlanningData[bestUpgrade.rowId];
+                applyUsage(bestUpgrade.currentEmployeeIndex, rowData.pmByYear, -1);
+                applyUsage(bestUpgrade.targetEmployeeIndex, rowData.pmByYear, 1);
+                assignments[bestUpgrade.rowId].mitarbeiterNummer = `${
+                  bestUpgrade.targetEmployeeIndex + 1
+                }`;
+                plannedPersonnelCosts = bestUpgrade.nextCost;
+                improved = true;
+              }
+            }
+          }
 
           const nextEntries = cloneTableEntries(existingEntries);
           Object.entries(assignments).forEach(([rowId, assignment]) => {
@@ -2213,6 +2309,7 @@
                         },
                       ];
                   const usedPmByEmployee = employeePmByCompany[companyIndex]?.byYear || [];
+                  const totalPmByEmployee = employeePmByCompany[companyIndex]?.totals || [];
                   const fundingResults = fundingResultsByCompany[companyIndex] || {
                     personalkosten: 0,
                     projektsumme: 0,
@@ -2221,7 +2318,7 @@
                     realerZuschlagsfaktor: 0,
                     annualFunding: {},
                   };
-                  const utilizationGridColumns = `140px repeat(${projectYears.length}, minmax(130px, 1fr) minmax(160px, 1fr))`;
+                  const utilizationGridColumns = `140px repeat(${projectYears.length}, minmax(120px, 1fr) minmax(150px, 1fr)) minmax(140px, 1fr)`;
                   const companyHistory =
                     companyHistoryByCompany[companyIndex] || createHistoryState({});
                   const canUndo = companyHistory.historyIndex > 0;
@@ -2656,29 +2753,46 @@
                               Mitarbeiter-Auslastung
                             </h4>
                             <p className="mt-1 text-sm text-slate-600">
-                              Pro Kalenderjahr: PM (oben) und prozentuale Auslastung.
+                              Pro Kalenderjahr: PM und prozentuale Auslastung mit Gesamt-PM je MA.
                             </p>
                           </div>
                           <div className="overflow-auto">
                             <div
-                              className="grid min-w-[640px] items-center border-b border-slate-200 bg-white text-xs font-semibold uppercase text-slate-500"
+                              className="grid min-w-[760px] items-center border-b border-slate-200 bg-white text-xs font-semibold uppercase text-slate-500"
                               style={{
                                 gridTemplateColumns: utilizationGridColumns,
                               }}
                             >
-                              <div className="px-4 py-3">MA-Nr.</div>
-                              {projectYears.flatMap((year) => [
+                              <div className="row-span-2 border-r border-slate-200 px-4 py-3">MA-Nr.</div>
+                              {projectYears.map((year, yearIndex) => (
+                                <div
+                                  key={`util-head-year-${companyIndex}-${year}`}
+                                  className={`col-span-2 px-4 py-2 text-center ${
+                                    yearIndex < projectYears.length - 1
+                                      ? "border-r border-slate-300"
+                                      : ""
+                                  }`}
+                                >
+                                  {year}
+                                </div>
+                              ))}
+                              <div className="row-span-2 px-4 py-3 text-right">PM gesamt</div>
+                              {projectYears.flatMap((year, yearIndex) => [
                                 <div
                                   key={`util-head-${companyIndex}-${year}-pm`}
-                                  className="px-4 py-3"
+                                  className="border-t border-slate-200 px-4 py-2"
                                 >
-                                  PM ({year})
+                                  PM
                                 </div>,
                                 <div
                                   key={`util-head-${companyIndex}-${year}-percent`}
-                                  className="px-4 py-3"
+                                  className={`border-t border-slate-200 px-4 py-2 ${
+                                    yearIndex < projectYears.length - 1
+                                      ? "border-r border-slate-300"
+                                      : ""
+                                  }`}
                                 >
-                                  Auslastung % ({year})
+                                  Auslastung %
                                 </div>,
                               ])}
                             </div>
@@ -2693,10 +2807,10 @@
                                     gridTemplateColumns: utilizationGridColumns,
                                   }}
                                 >
-                                  <div className="px-4 py-3 font-semibold text-slate-700">
+                                  <div className="border-r border-slate-100 px-4 py-3 font-semibold text-slate-700">
                                     {employeeIndex + 1}
                                   </div>
-                                  {projectYears.map((year) => {
+                                  {projectYears.map((year, yearIndex) => {
                                     const usedPMRaw =
                                       usedPmByEmployee?.[employeeIndex]?.[year] ?? 0;
                                     const usedPM = Number.isFinite(usedPMRaw)
@@ -2714,14 +2828,23 @@
                                         key={`util-${companyIndex}-${employeeIndex}-${year}`}
                                       >
                                         <div className="px-4 py-3 text-sm font-semibold text-slate-700">
-                                          {usedPM.toFixed(2)}
+                                          {formatNumberDe(usedPM, 2)}
                                         </div>
-                                        <div className="px-4 py-3 text-sm text-slate-600">
-                                          {utilization.toFixed(2)}%
+                                        <div
+                                          className={`px-4 py-3 text-sm text-slate-600 ${
+                                            yearIndex < projectYears.length - 1
+                                              ? "border-r border-slate-200"
+                                              : ""
+                                          }`}
+                                        >
+                                          {formatNumberDe(utilization, utilization % 1 === 0 ? 1 : 2)}%
                                         </div>
                                       </React.Fragment>
                                     );
                                   })}
+                                  <div className="px-4 py-3 text-right text-sm font-semibold text-slate-700">
+                                    {formatNumberDe(totalPmByEmployee?.[employeeIndex] || 0, 2)}
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -2815,27 +2938,27 @@
                                   {formatCurrency(fundingResults.projektsumme)}
                                 </span>
                               </div>
-                              <div className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2">
-                                <span className="text-sm font-semibold text-slate-600">
+                              <div className="flex items-center justify-between rounded-md border border-slate-300 bg-slate-50 px-3 py-2 shadow-sm">
+                                <span className="text-sm font-bold text-slate-700">
                                   Fördersumme (€)
                                 </span>
-                                <span className="text-sm font-semibold text-slate-800">
+                                <span className="text-sm font-bold text-slate-900">
                                   {formatCurrency(fundingResults.foerdersumme)}
                                 </span>
                               </div>
-                              <div className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2">
-                                <span className="text-sm font-semibold text-slate-600">
+                              <div className="flex items-center justify-between rounded-md border border-slate-300 bg-slate-50 px-3 py-2 shadow-sm">
+                                <span className="text-sm font-bold text-slate-700">
                                   Verschenkt zum Maximalbetrag (€)
                                 </span>
-                                <span className="text-sm font-semibold text-slate-800">
+                                <span className="text-sm font-bold text-slate-900">
                                   {formatCurrency(fundingResults.verschenkt)}
                                 </span>
                               </div>
-                              <div className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2">
-                                <span className="text-sm font-semibold text-slate-600">
+                              <div className="flex items-center justify-between rounded-md border border-slate-300 bg-slate-50 px-3 py-2 shadow-sm">
+                                <span className="text-sm font-bold text-slate-700">
                                   Realer Zuschlagsfaktor (%)
                                 </span>
-                                <span className="text-sm font-semibold text-slate-800">
+                                <span className="text-sm font-bold text-slate-900">
                                   {formatNumberDe(fundingResults.realerZuschlagsfaktor)}%
                                 </span>
                               </div>
