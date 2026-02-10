@@ -544,11 +544,57 @@
       }, {});
 
       const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
-      const parseNumber = (value) => {
+      const parseLocaleNumber = (value) => {
         if (value === "" || value === null || value === undefined) return 0;
-        const parsed = parseFloat(value);
+        if (typeof value === "number") return value;
+        const trimmed = `${value}`.trim().replace(/\s/g, "");
+        if (!trimmed) return 0;
+        let normalized = trimmed;
+        if (trimmed.includes(",")) {
+          normalized = trimmed.replace(/\./g, "").replace(/,/g, ".");
+        }
+        const parsed = Number.parseFloat(normalized);
         return Number.isNaN(parsed) ? 0 : parsed;
       };
+
+      const parseNumber = (value) => {
+        if (value === "" || value === null || value === undefined) return 0;
+        const parsed = parseLocaleNumber(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      };
+
+      const COMPANY_COLOR_PALETTE = [
+        {
+          strip: "#93c5fd",
+          bar: "rgba(96, 165, 250, 0.68)",
+          barBorder: "#3b82f6",
+          panelTint: "rgba(147, 197, 253, 0.1)",
+        },
+        {
+          strip: "#99f6e4",
+          bar: "rgba(45, 212, 191, 0.68)",
+          barBorder: "#0f766e",
+          panelTint: "rgba(153, 246, 228, 0.1)",
+        },
+        {
+          strip: "#fde68a",
+          bar: "rgba(251, 191, 36, 0.66)",
+          barBorder: "#b45309",
+          panelTint: "rgba(253, 230, 138, 0.12)",
+        },
+        {
+          strip: "#fdba74",
+          bar: "rgba(249, 115, 22, 0.64)",
+          barBorder: "#c2410c",
+          panelTint: "rgba(253, 186, 116, 0.1)",
+        },
+        {
+          strip: "#fca5a5",
+          bar: "rgba(248, 113, 113, 0.66)",
+          barBorder: "#b91c1c",
+          panelTint: "rgba(252, 165, 165, 0.1)",
+        },
+      ];
 
       const DEFAULT_COMPANY_NAMES = Array.from({ length: 5 }, (_, index) => `Unternehmen ${index + 1}`);
       const DEFAULT_START_DATE = "2026-07-15";
@@ -737,11 +783,14 @@
         const [companyData, setCompanyData] = useState(() => normalizeCompanyData());
         const [pendingDelete, setPendingDelete] = useState(null);
         const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(null);
+        const [focusedCurrencyField, setFocusedCurrencyField] = useState(null);
+        const [rowHeights, setRowHeights] = useState({});
         const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
+        const [ganttViewportWidth, setGanttViewportWidth] = useState(0);
         const [presetNotice, setPresetNotice] = useState("");
         const presetNoticeTimeoutRef = React.useRef(null);
         const [isCompany1PresetApplied, setIsCompany1PresetApplied] = useState(false);
-        const [ganttCompanyIndex, setGanttCompanyIndex] = useState(0);
+        const ganttHeaderViewportRef = React.useRef(null);
 
         useEffect(() => {
           const saved = localStorage.getItem(STORAGE_KEY);
@@ -829,12 +878,6 @@
           () => Array.from({ length: companyCount }, (_, index) => index),
           [companyCount]
         );
-
-        useEffect(() => {
-          setGanttCompanyIndex((prev) =>
-            activeCompanyIndexes.includes(prev) ? prev : activeCompanyIndexes[0] || 0
-          );
-        }, [activeCompanyIndexes]);
 
         const timeline = useMemo(
           () => buildTimeline(startDate, durationMonths),
@@ -1224,7 +1267,6 @@
           "minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(220px, 1.6fr) minmax(170px, 1.1fr) minmax(170px, 1.1fr) minmax(190px, 1.2fr)";
 
         const ganttMonthWidth = 36;
-        const ganttViewportWidth = 520;
         const monthGridStyle = useMemo(
           () => ({ gridTemplateColumns: `repeat(${durationMonths}, ${ganttMonthWidth}px)` }),
           [durationMonths]
@@ -1233,16 +1275,35 @@
         const ganttMaxScroll = Math.max(0, ganttTrackWidth - ganttViewportWidth);
 
         useEffect(() => {
+          if (!ganttHeaderViewportRef.current || typeof ResizeObserver === "undefined") return;
+          const observer = new ResizeObserver((entries) => {
+            const nextWidth = entries[0]?.contentRect?.width || 0;
+            setGanttViewportWidth(nextWidth);
+          });
+          observer.observe(ganttHeaderViewportRef.current);
+          return () => observer.disconnect();
+        }, []);
+
+        useEffect(() => {
           setGanttScrollLeft((prev) => Math.min(prev, ganttMaxScroll));
         }, [ganttMaxScroll]);
+
+        const getAssignedCompanyIndex = (pmByCompany = []) => {
+          const positiveIndexes = activeCompanyIndexes.filter(
+            (companyIndex) => normalizePmValue(pmByCompany?.[companyIndex]) > 0
+          );
+          return positiveIndexes.length === 1 ? positiveIndexes[0] : null;
+        };
 
         const ganttBarsByRowId = useMemo(() => {
           const projectStart = parseDate(startDate);
           const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
-          const entries = companyData[ganttCompanyIndex]?.tabellenEintraege || {};
           const bars = {};
           workPackageRows.forEach((row) => {
             if (!row.number.includes(".")) return;
+            const assignedCompanyIndex = getAssignedCompanyIndex(row.pmByCompany);
+            if (assignedCompanyIndex === null) return;
+            const entries = companyData[assignedCompanyIndex]?.tabellenEintraege || {};
             const assignment = entries[row.id] || {};
             const span = getMonthSpan(assignment.start, assignment.ende);
             if (!span || span.totalMonths <= 0) return;
@@ -1258,17 +1319,11 @@
             bars[row.id] = {
               start: clippedStart,
               end: clippedEnd,
+              companyIndex: assignedCompanyIndex,
             };
           });
           return bars;
-        }, [workPackageRows, companyData, ganttCompanyIndex, startDate, durationMonths]);
-        const groupAccentClasses = [
-          "border-l-sky-300",
-          "border-l-indigo-300",
-          "border-l-emerald-300",
-          "border-l-amber-300",
-          "border-l-rose-300",
-        ];
+        }, [workPackageRows, companyData, startDate, durationMonths, activeCompanyIndexes]);
 
         const getRowTone = (row) => {
           if (row.type === "total") return "bg-slate-100/80";
@@ -1311,6 +1366,20 @@
             maximumFractionDigits: 2,
           }).format(value || 0);
 
+        const formatNumberDe = (value, maximumFractionDigits = 2) =>
+          new Intl.NumberFormat("de-DE", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits,
+          }).format(value || 0);
+
+        const getCurrencyInputDisplay = (key, value) => {
+          if (focusedCurrencyField === key) {
+            const numericValue = parseNumber(value);
+            return numericValue ? `${numericValue}` : "";
+          }
+          return parseNumber(value) ? formatNumberDe(parseNumber(value), 2) : "";
+        };
+
         const employeePmByCompany = useMemo(() => {
           return activeCompanyIndexes.reduce((acc, companyIndex) => {
             const companyEmployees = employeesByCompany[companyIndex] || [];
@@ -1347,11 +1416,21 @@
           return activeCompanyIndexes.reduce((acc, companyIndex) => {
             const companyEmployees = employeesByCompany[companyIndex] || [];
             const pmTotals = employeePmByCompany[companyIndex]?.totals || [];
+            const pmByYear = employeePmByCompany[companyIndex]?.byYear || [];
             const personalkosten = companyEmployees.reduce((sum, employee, index) => {
               const annualSalary = parseNumber(employee.annualSalary);
               const pmTotal = pmTotals[index] || 0;
               return sum + pmTotal * (annualSalary / 12);
             }, 0);
+            const yearlyPersonalkosten = projectYears.reduce((yearAcc, year) => {
+              const yearCost = companyEmployees.reduce((sum, employee, employeeIndex) => {
+                const annualSalary = parseNumber(employee.annualSalary);
+                const pmYear = pmByYear[employeeIndex]?.[year] || 0;
+                return sum + pmYear * (annualSalary / 12);
+              }, 0);
+              yearAcc[year] = yearCost;
+              return yearAcc;
+            }, {});
             const zuschlagInput = parseNumber(
               companyData[companyIndex]?.zuschlagsfaktorPercent
             );
@@ -1372,16 +1451,29 @@
             const foerdersumme = projektsummeFinal * (foerderquoteInput / 100);
             const maxMoeglicheFoerdersumme = maximalbetrag * (foerderquoteInput / 100);
             const verschenkt = Math.max(0, maxMoeglicheFoerdersumme - foerdersumme);
+
+            const annualFunding = projectYears.reduce((yearAcc, year) => {
+              const ratio = personalkosten > 0 ? (yearlyPersonalkosten[year] || 0) / personalkosten : 0;
+              yearAcc[year] = foerdersumme * ratio;
+              return yearAcc;
+            }, {});
+            const annualSum = Object.values(annualFunding).reduce((sum, value) => sum + value, 0);
+            if (projectYears.length) {
+              const lastYear = projectYears[projectYears.length - 1];
+              annualFunding[lastYear] = (annualFunding[lastYear] || 0) + (foerdersumme - annualSum);
+            }
+
             acc[companyIndex] = {
               personalkosten: roundToTwo(personalkosten),
               projektsumme: roundToTwo(projektsummeFinal),
               foerdersumme: roundToTwo(foerdersumme),
               verschenkt: roundToTwo(verschenkt),
               realerZuschlagsfaktor: roundToTwo(cappedRealerZuschlagsfaktor),
+              annualFunding,
             };
             return acc;
           }, {});
-        }, [activeCompanyIndexes, employeesByCompany, employeePmByCompany, companyData]);
+        }, [activeCompanyIndexes, employeesByCompany, employeePmByCompany, companyData, projectYears]);
 
         return (
           <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -1575,28 +1667,15 @@
                     <div className="px-4 py-3">
                       <div className={`flex h-full flex-col ${getRowHeight({ type: "header" })}`}>
                         <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
-                          <span>Gantt-Zeitleiste</span>
-                          <div className="flex items-center gap-3">
-                            <select
-                              value={ganttCompanyIndex}
-                              onChange={(event) => setGanttCompanyIndex(parseInt(event.target.value, 10) || 0)}
-                              className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
-                            >
-                              {activeCompanyIndexes.map((idx) => (
-                                <option key={`gantt-company-${idx}`} value={idx}>
-                                  {companyNames[idx] || `Unternehmen ${idx + 1}`}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="text-xs font-medium text-slate-500">Monate 1–{durationMonths}</span>
-                          </div>
+                          <span>Gantt-Zeitleiste (alle Unternehmen)</span>
+                          <span className="text-xs font-medium text-slate-500">Monate 1–{durationMonths}</span>
                         </div>
                         <div className="mt-1 flex items-center gap-3">
                           <input type="range" min="0" max={ganttMaxScroll} value={ganttScrollLeft} onChange={handleGanttSliderChange} className="h-2 w-full accent-slate-600" />
                           <span className="text-[11px] font-medium text-slate-500">Scroll</span>
                         </div>
-                        <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white" style={{ width: `${ganttViewportWidth}px` }}>
-                          <div style={{ transform: `translateX(-${ganttScrollLeft}px)` }}>
+                        <div ref={ganttHeaderViewportRef} className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white" style={{ width: ganttViewportWidth ? `${ganttViewportWidth}px` : "100%" }}>
+                          <div style={{ width: `${ganttTrackWidth}px`, transform: `translateX(-${ganttScrollLeft}px)` }}>
                             <div className="grid text-center text-[11px] font-semibold uppercase text-slate-500" style={monthGridStyle}>
                               {yearSegments.map((segment, index) => (
                                 <div key={`year-${segment.year}-${index}`} className="border-r border-slate-200 py-1" style={{ gridColumn: `span ${segment.span}` }}>
@@ -1619,10 +1698,19 @@
                 <div className="divide-y divide-slate-100/70">
                   {rows.map((row, rowIndex) => {
                     const wpIndex = row.wpIndex;
-                    const accent =
-                      row.type === "summary" || row.type === "wp" || row.type === "sub"
-                        ? groupAccentClasses[wpIndex % groupAccentClasses.length]
-                        : "";
+                    const rowDataForColor =
+                      row.type === "wp"
+                        ? workPackages[wpIndex]
+                        : row.type === "sub"
+                          ? workPackages[wpIndex]?.sub[row.subIndex]
+                          : null;
+                    const assignedCompanyIndex = rowDataForColor
+                      ? getAssignedCompanyIndex(rowDataForColor.pm)
+                      : null;
+                    const companyColor =
+                      assignedCompanyIndex !== null
+                        ? COMPANY_COLOR_PALETTE[assignedCompanyIndex % COMPANY_COLOR_PALETTE.length]
+                        : null;
                     const isGroupStart = row.type === "wp";
                     const groupBorder = isGroupStart ? "border-t border-slate-200" : "border-t border-slate-100/80";
 
@@ -1644,7 +1732,7 @@
                       const companySums = sumByCompany(wp);
                       const rowSum = companySums.reduce((acc, value) => acc + value, 0);
                       leftCell = (
-                        <div className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(row)} ${getRowHeight(row)} hover:bg-slate-100/70`} style={{ gridTemplateColumns: leftGridTemplate }}>
+                        <div className={`grid items-center overflow-hidden border-b border-slate-200 border-l-4 ${getRowTone(row)} ${getRowHeight(row)} hover:bg-slate-100/70`} style={{ gridTemplateColumns: leftGridTemplate, borderLeftColor: companyColor?.strip || "transparent" }}>
                           <div className="px-4 py-2 text-sm font-semibold text-slate-600">Summe WP {row.wpIndex + 1}</div>
                           {companySums.map((value, idx) => (
                             <div key={`summary-company-${row.wpIndex}-${idx}`} className="px-2 py-2 text-sm font-semibold text-slate-600">{value.toFixed(2)}</div>
@@ -1666,17 +1754,19 @@
                       if (ganttBar) {
                         bar = (
                           <div
-                            className="absolute top-1/2 h-5 -translate-y-1/2 rounded-md bg-sky-500/70"
+                            className="absolute top-1/2 h-5 -translate-y-1/2 rounded-md"
                             style={{
                               left: `${ganttBar.start * ganttMonthWidth + 2}px`,
                               width: `${(ganttBar.end - ganttBar.start + 1) * ganttMonthWidth - 4}px`,
+                              backgroundColor: COMPANY_COLOR_PALETTE[ganttBar.companyIndex % COMPANY_COLOR_PALETTE.length]?.bar,
+                              border: `1px solid ${COMPANY_COLOR_PALETTE[ganttBar.companyIndex % COMPANY_COLOR_PALETTE.length]?.barBorder}`,
                             }}
                           />
                         );
                       }
 
                       leftCell = (
-                        <div className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(row)} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`} style={{ gridTemplateColumns: leftGridTemplate }}>
+                        <div className={`grid items-stretch overflow-hidden ${groupBorder} border-l-4 ${getRowTone(row)} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`} style={{ gridTemplateColumns: leftGridTemplate, borderLeftColor: companyColor?.strip || "transparent" }}>
                           <div className="px-4 py-2">
                             <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
                               <div className="pt-1">
@@ -1726,7 +1816,7 @@
                       <div key={`combined-row-${row.type}-${rowIndex}`} className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
                         <div className="border-r border-slate-200">{leftCell}</div>
                         <div className={`px-4 py-2 ${groupBorder} ${getRowTone(row)} ${getRowHeight(row)}`}>
-                          <div className="relative overflow-hidden rounded border border-slate-200 bg-white" style={{ width: `${ganttViewportWidth}px` }}>
+                          <div className="relative overflow-hidden rounded border border-slate-200 bg-white" style={{ width: ganttViewportWidth ? `${ganttViewportWidth}px` : "100%" }}>
                             <div className="relative" style={{ width: `${ganttTrackWidth}px`, transform: `translateX(-${ganttScrollLeft}px)` }}>
                               <div className="gantt-grid" style={monthGridStyle}>
                                 {Array.from({ length: durationMonths }, (_, index) => (
@@ -1768,12 +1858,18 @@
                     foerdersumme: 0,
                     verschenkt: 0,
                     realerZuschlagsfaktor: 0,
+                    annualFunding: {},
                   };
                   const utilizationGridColumns = `140px repeat(${projectYears.length}, minmax(130px, 1fr) minmax(160px, 1fr))`;
                   return (
                     <section
                       key={`company-planning-${companyIndex}`}
-                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-subtle"
+                      className="rounded-2xl border border-slate-200 p-5 shadow-subtle"
+                      style={{
+                        backgroundColor:
+                          COMPANY_COLOR_PALETTE[companyIndex % COMPANY_COLOR_PALETTE.length]
+                            ?.panelTint || "#ffffff",
+                      }}
                     >
                       <div className="border-b border-slate-200 pb-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1955,10 +2051,11 @@
                                   <div className="px-4">
                                     <div className="relative">
                                       <input
-                                        type="number"
-                                        min="0"
-                                        step="100"
-                                        value={employee.annualSalary}
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={getCurrencyInputDisplay(`salary-${companyIndex}-${index}`, employee.annualSalary)}
+                                        onFocus={() => setFocusedCurrencyField(`salary-${companyIndex}-${index}`)}
+                                        onBlur={() => setFocusedCurrencyField(null)}
                                         onChange={(event) =>
                                           updateEmployeeNumber(
                                             companyIndex,
@@ -2236,13 +2333,16 @@
                                   Maximale Fördersumme (€)
                                 </label>
                                 <input
-                                  type="number"
-                                  value={companyData[companyIndex]?.maximalbetrag ?? ""}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={getCurrencyInputDisplay(`maximalbetrag-${companyIndex}`, companyData[companyIndex]?.maximalbetrag ?? "")}
+                                  onFocus={() => setFocusedCurrencyField(`maximalbetrag-${companyIndex}`)}
+                                  onBlur={() => setFocusedCurrencyField(null)}
                                   onChange={(event) =>
                                     updateCompanyField(
                                       companyIndex,
                                       "maximalbetrag",
-                                      event.target.value
+                                      parseNumber(event.target.value)
                                     )
                                   }
                                   className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -2287,9 +2387,19 @@
                                   Realer Zuschlagsfaktor (%)
                                 </span>
                                 <span className="text-sm font-semibold text-slate-800">
-                                  {fundingResults.realerZuschlagsfaktor.toFixed(2)}%
+                                  {formatNumberDe(fundingResults.realerZuschlagsfaktor)}%
                                 </span>
                               </div>
+                              {projectYears.map((year) => (
+                                <div key={`annual-funding-${companyIndex}-${year}`} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2">
+                                  <span className="text-sm font-semibold text-slate-600">
+                                    Fördersumme ({year})
+                                  </span>
+                                  <span className="text-sm font-semibold text-slate-800">
+                                    {formatCurrency(fundingResults.annualFunding?.[year] || 0)}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         </div>
