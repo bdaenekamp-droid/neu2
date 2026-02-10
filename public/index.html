@@ -645,7 +645,7 @@
         return clampNumber(parseNumber(value), 0, 999);
       };
 
-      const COMPANY_COLOR_BASE_HEX = ["#5b8fd6", "#5fafbf", "#8ebf6a", "#d0a45e", "#cf6a5e"];
+      const COMPANY_COLORS = ["#5b8fd6", "#cf6a5e", "#8ebf6a", "#d0a45e", "#7a5bb8"];
       const withAlpha = (hex, alpha) => {
         const normalized = `${hex}`.replace("#", "");
         if (normalized.length !== 6) return hex;
@@ -656,8 +656,7 @@
       };
 
       const getCompanyColorHex = (companyIndex) =>
-        COMPANY_COLOR_BASE_HEX[companyIndex % COMPANY_COLOR_BASE_HEX.length] ||
-        COMPANY_COLOR_BASE_HEX[0];
+        COMPANY_COLORS[companyIndex % COMPANY_COLORS.length] || COMPANY_COLORS[0];
 
       const getCompanyColorPalette = (companyIndex) => {
         const base = getCompanyColorHex(companyIndex);
@@ -1627,6 +1626,31 @@
           applyCompanyPmSnapshot(companyIndex, normalizedSnapshot.pmSnapshot);
         };
 
+        const commitCompanyHistoryStep = (companyIndex, beforeSnapshot, afterSnapshot) => {
+          setCompanyHistoryByCompany((prevHistory) => {
+            const nextHistory = [...prevHistory];
+            const current = nextHistory[companyIndex] || createHistoryState({});
+            const trimmedHistory = current.history.slice(0, current.historyIndex + 1);
+            if (trimmedHistory.length) {
+              trimmedHistory[trimmedHistory.length - 1] = normalizeCompanyHistorySnapshot(
+                beforeSnapshot
+              );
+            } else {
+              trimmedHistory.push(normalizeCompanyHistorySnapshot(beforeSnapshot));
+            }
+            trimmedHistory.push(normalizeCompanyHistorySnapshot(afterSnapshot));
+            let history = trimmedHistory;
+            if (history.length > MAX_HISTORY_STEPS) {
+              history = history.slice(history.length - MAX_HISTORY_STEPS);
+            }
+            nextHistory[companyIndex] = {
+              history,
+              historyIndex: history.length - 1,
+            };
+            return nextHistory;
+          });
+        };
+
         const undoCompanyAssignment = (companyIndex) => {
           let snapshotToApply = null;
           setCompanyHistoryByCompany((prev) => {
@@ -1946,23 +1970,16 @@
 
           if (areTableEntriesEqual(existingEntries, nextEntries)) return;
 
-          applyCompanySnapshot(companyIndex, nextEntries);
-          const snapshot = createCompanyHistorySnapshot(nextEntries);
-          setCompanyHistoryByCompany((prevHistory) => {
-            const nextHistory = [...prevHistory];
-            const current = nextHistory[companyIndex] || createHistoryState({});
-            const trimmedHistory = current.history.slice(0, current.historyIndex + 1);
-            trimmedHistory.push(snapshot);
-            let history = trimmedHistory;
-            if (history.length > MAX_HISTORY_STEPS) {
-              history = history.slice(history.length - MAX_HISTORY_STEPS);
-            }
-            nextHistory[companyIndex] = {
-              history,
-              historyIndex: history.length - 1,
-            };
-            return nextHistory;
-          });
+          const beforeSnapshot = createCompanyHistorySnapshot(
+            existingEntries,
+            getCompanyPmSnapshot(companyIndex, workPackages)
+          );
+          const afterSnapshot = createCompanyHistorySnapshot(
+            nextEntries,
+            getCompanyPmSnapshot(companyIndex, workPackages)
+          );
+          applyCompanySnapshot(companyIndex, afterSnapshot);
+          commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
         };
 
         const calculateCompanyFundingMetrics = (companyIndex, sourceWorkPackages) => {
@@ -2053,6 +2070,7 @@
         const runAutoPmIncrease = (companyIndex) => {
           const maxFactorPercent = 200;
           const factorStepPercent = 5;
+          const baseEntries = companyData[companyIndex]?.tabellenEintraege || {};
           const basePmSnapshot = getCompanyPmSnapshot(companyIndex, workPackages);
 
           let bestCandidate = {
@@ -2087,39 +2105,12 @@
           if (bestCandidate.factor <= 0) return;
 
           setWorkPackages(bestCandidate.workPackages);
-          const nextSnapshot = createCompanyHistorySnapshot(
-            companyData[companyIndex]?.tabellenEintraege || {},
+          const beforeSnapshot = createCompanyHistorySnapshot(baseEntries, basePmSnapshot);
+          const afterSnapshot = createCompanyHistorySnapshot(
+            baseEntries,
             getCompanyPmSnapshot(companyIndex, bestCandidate.workPackages)
           );
-
-          setCompanyHistoryByCompany((prevHistory) => {
-            const nextHistory = [...prevHistory];
-            const current = nextHistory[companyIndex] || createHistoryState({});
-            const trimmedHistory = current.history.slice(0, current.historyIndex + 1);
-
-            if (trimmedHistory.length) {
-              const currentSnapshot = normalizeCompanyHistorySnapshot(
-                trimmedHistory[trimmedHistory.length - 1]
-              );
-              if (!currentSnapshot.pmSnapshot) {
-                trimmedHistory[trimmedHistory.length - 1] = createCompanyHistorySnapshot(
-                  currentSnapshot.tabellenEintraege,
-                  basePmSnapshot
-                );
-              }
-            }
-
-            trimmedHistory.push(nextSnapshot);
-            let history = trimmedHistory;
-            if (history.length > MAX_HISTORY_STEPS) {
-              history = history.slice(history.length - MAX_HISTORY_STEPS);
-            }
-            nextHistory[companyIndex] = {
-              history,
-              historyIndex: history.length - 1,
-            };
-            return nextHistory;
-          });
+          commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
         };
 
         const updateCompanyField = (companyIndex, field, value) => {
@@ -2170,15 +2161,8 @@
           });
         }, [workPackages, activeCompanyIndexes]);
 
-        const DESCRIPTION_COLUMN_MIN_PX = 320;
-        const DESCRIPTION_COLUMN_MAX_PX = 520;
-        const COMPANY_COLUMN_MAX_PX = 130;
-        const GANTT_COLUMN_MIN_PX = 520;
-
-        const combinedGridTemplate = useMemo(() => {
-          const companyColumns = activeCompanyIndexes.length;
-          return `minmax(${DESCRIPTION_COLUMN_MIN_PX}px, ${DESCRIPTION_COLUMN_MAX_PX}px) repeat(${companyColumns}, minmax(60px, ${COMPANY_COLUMN_MAX_PX}px)) minmax(${GANTT_COLUMN_MIN_PX}px, 1fr)`;
-        }, [activeCompanyIndexes.length]);
+        const DESCRIPTION_COLUMN_PX = 460;
+        const COMPANY_COLUMN_PX = 130;
 
         const employeeGridTemplate =
           "minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(220px, 1.6fr) minmax(170px, 1.1fr) minmax(170px, 1.1fr) minmax(190px, 1.2fr)";
@@ -2189,7 +2173,10 @@
           [durationMonths]
         );
         const ganttTrackWidth = durationMonths * ganttMonthWidth;
-        const ganttContentWidth = Math.max(ganttTrackWidth, ganttViewportWidth || 0);
+        const ganttContentWidth = ganttTrackWidth;
+        const rightContentWidth = activeCompanyIndexes.length * COMPANY_COLUMN_PX + ganttContentWidth;
+        const combinedGridTemplate = `${DESCRIPTION_COLUMN_PX}px ${rightContentWidth}px`;
+        const rightGridTemplate = `repeat(${activeCompanyIndexes.length}, ${COMPANY_COLUMN_PX}px) ${ganttContentWidth}px`;
         const ganttMaxScroll = Math.max(0, ganttScrollWidth - ganttViewportWidth);
 
         useEffect(() => {
@@ -2427,7 +2414,7 @@
 
         return (
           <div className="min-h-screen bg-slate-50 text-slate-900" onBlurCapture={saveNow}>
-            <header className="ca-topbar sticky top-0 z-50 border-b border-black/10 shadow-subtle">
+            <header className="ca-topbar border-b border-black/10 shadow-subtle">
               <div className="mx-auto flex h-[96px] max-w-[1700px] items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                   <img
@@ -2622,42 +2609,44 @@
 
               <div className="rounded-xl border border-[var(--ca-green-border)] bg-white shadow-subtle">
                 <div ref={ganttScrollContainerRef} onScroll={handleGanttScroll} className="overflow-x-auto">
-                  <div className="w-full min-w-full">
+                  <div style={{ minWidth: `${DESCRIPTION_COLUMN_PX + rightContentWidth}px` }}>
                     <div className="sticky top-0 z-30 border-b border-[var(--ca-green-border)]" style={{ backgroundColor: "var(--ca-green-soft)" }}>
                       <div
                         className={`grid items-stretch ${getRowHeight({ type: "header" })}`}
                         style={{ gridTemplateColumns: combinedGridTemplate }}
                       >
-                        <div className="px-4 py-4 text-sm font-semibold text-slate-700">Arbeitspaket</div>
-                        {activeCompanyIndexes.map((idx) => (
-                          <div key={`header-company-${idx}`} className="px-2 py-4 text-xs font-semibold uppercase text-slate-600">
-                            <span className="block max-w-[130px] whitespace-normal break-words leading-tight" title={companyNames[idx] || `Unternehmen ${idx + 1}`}>
-                              {companyNames[idx] || `Unternehmen ${idx + 1}`}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="px-4 py-3 border-l border-[var(--ca-green-border)]" style={{ backgroundColor: "var(--ca-green-soft-strong)" }}>
-                          <div className={`flex h-full flex-col ${getRowHeight({ type: "header" })}`}>
-                            <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
-                              <span>Gantt-Zeitleiste (alle Unternehmen)</span>
-                              <span className="text-xs font-medium text-slate-500">Monate 1–{durationMonths}</span>
+                        <div className="sticky left-0 z-40 border-r border-[var(--ca-green-border)] px-4 py-4 text-sm font-semibold text-slate-700" style={{ backgroundColor: "var(--ca-green-soft)" }}>Arbeitspaketnummer + Beschreibung</div>
+                        <div className="grid" style={{ gridTemplateColumns: rightGridTemplate, minWidth: `${rightContentWidth}px` }}>
+                          {activeCompanyIndexes.map((idx) => (
+                            <div key={`header-company-${idx}`} className="px-2 py-4 text-xs font-semibold uppercase text-slate-600">
+                              <span className="block whitespace-normal break-words leading-tight" title={companyNames[idx] || `Unternehmen ${idx + 1}`}>
+                                {companyNames[idx] || `Unternehmen ${idx + 1}`}
+                              </span>
                             </div>
-                            <div className="mt-1 flex items-center gap-3">
-                              <input type="range" min="0" max={ganttMaxScroll} value={ganttScrollLeft} onChange={handleGanttSliderChange} className="h-2 w-full" style={{ accentColor: "var(--ca-green)" }} />
-                              <span className="text-[11px] font-medium text-slate-500">Scroll</span>
-                            </div>
-                            <div className="mt-2 rounded-md border border-[var(--ca-green-border)] bg-white" style={{ minWidth: `${ganttContentWidth}px` }}>
-                              <div className="grid text-center text-[11px] font-semibold uppercase text-slate-600" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px`, backgroundColor: "var(--ca-green-soft)" }}>
-                                {yearSegments.map((segment, index) => (
-                                  <div key={`year-${segment.year}-${index}`} className="border-r border-[var(--ca-green-border)] py-1" style={{ gridColumn: `span ${segment.span}` }}>
-                                    {segment.year}
-                                  </div>
-                                ))}
+                          ))}
+                          <div className="px-4 py-3 border-l border-[var(--ca-green-border)]" style={{ backgroundColor: "var(--ca-green-soft-strong)" }}>
+                            <div className={`flex h-full flex-col ${getRowHeight({ type: "header" })}`}>
+                              <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
+                                <span>Gantt-Zeitleiste (alle Unternehmen)</span>
+                                <span className="text-xs font-medium text-slate-500">Monate 1–{durationMonths}</span>
                               </div>
-                              <div className="gantt-grid border-t border-[var(--ca-green-border)] text-[10px] text-slate-500" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
-                                {timeline.map((month, index) => (
-                                  <div key={`month-${month.year}-${index}`} className="border-r border-[var(--ca-green-border)] py-1 text-center">{month.label}</div>
-                                ))}
+                              <div className="mt-1 flex items-center gap-3">
+                                <input type="range" min="0" max={ganttMaxScroll} value={ganttScrollLeft} onChange={handleGanttSliderChange} className="h-2 w-full" style={{ accentColor: "var(--ca-green)" }} />
+                                <span className="text-[11px] font-medium text-slate-500">Scroll</span>
+                              </div>
+                              <div className="mt-2 rounded-md border border-[var(--ca-green-border)]" style={{ minWidth: `${ganttContentWidth}px`, backgroundColor: "var(--ca-green-soft)" }}>
+                                <div className="grid text-center text-[11px] font-semibold uppercase text-slate-600" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px`, backgroundColor: "var(--ca-green-soft)" }}>
+                                  {yearSegments.map((segment, index) => (
+                                    <div key={`year-${segment.year}-${index}`} className="border-r border-[var(--ca-green-border)] py-1" style={{ gridColumn: `span ${segment.span}` }}>
+                                      {segment.year}
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="gantt-grid border-t border-[var(--ca-green-border)] text-[10px] text-slate-500" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
+                                  {timeline.map((month, index) => (
+                                    <div key={`month-${month.year}-${index}`} className="border-r border-[var(--ca-green-border)] py-1 text-center">{month.label}</div>
+                                  ))}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2768,20 +2757,24 @@
                         return (
                           <div
                             key={`combined-row-${row.type}-${rowIndex}`}
-                            className={`grid w-full min-w-full items-stretch ${groupBorder} ${getRowTone(row)} ${getRowHeight(row)} transition-colors hover:bg-[var(--ca-green-soft)]/70`}
-                            style={{ gridTemplateColumns: combinedGridTemplate }}
+                            className={`grid items-stretch ${groupBorder} ${getRowHeight(row)} transition-colors hover:bg-[var(--ca-green-soft)]/70`}
+                            style={{ gridTemplateColumns: combinedGridTemplate, minWidth: `${DESCRIPTION_COLUMN_PX + rightContentWidth}px` }}
                           >
-                            {descriptionCell}
-                            {pmCells}
-                            <div className="px-4 py-2 border-l border-[var(--ca-green-border)]">
-                              <div className="relative rounded border border-[var(--ca-green-border)] bg-white" style={{ minWidth: `${ganttContentWidth}px` }}>
-                                <div className="relative" style={{ minWidth: `${ganttContentWidth}px` }}>
-                                  <div className="gantt-grid" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
-                                    {Array.from({ length: durationMonths }, (_, index) => (
-                                      <div key={`cell-${row.type}-${rowIndex}-${index}`} className="h-7 border-r border-dashed border-[var(--ca-green-border)]" />
-                                    ))}
+                            <div className={`sticky left-0 z-20 border-r border-[var(--ca-green-border)] ${getRowTone(row)}`}>
+                              {descriptionCell}
+                            </div>
+                            <div className={`grid ${getRowTone(row)}`} style={{ gridTemplateColumns: rightGridTemplate, minWidth: `${rightContentWidth}px` }}>
+                              {pmCells}
+                              <div className="px-4 py-2 border-l border-[var(--ca-green-border)]">
+                                <div className="relative rounded border border-[var(--ca-green-border)]" style={{ minWidth: `${ganttContentWidth}px`, backgroundColor: "inherit" }}>
+                                  <div className="relative" style={{ minWidth: `${ganttContentWidth}px` }}>
+                                    <div className="gantt-grid" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
+                                      {Array.from({ length: durationMonths }, (_, index) => (
+                                        <div key={`cell-${row.type}-${rowIndex}-${index}`} className="h-7 border-r border-dashed border-[var(--ca-green-border)]" />
+                                      ))}
+                                    </div>
+                                    {bar}
                                   </div>
-                                  {bar}
                                 </div>
                               </div>
                             </div>
