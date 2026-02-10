@@ -801,8 +801,26 @@
       const cloneTableEntries = (entries) =>
         JSON.parse(JSON.stringify(entries || {}));
 
-      const createHistoryState = (snapshot = {}) => ({
-        history: [cloneTableEntries(snapshot)],
+      const clonePmSnapshot = (snapshot) =>
+        snapshot ? JSON.parse(JSON.stringify(snapshot)) : null;
+
+      const createCompanyHistorySnapshot = (tabellenEintraege = {}, pmSnapshot = null) => ({
+        tabellenEintraege: cloneTableEntries(tabellenEintraege),
+        pmSnapshot: clonePmSnapshot(pmSnapshot),
+      });
+
+      const normalizeCompanyHistorySnapshot = (snapshot) => {
+        if (!snapshot || typeof snapshot !== "object") {
+          return createCompanyHistorySnapshot({});
+        }
+        if (Object.prototype.hasOwnProperty.call(snapshot, "tabellenEintraege")) {
+          return createCompanyHistorySnapshot(snapshot.tabellenEintraege, snapshot.pmSnapshot || null);
+        }
+        return createCompanyHistorySnapshot(snapshot, null);
+      };
+
+      const createHistoryState = (snapshot = {}, pmSnapshot = null) => ({
+        history: [createCompanyHistorySnapshot(snapshot, pmSnapshot)],
         historyIndex: 0,
       });
 
@@ -1237,9 +1255,12 @@
                 next.forEach((entry, companyIndex) => {
                   if (!activeCompanyIndexes.includes(companyIndex)) return;
                   const existing = prevHistory[companyIndex] || createHistoryState({});
+                  const existingSnapshot = normalizeCompanyHistorySnapshot(
+                    existing.history[existing.historyIndex] || {}
+                  );
                   if (
                     areTableEntriesEqual(
-                      existing.history[existing.historyIndex] || {},
+                      existingSnapshot.tabellenEintraege || {},
                       entry.tabellenEintraege || {}
                     )
                   ) {
@@ -1412,7 +1433,7 @@
             tabellenEintraege[rowId] = rowEntry;
             entry.tabellenEintraege = tabellenEintraege;
             next[companyIndex] = entry;
-            const snapshot = cloneTableEntries(tabellenEintraege);
+            const snapshot = createCompanyHistorySnapshot(tabellenEintraege);
             setCompanyHistoryByCompany((prevHistory) => {
               const nextHistory = [...prevHistory];
               const current = nextHistory[companyIndex] || createHistoryState({});
@@ -1432,15 +1453,55 @@
           });
         };
 
+        const getCompanyPmSnapshot = (companyIndex, sourceWorkPackages = workPackages) => {
+          const pmByRowId = {};
+          sourceWorkPackages.forEach((wp) => {
+            pmByRowId[wp.id] = wp.pm?.[companyIndex] ?? "";
+            wp.sub.forEach((sub) => {
+              pmByRowId[sub.id] = sub.pm?.[companyIndex] ?? "";
+            });
+          });
+          return { pmByRowId };
+        };
+
+        const applyCompanyPmSnapshot = (companyIndex, pmSnapshot) => {
+          if (!pmSnapshot?.pmByRowId) return;
+          const pmByRowId = pmSnapshot.pmByRowId;
+          setWorkPackages((prev) =>
+            prev.map((wp) => {
+              const nextWpPm = [...wp.pm];
+              if (Object.prototype.hasOwnProperty.call(pmByRowId, wp.id)) {
+                nextWpPm[companyIndex] = pmByRowId[wp.id];
+              }
+              return {
+                ...wp,
+                pm: nextWpPm,
+                sub: wp.sub.map((sub) => {
+                  const nextSubPm = [...sub.pm];
+                  if (Object.prototype.hasOwnProperty.call(pmByRowId, sub.id)) {
+                    nextSubPm[companyIndex] = pmByRowId[sub.id];
+                  }
+                  return {
+                    ...sub,
+                    pm: nextSubPm,
+                  };
+                }),
+              };
+            })
+          );
+        };
+
         const applyCompanySnapshot = (companyIndex, snapshot) => {
+          const normalizedSnapshot = normalizeCompanyHistorySnapshot(snapshot);
           setCompanyData((prev) => {
             const next = [...prev];
             next[companyIndex] = {
               ...next[companyIndex],
-              tabellenEintraege: cloneTableEntries(snapshot),
+              tabellenEintraege: cloneTableEntries(normalizedSnapshot.tabellenEintraege),
             };
             return next;
           });
+          applyCompanyPmSnapshot(companyIndex, normalizedSnapshot.pmSnapshot);
         };
 
         const undoCompanyAssignment = (companyIndex) => {
@@ -1450,7 +1511,7 @@
             const companyHistory = next[companyIndex];
             if (!companyHistory || companyHistory.historyIndex <= 0) return prev;
             const historyIndex = companyHistory.historyIndex - 1;
-            snapshotToApply = companyHistory.history[historyIndex];
+            snapshotToApply = normalizeCompanyHistorySnapshot(companyHistory.history[historyIndex]);
             next[companyIndex] = {
               ...companyHistory,
               historyIndex,
@@ -1474,7 +1535,7 @@
               return prev;
             }
             const historyIndex = companyHistory.historyIndex + 1;
-            snapshotToApply = companyHistory.history[historyIndex];
+            snapshotToApply = normalizeCompanyHistorySnapshot(companyHistory.history[historyIndex]);
             next[companyIndex] = {
               ...companyHistory,
               historyIndex,
@@ -1763,12 +1824,169 @@
           if (areTableEntriesEqual(existingEntries, nextEntries)) return;
 
           applyCompanySnapshot(companyIndex, nextEntries);
-          const snapshot = cloneTableEntries(nextEntries);
+          const snapshot = createCompanyHistorySnapshot(nextEntries);
           setCompanyHistoryByCompany((prevHistory) => {
             const nextHistory = [...prevHistory];
             const current = nextHistory[companyIndex] || createHistoryState({});
             const trimmedHistory = current.history.slice(0, current.historyIndex + 1);
             trimmedHistory.push(snapshot);
+            let history = trimmedHistory;
+            if (history.length > MAX_HISTORY_STEPS) {
+              history = history.slice(history.length - MAX_HISTORY_STEPS);
+            }
+            nextHistory[companyIndex] = {
+              history,
+              historyIndex: history.length - 1,
+            };
+            return nextHistory;
+          });
+        };
+
+        const calculateCompanyFundingMetrics = (companyIndex, sourceWorkPackages) => {
+          const companyEmployees = employeesByCompany[companyIndex] || [];
+          const tabellenEintraege = companyData[companyIndex]?.tabellenEintraege || {};
+          const pmTotals = companyEmployees.map(() => 0);
+
+          sourceWorkPackages.forEach((wp) => {
+            wp.sub.forEach((sub) => {
+              const pmDemand = normalizePmValue(sub.pm?.[companyIndex]);
+              if (pmDemand <= 0) return;
+              const entry = tabellenEintraege[sub.id] || {};
+              const employeeNumber = parseInt(entry.mitarbeiterNummer, 10);
+              if (!employeeNumber || employeeNumber < 1) return;
+              const employeeIndex = employeeNumber - 1;
+              if (employeeIndex < 0 || employeeIndex >= pmTotals.length) return;
+              pmTotals[employeeIndex] += pmDemand;
+            });
+          });
+
+          const personalkosten = companyEmployees.reduce((sum, employee, index) => {
+            const annualSalary = parseNumber(employee.annualSalary);
+            return sum + (pmTotals[index] || 0) * (annualSalary / 12);
+          }, 0);
+          const zuschlagInput = parseNumber(companyData[companyIndex]?.zuschlagsfaktorPercent);
+          const maximalbetrag = parseNumber(companyData[companyIndex]?.maximalbetrag);
+          const projektsummeRoh = personalkosten * (1 + zuschlagInput / 100);
+          const projektsummeFinal = Math.min(projektsummeRoh, maximalbetrag);
+          const realerZuschlagsfaktor =
+            personalkosten > 0 ? ((projektsummeFinal / personalkosten) - 1) * 100 : 0;
+          const z = Math.min(realerZuschlagsfaktor, zuschlagInput);
+          const utilization = maximalbetrag > 0 ? projektsummeFinal / maximalbetrag : 0;
+
+          return {
+            z,
+            utilization,
+            personalkosten,
+          };
+        };
+
+        const buildPmIncreaseCandidate = (companyIndex, factor, baseWorkPackages) => {
+          let changedCells = 0;
+          const nextWorkPackages = baseWorkPackages.map((wp) => ({
+            ...wp,
+            pm: [...wp.pm],
+            sub: wp.sub.map((sub) => {
+              const nextSub = {
+                ...sub,
+                pm: [...sub.pm],
+              };
+              const oldPm = normalizePmValue(sub.pm?.[companyIndex]);
+              if (oldPm > 0) {
+                const raw = oldPm * (1 + factor);
+                const floored = Math.floor(raw / 0.5) * 0.5;
+                const newPm = Math.max(floored, oldPm);
+                if (newPm > oldPm + 1e-9) {
+                  nextSub.pm[companyIndex] = roundToTwo(newPm);
+                  changedCells += 1;
+                }
+              }
+              return nextSub;
+            }),
+          }));
+          return { nextWorkPackages, changedCells };
+        };
+
+        const isBetterPmCandidate = (candidate, best) => {
+          const tolerance = 1e-9;
+          const candidateDistance = Math.abs(candidate.metrics.z - 100);
+          const bestDistance = Math.abs(best.metrics.z - 100);
+          if (candidateDistance < bestDistance - tolerance) return true;
+          if (candidateDistance > bestDistance + tolerance) return false;
+
+          const candidateAtOrBelow = candidate.metrics.z <= 100 + tolerance;
+          const bestAtOrBelow = best.metrics.z <= 100 + tolerance;
+          if (candidateAtOrBelow && !bestAtOrBelow) return true;
+          if (!candidateAtOrBelow && bestAtOrBelow) return false;
+
+          if (candidate.metrics.utilization > best.metrics.utilization + tolerance) return true;
+          if (candidate.metrics.utilization < best.metrics.utilization - tolerance) return false;
+
+          if (candidate.metrics.personalkosten > best.metrics.personalkosten + tolerance) return true;
+          if (candidate.metrics.personalkosten < best.metrics.personalkosten - tolerance) return false;
+
+          return candidate.factor < best.factor;
+        };
+
+        const runAutoPmIncrease = (companyIndex) => {
+          const maxFactorPercent = 200;
+          const factorStepPercent = 5;
+          const basePmSnapshot = getCompanyPmSnapshot(companyIndex, workPackages);
+
+          let bestCandidate = {
+            factor: 0,
+            workPackages,
+            metrics: calculateCompanyFundingMetrics(companyIndex, workPackages),
+          };
+
+          for (
+            let factorPercent = factorStepPercent;
+            factorPercent <= maxFactorPercent;
+            factorPercent += factorStepPercent
+          ) {
+            const factor = factorPercent / 100;
+            const candidateState = buildPmIncreaseCandidate(companyIndex, factor, workPackages);
+            if (candidateState.changedCells === 0) {
+              continue;
+            }
+            const candidate = {
+              factor,
+              workPackages: candidateState.nextWorkPackages,
+              metrics: calculateCompanyFundingMetrics(
+                companyIndex,
+                candidateState.nextWorkPackages
+              ),
+            };
+            if (isBetterPmCandidate(candidate, bestCandidate)) {
+              bestCandidate = candidate;
+            }
+          }
+
+          if (bestCandidate.factor <= 0) return;
+
+          setWorkPackages(bestCandidate.workPackages);
+          const nextSnapshot = createCompanyHistorySnapshot(
+            companyData[companyIndex]?.tabellenEintraege || {},
+            getCompanyPmSnapshot(companyIndex, bestCandidate.workPackages)
+          );
+
+          setCompanyHistoryByCompany((prevHistory) => {
+            const nextHistory = [...prevHistory];
+            const current = nextHistory[companyIndex] || createHistoryState({});
+            const trimmedHistory = current.history.slice(0, current.historyIndex + 1);
+
+            if (trimmedHistory.length) {
+              const currentSnapshot = normalizeCompanyHistorySnapshot(
+                trimmedHistory[trimmedHistory.length - 1]
+              );
+              if (!currentSnapshot.pmSnapshot) {
+                trimmedHistory[trimmedHistory.length - 1] = createCompanyHistorySnapshot(
+                  currentSnapshot.tabellenEintraege,
+                  basePmSnapshot
+                );
+              }
+            }
+
+            trimmedHistory.push(nextSnapshot);
             let history = trimmedHistory;
             if (history.length > MAX_HISTORY_STEPS) {
               history = history.slice(history.length - MAX_HISTORY_STEPS);
@@ -2567,6 +2785,13 @@
                               className="h-10 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
                             >
                               Auto Projektplanung
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runAutoPmIncrease(companyIndex)}
+                              className="h-10 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+                            >
+                              Auto PM-Erhöhung
                             </button>
                             <button
                               type="button"
