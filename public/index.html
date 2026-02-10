@@ -57,6 +57,11 @@
       const MAX_HISTORY_STEPS = 10;
       const YEAR_CAP_PM = 10.5;
       const STORAGE_KEY = "zim-fe-kostenkalkulation-v3";
+      const AUTO_PLANNING_MODE = {
+        EMPLOYEES_ONLY: "employees-only",
+        DATES_ONLY: "dates-only",
+        BOTH: "both",
+      };
 
       const monthNames = [
         "Jan",
@@ -615,6 +620,7 @@
         zuschlagsfaktorPercent: 100,
         foerderquotePercent: 45,
         maximalbetrag: 560000,
+        autoPlanningMode: AUTO_PLANNING_MODE.BOTH,
         ergebnisse: {
           personalkosten: 0,
           gemeinkostenzuschlag: 0,
@@ -687,6 +693,9 @@
           return {
             ...fallback,
             ...entry,
+            autoPlanningMode: Object.values(AUTO_PLANNING_MODE).includes(entry.autoPlanningMode)
+              ? entry.autoPlanningMode
+              : AUTO_PLANNING_MODE.BOTH,
             ergebnisse: {
               ...fallback.ergebnisse,
               ...(entry.ergebnisse || {}),
@@ -1295,12 +1304,83 @@
         const runAutoProjectPlanning = (companyIndex) => {
           const companyRows = filteredWorkPackageRowsByCompany[companyIndex] || [];
           const companyEmployees = employeesByCompany[companyIndex] || [];
-          if (!companyRows.length || !companyEmployees.length) return;
+          const mode =
+            companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH;
+          const shouldOptimizeEmployees =
+            mode === AUTO_PLANNING_MODE.EMPLOYEES_ONLY || mode === AUTO_PLANNING_MODE.BOTH;
+          const shouldOptimizeDates =
+            mode === AUTO_PLANNING_MODE.DATES_ONLY || mode === AUTO_PLANNING_MODE.BOTH;
+          if (!companyRows.length) return;
+          if (shouldOptimizeEmployees && !companyEmployees.length) return;
 
           const projectStart = parseDate(startDate);
           const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
           const projectEndIndex = projectStartIndex + durationMonths - 1;
           if (projectEndIndex < projectStartIndex) return;
+
+          const rowsToPlan = [...companyRows].sort((a, b) => {
+            return `${a.number}`.localeCompare(`${b.number}`, "de", { numeric: true });
+          });
+          const rowsWithPm = rowsToPlan
+            .map((row) => ({
+              row,
+              pmDemand: normalizePmValue(row.pmByCompany?.[companyIndex]),
+            }))
+            .filter((entry) => entry.pmDemand > 0);
+          if (!rowsWithPm.length) return;
+
+          const existingEntries = companyData[companyIndex]?.tabellenEintraege || {};
+          const plannedByRowId = {};
+          if (shouldOptimizeDates) {
+            const rowCount = rowsWithPm.length;
+            rowsWithPm.forEach((entry, index) => {
+              const isFirst = index === 0;
+              const isLast = index === rowCount - 1;
+              const duration = clampNumber(Math.ceil(entry.pmDemand), 1, 10);
+              const baseStart =
+                rowCount === 1
+                  ? projectStartIndex
+                  : Math.round(
+                      projectStartIndex +
+                        ((projectEndIndex - projectStartIndex) * index) / (rowCount - 1)
+                    );
+              const previous = index > 0 ? plannedByRowId[rowsWithPm[index - 1].row.id] : null;
+              const minStart = isFirst
+                ? projectStartIndex
+                : previous
+                  ? parseMonthYear(previous.start).year * 12 + parseMonthYear(previous.start).month
+                  : projectStartIndex;
+              let start = clampNumber(
+                Math.max(baseStart, minStart),
+                projectStartIndex,
+                Math.max(projectStartIndex, projectEndIndex - duration + 1)
+              );
+              if (isFirst) {
+                start = projectStartIndex;
+              }
+              let end = clampNumber(start + duration - 1, start, projectEndIndex);
+              if (isLast) {
+                end = projectEndIndex;
+                start = clampNumber(
+                  end - duration + 1,
+                  Math.max(projectStartIndex, minStart),
+                  end
+                );
+              }
+              plannedByRowId[entry.row.id] = {
+                start: formatMonthYearFromAbsoluteIndex(start),
+                ende: formatMonthYearFromAbsoluteIndex(end),
+              };
+            });
+          } else {
+            rowsWithPm.forEach((entry) => {
+              const current = existingEntries[entry.row.id] || {};
+              plannedByRowId[entry.row.id] = {
+                start: current.start || "",
+                ende: current.ende || "",
+              };
+            });
+          }
 
           const employeeOrder = companyEmployees
             .map((employee, employeeIndex) => ({
@@ -1311,85 +1391,86 @@
             }))
             .sort((a, b) => b.annualSalary - a.annualSalary || a.employeeIndex - b.employeeIndex);
 
-          const rowsToPlan = [...companyRows].sort((a, b) => {
-            const pmA = normalizePmValue(a.pmByCompany?.[companyIndex]);
-            const pmB = normalizePmValue(b.pmByCompany?.[companyIndex]);
-            if (pmB !== pmA) return pmB - pmA;
-            return `${a.number}`.localeCompare(`${b.number}`, "de", { numeric: true });
-          });
+          const zuschlagInput = parseNumber(companyData[companyIndex]?.zuschlagsfaktorPercent);
+          const maximalbetrag = parseNumber(companyData[companyIndex]?.maximalbetrag);
+          const ceilingPersonnelCosts =
+            1 + zuschlagInput / 100 > 0
+              ? maximalbetrag / (1 + zuschlagInput / 100)
+              : Number.POSITIVE_INFINITY;
 
           const yearlyUsage = employeeOrder.reduce((acc, employee) => {
             acc[employee.employeeIndex] = {};
             return acc;
           }, {});
           const assignments = {};
-          let planningCursor = projectStartIndex;
+          let plannedPersonnelCosts = 0;
 
-          rowsToPlan.forEach((row) => {
-            const pmDemand = normalizePmValue(row.pmByCompany?.[companyIndex]);
-            if (!pmDemand) return;
+          const getStartEndMonthIndex = (assignment) => {
+            const parsedStart = parseMonthYear(assignment.start);
+            const parsedEnd = parseMonthYear(assignment.ende);
+            if (!parsedStart || !parsedEnd) return null;
+            const start = parsedStart.year * 12 + parsedStart.month;
+            const end = parsedEnd.year * 12 + parsedEnd.month;
+            if (end < start) return null;
+            return { start, end };
+          };
+          rowsWithPm.forEach(({ row, pmDemand }) => {
+            const dateAssignment = plannedByRowId[row.id] || {};
+            const existingRowEntry = existingEntries[row.id] || {};
 
-            const defaultDuration = clampNumber(Math.ceil(pmDemand), 1, 10);
-            const candidateDurations = [defaultDuration];
-            for (let duration = 1; duration <= 10; duration += 1) {
-              if (!candidateDurations.includes(duration)) {
-                candidateDurations.push(duration);
-              }
+            if (!shouldOptimizeEmployees) {
+              assignments[row.id] = {
+                ...dateAssignment,
+                mitarbeiterNummer: existingRowEntry.mitarbeiterNummer || "",
+              };
+              return;
             }
 
-            let planned = null;
-            for (const duration of candidateDurations) {
-              const maxStart = projectEndIndex - duration + 1;
-              if (maxStart < projectStartIndex) continue;
-              const preferredStarts = [];
-              for (let start = planningCursor; start <= maxStart; start += 1) {
-                preferredStarts.push(start);
-              }
-              for (let start = projectStartIndex; start < planningCursor && start <= maxStart; start += 1) {
-                preferredStarts.push(start);
-              }
+            const span = getStartEndMonthIndex(dateAssignment);
+            if (!span) return;
+            const monthsByYear = getMonthsByYearFromRange(span.start, span.end);
+            const totalMonths = Math.max(1, span.end - span.start + 1);
+            const pmPerMonth = pmDemand / totalMonths;
+            const pmByYear = Object.entries(monthsByYear).reduce((acc, [year, months]) => {
+              acc[year] = pmPerMonth * months;
+              return acc;
+            }, {});
 
-              for (const start of preferredStarts) {
-                const end = start + duration - 1;
-                const monthsByYear = getMonthsByYearFromRange(start, end);
-                const pmPerMonth = pmDemand / duration;
-                const pmByYear = Object.entries(monthsByYear).reduce((acc, [year, months]) => {
-                  acc[year] = pmPerMonth * months;
-                  return acc;
-                }, {});
+            const candidates = employeeOrder.filter((employee) =>
+              Object.entries(pmByYear).every(([year, pmValue]) => {
+                const alreadyUsed = yearlyUsage[employee.employeeIndex]?.[year] || 0;
+                return alreadyUsed + pmValue <= employee.annualMaxPm + 1e-9;
+              })
+            );
+            if (!candidates.length) return;
 
-                const matchingEmployee = employeeOrder.find((employee) => {
-                  return Object.entries(pmByYear).every(([year, pmValue]) => {
-                    const alreadyUsed = yearlyUsage[employee.employeeIndex]?.[year] || 0;
-                    return alreadyUsed + pmValue <= employee.annualMaxPm + 1e-9;
-                  });
-                });
+            const selectedEmployee = [...candidates].sort((a, b) => {
+              const salaryCostA = pmDemand * (a.annualSalary / 12);
+              const salaryCostB = pmDemand * (b.annualSalary / 12);
+              const projectedA = plannedPersonnelCosts + salaryCostA;
+              const projectedB = plannedPersonnelCosts + salaryCostB;
+              const overshootA = Math.max(0, projectedA - ceilingPersonnelCosts);
+              const overshootB = Math.max(0, projectedB - ceilingPersonnelCosts);
+              if (overshootA !== overshootB) return overshootA - overshootB;
+              const distanceA = Math.abs(ceilingPersonnelCosts - projectedA);
+              const distanceB = Math.abs(ceilingPersonnelCosts - projectedB);
+              if (distanceA !== distanceB) return distanceA - distanceB;
+              if (b.annualSalary !== a.annualSalary) return b.annualSalary - a.annualSalary;
+              return a.employeeIndex - b.employeeIndex;
+            })[0];
 
-                if (!matchingEmployee) continue;
+            Object.entries(pmByYear).forEach(([year, pmValue]) => {
+              yearlyUsage[selectedEmployee.employeeIndex][year] =
+                (yearlyUsage[selectedEmployee.employeeIndex][year] || 0) + pmValue;
+            });
+            plannedPersonnelCosts += pmDemand * (selectedEmployee.annualSalary / 12);
 
-                Object.entries(pmByYear).forEach(([year, pmValue]) => {
-                  yearlyUsage[matchingEmployee.employeeIndex][year] =
-                    (yearlyUsage[matchingEmployee.employeeIndex][year] || 0) + pmValue;
-                });
-
-                planned = {
-                  start: formatMonthYearFromAbsoluteIndex(start),
-                  ende: formatMonthYearFromAbsoluteIndex(end),
-                  mitarbeiterNummer: `${matchingEmployee.employeeIndex + 1}`,
-                };
-                planningCursor = Math.min(maxStart + 1, end + 1);
-                break;
-              }
-
-              if (planned) break;
-            }
-
-            if (planned) {
-              assignments[row.id] = planned;
-            }
+            assignments[row.id] = {
+              ...dateAssignment,
+              mitarbeiterNummer: `${selectedEmployee.employeeIndex + 1}`,
+            };
           });
 
-          const existingEntries = companyData[companyIndex]?.tabellenEintraege || {};
           const nextEntries = cloneTableEntries(existingEntries);
           Object.entries(assignments).forEach(([rowId, assignment]) => {
             nextEntries[rowId] = {
@@ -2148,35 +2229,36 @@
                   return (
                     <section
                       key={`company-planning-${companyIndex}`}
-                      className="rounded-2xl border border-slate-200 border-l-4 bg-white p-5 shadow-subtle"
+                      className="rounded-2xl p-5 shadow-subtle"
                       style={{
-                        borderLeftColor:
-                          getCompanyColorPalette(companyIndex)?.strip || "transparent",
+                        backgroundColor: getCompanyColorHex(companyIndex),
+                        border: `2px solid ${getCompanyColorHex(companyIndex)}`,
                       }}
                     >
-                      <div
-                        className="border-b border-slate-200 pb-4"
-                        style={{
-                          borderTop: `3px solid ${
-                            getCompanyColorPalette(companyIndex)?.strip || "transparent"
-                          }`,
-                        }}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                              Unternehmensplanung
-                            </p>
-                            <h3 className="mt-2 text-xl font-semibold text-slate-850">
-                              Unternehmensplanung: {companyName}
-                            </h3>
-                          </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Unternehmensplanung
+                        </p>
+                        <h3 className="mt-2 text-xl font-semibold text-slate-850">
+                          Unternehmensplanung: {companyName}
+                        </h3>
+                      </div>
+
+                      <div className="mt-6 space-y-6">
+                        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4">
                           <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => runAutoProjectPlanning(companyIndex)}
+                              className="h-10 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+                            >
+                              Auto Projektplanung
+                            </button>
                             <button
                               type="button"
                               onClick={() => undoCompanyAssignment(companyIndex)}
                               disabled={!canUndo}
-                              className="h-9 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-10 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Undo
                             </button>
@@ -2184,23 +2266,70 @@
                               type="button"
                               onClick={() => redoCompanyAssignment(companyIndex)}
                               disabled={!canRedo}
-                              className="h-9 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-10 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Redo
                             </button>
                           </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-6 space-y-6">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
-                          <button
-                            type="button"
-                            onClick={() => runAutoProjectPlanning(companyIndex)}
-                            className="h-10 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
-                          >
-                            Auto Projektplanung
-                          </button>
+                          <div className="mt-4 space-y-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                            <label className="flex items-start gap-2 text-sm text-slate-700">
+                              <input
+                                type="radio"
+                                name={`auto-mode-${companyIndex}`}
+                                checked={
+                                  (companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH) ===
+                                  AUTO_PLANNING_MODE.EMPLOYEES_ONLY
+                                }
+                                onChange={() =>
+                                  updateCompanyField(
+                                    companyIndex,
+                                    "autoPlanningMode",
+                                    AUTO_PLANNING_MODE.EMPLOYEES_ONLY
+                                  )
+                                }
+                                className="mt-1"
+                              />
+                              <span>Nur Mitarbeiterzuordnung optimieren (Start/Ende bleibt unverändert)</span>
+                            </label>
+                            <label className="flex items-start gap-2 text-sm text-slate-700">
+                              <input
+                                type="radio"
+                                name={`auto-mode-${companyIndex}`}
+                                checked={
+                                  (companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH) ===
+                                  AUTO_PLANNING_MODE.DATES_ONLY
+                                }
+                                onChange={() =>
+                                  updateCompanyField(
+                                    companyIndex,
+                                    "autoPlanningMode",
+                                    AUTO_PLANNING_MODE.DATES_ONLY
+                                  )
+                                }
+                                className="mt-1"
+                              />
+                              <span>Nur Start-/Enddaten optimieren (Mitarbeiter bleibt unverändert)</span>
+                            </label>
+                            <label className="flex items-start gap-2 text-sm text-slate-700">
+                              <input
+                                type="radio"
+                                name={`auto-mode-${companyIndex}`}
+                                checked={
+                                  (companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH) ===
+                                  AUTO_PLANNING_MODE.BOTH
+                                }
+                                onChange={() =>
+                                  updateCompanyField(
+                                    companyIndex,
+                                    "autoPlanningMode",
+                                    AUTO_PLANNING_MODE.BOTH
+                                  )
+                                }
+                                className="mt-1"
+                              />
+                              <span>Beides optimieren (Start/Ende und Mitarbeiter)</span>
+                            </label>
+                          </div>
                         </div>
 
                         <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
