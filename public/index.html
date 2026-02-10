@@ -825,16 +825,16 @@
           isCompany1PresetApplied,
         ]);
 
+        const activeCompanyIndexes = useMemo(
+          () => Array.from({ length: companyCount }, (_, index) => index),
+          [companyCount]
+        );
+
         useEffect(() => {
           setGanttCompanyIndex((prev) =>
             activeCompanyIndexes.includes(prev) ? prev : activeCompanyIndexes[0] || 0
           );
         }, [activeCompanyIndexes]);
-
-        const activeCompanyIndexes = useMemo(
-          () => Array.from({ length: companyCount }, (_, index) => index),
-          [companyCount]
-        );
 
         const timeline = useMemo(
           () => buildTimeline(startDate, durationMonths),
