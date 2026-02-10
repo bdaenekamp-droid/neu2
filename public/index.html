@@ -563,6 +563,11 @@
         return Number.isNaN(parsed) ? 0 : parsed;
       };
 
+      const getEffectiveProjectPercent = (value) => {
+        if (value === "" || value === null || value === undefined) return 100;
+        return clampNumber(parseNumber(value), 0, 999);
+      };
+
       const COMPANY_COLOR_BASE_HEX = ["#5b8fd6", "#5fafbf", "#8ebf6a", "#d0a45e", "#cf6a5e"];
       const withAlpha = (hex, alpha) => {
         const normalized = `${hex}`.replace("#", "");
@@ -584,8 +589,6 @@
           strip: base,
           bar: withAlpha(base, 0.85),
           barBorder: base,
-          panelTint: withAlpha(base, 0.1),
-          panelBorder: withAlpha(base, 0.35),
           inputFocus: withAlpha(base, 0.25),
         };
       };
@@ -1883,15 +1886,20 @@
                   return (
                     <section
                       key={`company-planning-${companyIndex}`}
-                      className="rounded-2xl border border-slate-200 p-5 shadow-subtle"
+                      className="rounded-2xl border border-slate-200 border-l-4 bg-white p-5 shadow-subtle"
                       style={{
-                        backgroundColor:
-                          getCompanyColorPalette(companyIndex)?.panelTint || "#ffffff",
-                        borderColor:
-                          getCompanyColorPalette(companyIndex)?.panelBorder || "#e2e8f0",
+                        borderLeftColor:
+                          getCompanyColorPalette(companyIndex)?.strip || "transparent",
                       }}
                     >
-                      <div className="border-b border-slate-200 pb-4">
+                      <div
+                        className="border-b border-slate-200 pb-4"
+                        style={{
+                          borderTop: `3px solid ${
+                            getCompanyColorPalette(companyIndex)?.strip || "transparent"
+                          }`,
+                        }}
+                      >
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                           Unternehmensplanung
                         </p>
@@ -2266,17 +2274,15 @@
                                     {employeeIndex + 1}
                                   </div>
                                   {projectYears.map((year) => {
-                                    const usedPM =
-                                      usedPmByEmployee?.[employeeIndex]?.[year] || 0;
-                                    const projectPercent = clampNumber(
-                                      parseNumber(employee.projectPercent) || 100,
-                                      0,
-                                      999
+                                    const usedPMRaw =
+                                      usedPmByEmployee?.[employeeIndex]?.[year] ?? 0;
+                                    const usedPM = Number.isFinite(usedPMRaw)
+                                      ? usedPMRaw
+                                      : 0;
+                                    const projectPercent = getEffectiveProjectPercent(
+                                      employee?.projectPercent
                                     );
-                                    const annualMaxPm =
-                                      projectPercent > 0
-                                        ? YEAR_CAP_PM * (projectPercent / 100)
-                                        : YEAR_CAP_PM;
+                                    const annualMaxPm = YEAR_CAP_PM * (projectPercent / 100);
                                     const rawUtilization =
                                       annualMaxPm > 0 ? (usedPM / annualMaxPm) * 100 : 0;
                                     const utilization = clampNumber(rawUtilization, 0, 999);
