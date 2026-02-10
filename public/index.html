@@ -563,38 +563,25 @@
         return Number.isNaN(parsed) ? 0 : parsed;
       };
 
-      const COMPANY_COLOR_PALETTE = [
-        {
-          strip: "#93c5fd",
-          bar: "rgba(96, 165, 250, 0.68)",
-          barBorder: "#3b82f6",
-          panelTint: "rgba(147, 197, 253, 0.1)",
-        },
-        {
-          strip: "#99f6e4",
-          bar: "rgba(45, 212, 191, 0.68)",
-          barBorder: "#0f766e",
-          panelTint: "rgba(153, 246, 228, 0.1)",
-        },
-        {
-          strip: "#fde68a",
-          bar: "rgba(251, 191, 36, 0.66)",
-          barBorder: "#b45309",
-          panelTint: "rgba(253, 230, 138, 0.12)",
-        },
-        {
-          strip: "#fdba74",
-          bar: "rgba(249, 115, 22, 0.64)",
-          barBorder: "#c2410c",
-          panelTint: "rgba(253, 186, 116, 0.1)",
-        },
-        {
-          strip: "#fca5a5",
-          bar: "rgba(248, 113, 113, 0.66)",
-          barBorder: "#b91c1c",
-          panelTint: "rgba(252, 165, 165, 0.1)",
-        },
-      ];
+      const COMPANY_COLORS = ["#3b82f6", "#14b8a6", "#f59e0b", "#f97316", "#ef4444"];
+      const hexToRgba = (hex, alpha) => {
+        const normalized = `${hex}`.replace("#", "");
+        if (normalized.length !== 6) return hex;
+        const r = Number.parseInt(normalized.slice(0, 2), 16);
+        const g = Number.parseInt(normalized.slice(2, 4), 16);
+        const b = Number.parseInt(normalized.slice(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      };
+
+      const COMPANY_COLOR_PALETTE = COMPANY_COLORS.map((base) => ({
+        base,
+        strip: base,
+        bar: hexToRgba(base, 0.68),
+        barBorder: base,
+        panelTint: hexToRgba(base, 0.1),
+        panelBorder: hexToRgba(base, 0.35),
+        inputFocus: hexToRgba(base, 0.25),
+      }));
 
       const DEFAULT_COMPANY_NAMES = Array.from({ length: 5 }, (_, index) => `Unternehmen ${index + 1}`);
       const DEFAULT_START_DATE = "2026-07-15";
@@ -787,10 +774,11 @@
         const [rowHeights, setRowHeights] = useState({});
         const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
         const [ganttViewportWidth, setGanttViewportWidth] = useState(0);
+        const [ganttScrollWidth, setGanttScrollWidth] = useState(0);
         const [presetNotice, setPresetNotice] = useState("");
         const presetNoticeTimeoutRef = React.useRef(null);
         const [isCompany1PresetApplied, setIsCompany1PresetApplied] = useState(false);
-        const ganttHeaderViewportRef = React.useRef(null);
+        const ganttScrollContainerRef = React.useRef(null);
 
         useEffect(() => {
           const saved = localStorage.getItem(STORAGE_KEY);
@@ -1227,6 +1215,13 @@
         const handleGanttSliderChange = (event) => {
           const value = parseInt(event.target.value, 10) || 0;
           setGanttScrollLeft(value);
+          if (ganttScrollContainerRef.current) {
+            ganttScrollContainerRef.current.scrollLeft = value;
+          }
+        };
+
+        const handleGanttScroll = (event) => {
+          setGanttScrollLeft(event.currentTarget.scrollLeft);
         };
 
         const sumForCompanies = (pmValues) =>
@@ -1272,21 +1267,38 @@
           [durationMonths]
         );
         const ganttTrackWidth = durationMonths * ganttMonthWidth;
-        const ganttMaxScroll = Math.max(0, ganttTrackWidth - ganttViewportWidth);
+        const ganttContentWidth = Math.max(ganttTrackWidth, ganttViewportWidth || 0);
+        const ganttMaxScroll = Math.max(0, ganttScrollWidth - ganttViewportWidth);
 
         useEffect(() => {
-          if (!ganttHeaderViewportRef.current || typeof ResizeObserver === "undefined") return;
-          const observer = new ResizeObserver((entries) => {
-            const nextWidth = entries[0]?.contentRect?.width || 0;
-            setGanttViewportWidth(nextWidth);
+          if (!ganttScrollContainerRef.current || typeof ResizeObserver === "undefined") return;
+          const target = ganttScrollContainerRef.current;
+          const updateSizes = () => {
+            setGanttViewportWidth(target.clientWidth || 0);
+            setGanttScrollWidth(target.scrollWidth || 0);
+          };
+          updateSizes();
+          const observer = new ResizeObserver(() => {
+            updateSizes();
           });
-          observer.observe(ganttHeaderViewportRef.current);
+          observer.observe(target);
           return () => observer.disconnect();
         }, []);
 
         useEffect(() => {
           setGanttScrollLeft((prev) => Math.min(prev, ganttMaxScroll));
         }, [ganttMaxScroll]);
+
+        useEffect(() => {
+          if (!ganttScrollContainerRef.current) return;
+          ganttScrollContainerRef.current.scrollLeft = ganttScrollLeft;
+        }, [ganttScrollLeft]);
+
+        useEffect(() => {
+          if (!ganttScrollContainerRef.current) return;
+          setGanttViewportWidth(ganttScrollContainerRef.current.clientWidth || 0);
+          setGanttScrollWidth(ganttScrollContainerRef.current.scrollWidth || 0);
+        }, [durationMonths, companyCount, workPackages.length, ganttContentWidth]);
 
         const getAssignedCompanyIndex = (pmByCompany = []) => {
           const positiveIndexes = activeCompanyIndexes.filter(
@@ -1521,21 +1533,31 @@
                         Unternehmensnamen
                       </div>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        {activeCompanyIndexes.map((idx) => (
-                          <input
-                            key={`company-name-${idx}`}
-                            type="text"
-                            value={companyNames[idx] || `Unternehmen ${idx + 1}`}
-                            onChange={(event) =>
-                              setCompanyNames((prev) => {
-                                const next = [...prev];
-                                next[idx] = event.target.value;
-                                return next;
-                              })
-                            }
-                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                          />
-                        ))}
+                        {activeCompanyIndexes.map((idx) => {
+                          const companyColor = COMPANY_COLOR_PALETTE[idx % COMPANY_COLOR_PALETTE.length];
+                          return (
+                            <input
+                              key={`company-name-${idx}`}
+                              type="text"
+                              value={companyNames[idx] || `Unternehmen ${idx + 1}`}
+                              onChange={(event) =>
+                                setCompanyNames((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = event.target.value;
+                                  return next;
+                                })
+                              }
+                              className="w-full rounded-md border-2 px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                              style={{ borderColor: companyColor?.base, boxShadow: `0 0 0 0 ${companyColor?.inputFocus}` }}
+                              onFocus={(event) => {
+                                event.currentTarget.style.boxShadow = `0 0 0 3px ${companyColor?.inputFocus}`;
+                              }}
+                              onBlur={(event) => {
+                                event.currentTarget.style.boxShadow = `0 0 0 0 ${companyColor?.inputFocus}`;
+                              }}
+                            />
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -1645,7 +1667,9 @@
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                <div ref={ganttScrollContainerRef} onScroll={handleGanttScroll} className="overflow-x-auto">
+                <div className="min-w-full">
+                <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100">
                   <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
                     <div className="border-r border-slate-200">
                       <div
@@ -1674,20 +1698,18 @@
                           <input type="range" min="0" max={ganttMaxScroll} value={ganttScrollLeft} onChange={handleGanttSliderChange} className="h-2 w-full accent-slate-600" />
                           <span className="text-[11px] font-medium text-slate-500">Scroll</span>
                         </div>
-                        <div ref={ganttHeaderViewportRef} className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white" style={{ width: ganttViewportWidth ? `${ganttViewportWidth}px` : "100%" }}>
-                          <div style={{ width: `${ganttTrackWidth}px`, transform: `translateX(-${ganttScrollLeft}px)` }}>
-                            <div className="grid text-center text-[11px] font-semibold uppercase text-slate-500" style={monthGridStyle}>
-                              {yearSegments.map((segment, index) => (
-                                <div key={`year-${segment.year}-${index}`} className="border-r border-slate-200 py-1" style={{ gridColumn: `span ${segment.span}` }}>
-                                  {segment.year}
-                                </div>
-                              ))}
-                            </div>
-                            <div className="gantt-grid border-t border-slate-200 text-[10px] text-slate-500" style={monthGridStyle}>
-                              {timeline.map((month, index) => (
-                                <div key={`month-${month.year}-${index}`} className="border-r border-slate-200 py-1 text-center">{month.label}</div>
-                              ))}
-                            </div>
+                        <div className="mt-2 rounded-md border border-slate-200 bg-white" style={{ minWidth: `${ganttContentWidth}px` }}>
+                          <div className="grid text-center text-[11px] font-semibold uppercase text-slate-500" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
+                            {yearSegments.map((segment, index) => (
+                              <div key={`year-${segment.year}-${index}`} className="border-r border-slate-200 py-1" style={{ gridColumn: `span ${segment.span}` }}>
+                                {segment.year}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="gantt-grid border-t border-slate-200 text-[10px] text-slate-500" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
+                            {timeline.map((month, index) => (
+                              <div key={`month-${month.year}-${index}`} className="border-r border-slate-200 py-1 text-center">{month.label}</div>
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -1816,9 +1838,9 @@
                       <div key={`combined-row-${row.type}-${rowIndex}`} className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
                         <div className="border-r border-slate-200">{leftCell}</div>
                         <div className={`px-4 py-2 ${groupBorder} ${getRowTone(row)} ${getRowHeight(row)}`}>
-                          <div className="relative overflow-hidden rounded border border-slate-200 bg-white" style={{ width: ganttViewportWidth ? `${ganttViewportWidth}px` : "100%" }}>
-                            <div className="relative" style={{ width: `${ganttTrackWidth}px`, transform: `translateX(-${ganttScrollLeft}px)` }}>
-                              <div className="gantt-grid" style={monthGridStyle}>
+                          <div className="relative rounded border border-slate-200 bg-white" style={{ minWidth: `${ganttContentWidth}px` }}>
+                            <div className="relative" style={{ minWidth: `${ganttContentWidth}px` }}>
+                              <div className="gantt-grid" style={{ ...monthGridStyle, minWidth: `${ganttContentWidth}px` }}>
                                 {Array.from({ length: durationMonths }, (_, index) => (
                                   <div key={`cell-${row.type}-${rowIndex}-${index}`} className="h-7 border-r border-dashed border-slate-200" />
                                 ))}
@@ -1830,6 +1852,7 @@
                       </div>
                     );
                   })}
+                </div>
                 </div>
               </div>
 
@@ -1869,6 +1892,9 @@
                         backgroundColor:
                           COMPANY_COLOR_PALETTE[companyIndex % COMPANY_COLOR_PALETTE.length]
                             ?.panelTint || "#ffffff",
+                        borderColor:
+                          COMPANY_COLOR_PALETTE[companyIndex % COMPANY_COLOR_PALETTE.length]
+                            ?.panelBorder || "#e2e8f0",
                       }}
                     >
                       <div className="border-b border-slate-200 pb-4">
