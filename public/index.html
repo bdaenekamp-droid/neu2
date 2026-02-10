@@ -737,14 +737,11 @@
         const [companyData, setCompanyData] = useState(() => normalizeCompanyData());
         const [pendingDelete, setPendingDelete] = useState(null);
         const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(null);
-        const ganttScrollRef = React.useRef(null);
-        const ganttTimelineRef = React.useRef(null);
         const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
-        const [ganttMaxScroll, setGanttMaxScroll] = useState(0);
         const [presetNotice, setPresetNotice] = useState("");
         const presetNoticeTimeoutRef = React.useRef(null);
         const [isCompany1PresetApplied, setIsCompany1PresetApplied] = useState(false);
-        const [rowHeights, setRowHeights] = useState({});
+        const [ganttCompanyIndex, setGanttCompanyIndex] = useState(0);
 
         useEffect(() => {
           const saved = localStorage.getItem(STORAGE_KEY);
@@ -829,21 +826,10 @@
         ]);
 
         useEffect(() => {
-          const updateMetrics = () => {
-            if (!ganttScrollRef.current) return;
-            const { scrollWidth, clientWidth, scrollLeft } = ganttScrollRef.current;
-            const maxScroll = Math.max(0, scrollWidth - clientWidth);
-            setGanttMaxScroll(maxScroll);
-            setGanttScrollLeft(Math.min(scrollLeft, maxScroll));
-            if (ganttTimelineRef.current) {
-              ganttTimelineRef.current.scrollLeft = scrollLeft;
-            }
-          };
-
-          updateMetrics();
-          window.addEventListener("resize", updateMetrics);
-          return () => window.removeEventListener("resize", updateMetrics);
-        }, [durationMonths]);
+          setGanttCompanyIndex((prev) =>
+            activeCompanyIndexes.includes(prev) ? prev : activeCompanyIndexes[0] || 0
+          );
+        }, [activeCompanyIndexes]);
 
         const activeCompanyIndexes = useMemo(
           () => Array.from({ length: companyCount }, (_, index) => index),
@@ -1195,22 +1181,9 @@
           }, 3000);
         };
 
-        const handleGanttScroll = (event) => {
-          setGanttScrollLeft(event.currentTarget.scrollLeft);
-          if (ganttTimelineRef.current) {
-            ganttTimelineRef.current.scrollLeft = event.currentTarget.scrollLeft;
-          }
-        };
-
         const handleGanttSliderChange = (event) => {
           const value = parseInt(event.target.value, 10) || 0;
           setGanttScrollLeft(value);
-          if (ganttScrollRef.current) {
-            ganttScrollRef.current.scrollLeft = value;
-          }
-          if (ganttTimelineRef.current) {
-            ganttTimelineRef.current.scrollLeft = value;
-          }
         };
 
         const sumForCompanies = (pmValues) =>
@@ -1250,10 +1223,45 @@
         const employeeGridTemplate =
           "minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(220px, 1.6fr) minmax(170px, 1.1fr) minmax(170px, 1.1fr) minmax(190px, 1.2fr)";
 
+        const ganttMonthWidth = 36;
+        const ganttViewportWidth = 520;
         const monthGridStyle = useMemo(
-          () => ({ gridTemplateColumns: `repeat(${durationMonths}, minmax(32px, 40px))` }),
+          () => ({ gridTemplateColumns: `repeat(${durationMonths}, ${ganttMonthWidth}px)` }),
           [durationMonths]
         );
+        const ganttTrackWidth = durationMonths * ganttMonthWidth;
+        const ganttMaxScroll = Math.max(0, ganttTrackWidth - ganttViewportWidth);
+
+        useEffect(() => {
+          setGanttScrollLeft((prev) => Math.min(prev, ganttMaxScroll));
+        }, [ganttMaxScroll]);
+
+        const ganttBarsByRowId = useMemo(() => {
+          const projectStart = parseDate(startDate);
+          const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
+          const entries = companyData[ganttCompanyIndex]?.tabellenEintraege || {};
+          const bars = {};
+          workPackageRows.forEach((row) => {
+            if (!row.number.includes(".")) return;
+            const assignment = entries[row.id] || {};
+            const span = getMonthSpan(assignment.start, assignment.ende);
+            if (!span || span.totalMonths <= 0) return;
+            const parsedStart = parseMonthYear(assignment.start);
+            if (!parsedStart) return;
+            const startIndex = parsedStart.year * 12 + parsedStart.month - projectStartIndex;
+            const endIndex = startIndex + span.totalMonths - 1;
+            const clippedStart = Math.max(0, startIndex);
+            const clippedEnd = Math.min(durationMonths - 1, endIndex);
+            if (clippedEnd < 0 || clippedStart > durationMonths - 1 || clippedEnd < clippedStart) {
+              return;
+            }
+            bars[row.id] = {
+              start: clippedStart,
+              end: clippedEnd,
+            };
+          });
+          return bars;
+        }, [workPackageRows, companyData, ganttCompanyIndex, startDate, durationMonths]);
         const groupAccentClasses = [
           "border-l-sky-300",
           "border-l-indigo-300",
@@ -1274,18 +1282,14 @@
 
         const getRowHeight = (row) => {
           if (row.type === "header") return "min-h-[120px]";
-          return "min-h-[64px]";
+          return "min-h-[40px]";
         };
 
-        const handleTitleInput = (event, rowKey) => {
+        const autoResizeTextarea = (event) => {
           const textarea = event.target;
+          const minHeight = 32;
           textarea.style.height = "auto";
-          textarea.style.height = `${textarea.scrollHeight}px`;
-          const rowElement = textarea.closest(`[data-row-key="${rowKey}"]`);
-          if (rowElement) {
-            const height = rowElement.getBoundingClientRect().height;
-            setRowHeights((prev) => (prev[rowKey] === height ? prev : { ...prev, [rowKey]: height }));
-          }
+          textarea.style.height = `${Math.max(textarea.scrollHeight, minHeight)}px`;
         };
 
         useEffect(() => {
@@ -1293,15 +1297,7 @@
             const nodes = document.querySelectorAll("[data-auto-resize='true']");
             nodes.forEach((node) => {
               node.style.height = "auto";
-              node.style.height = `${node.scrollHeight}px`;
-              const rowKey = node.getAttribute("data-row-key");
-              if (!rowKey) return;
-              const rowElement = node.closest(`[data-row-key="${rowKey}"]`);
-              if (!rowElement) return;
-              const height = rowElement.getBoundingClientRect().height;
-              setRowHeights((prev) =>
-                prev[rowKey] === height ? prev : { ...prev, [rowKey]: height }
-              );
+              node.style.height = `${Math.max(node.scrollHeight, 32)}px`;
             });
           };
           requestAnimationFrame(resizeAll);
@@ -1557,351 +1553,193 @@
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white shadow-subtle">
-                <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-                  <div className="border-b border-slate-200 lg:border-b-0 lg:border-r">
-                    <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
+                  <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                    <div className="border-r border-slate-200">
                       <div
                         className={`grid items-stretch ${getRowHeight({ type: "header" })}`}
                         style={{ gridTemplateColumns: leftGridTemplate }}
                       >
-                        <div className="px-4 py-4 text-sm font-semibold text-slate-700">
-                          Arbeitspaket
-                        </div>
+                        <div className="px-4 py-4 text-sm font-semibold text-slate-700">Arbeitspaket</div>
                         {activeCompanyIndexes.map((idx) => (
-                          <div
-                            key={`header-company-${idx}`}
-                            className="px-2 py-4 text-xs font-semibold uppercase text-slate-500"
-                          >
-                            <span
-                              className="block max-w-[130px] whitespace-normal break-words leading-tight"
-                              title={companyNames[idx] || `Unternehmen ${idx + 1}`}
-                            >
+                          <div key={`header-company-${idx}`} className="px-2 py-4 text-xs font-semibold uppercase text-slate-500">
+                            <span className="block max-w-[130px] whitespace-normal break-words leading-tight" title={companyNames[idx] || `Unternehmen ${idx + 1}`}>
                               {companyNames[idx] || `Unternehmen ${idx + 1}`}
                             </span>
                           </div>
                         ))}
-                        <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">
-                          Summe
-                        </div>
+                        <div className="px-4 py-4 text-right text-xs font-semibold uppercase text-slate-500">Summe</div>
                       </div>
                     </div>
 
-                    <div className="divide-y divide-slate-100/70">
-                      {rows.map((row, rowIndex) => {
-                        if (row.type === "total") {
-                          return (
-                            <div
-                              key={`row-total-${rowIndex}`}
-                              className={`grid items-center overflow-hidden border-t border-slate-200 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)}`}
-                              style={{ gridTemplateColumns: leftGridTemplate }}
+                    <div className="px-4 py-3">
+                      <div className={`flex h-full flex-col ${getRowHeight({ type: "header" })}`}>
+                        <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
+                          <span>Gantt-Zeitleiste</span>
+                          <div className="flex items-center gap-3">
+                            <select
+                              value={ganttCompanyIndex}
+                              onChange={(event) => setGanttCompanyIndex(parseInt(event.target.value, 10) || 0)}
+                              className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
                             >
-                              <div className="px-4 py-2 text-sm font-semibold text-slate-700">
-                                Gesamtsumme
-                              </div>
-                              {totalByCompany.map((value, idx) => (
-                                <div
-                                  key={`total-company-${idx}`}
-                                  className="px-2 py-2 text-sm font-semibold text-slate-700"
-                                >
-                                  {value.toFixed(2)}
+                              {activeCompanyIndexes.map((idx) => (
+                                <option key={`gantt-company-${idx}`} value={idx}>
+                                  {companyNames[idx] || `Unternehmen ${idx + 1}`}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-xs font-medium text-slate-500">Monate 1–{durationMonths}</span>
+                          </div>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3">
+                          <input type="range" min="0" max={ganttMaxScroll} value={ganttScrollLeft} onChange={handleGanttSliderChange} className="h-2 w-full accent-slate-600" />
+                          <span className="text-[11px] font-medium text-slate-500">Scroll</span>
+                        </div>
+                        <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white" style={{ width: `${ganttViewportWidth}px` }}>
+                          <div style={{ transform: `translateX(-${ganttScrollLeft}px)` }}>
+                            <div className="grid text-center text-[11px] font-semibold uppercase text-slate-500" style={monthGridStyle}>
+                              {yearSegments.map((segment, index) => (
+                                <div key={`year-${segment.year}-${index}`} className="border-r border-slate-200 py-1" style={{ gridColumn: `span ${segment.span}` }}>
+                                  {segment.year}
                                 </div>
                               ))}
-                              <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                                {totalSum.toFixed(2)}
-                              </div>
                             </div>
-                          );
-                        }
-
-                        if (row.type === "summary") {
-                          const wp = workPackages[row.wpIndex];
-                          const companySums = sumByCompany(wp);
-                          const rowSum = companySums.reduce((acc, value) => acc + value, 0);
-                          const accent =
-                            groupAccentClasses[row.wpIndex % groupAccentClasses.length];
-                          return (
-                            <div
-                              key={`row-summary-${row.wpIndex}`}
-                              className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)} hover:bg-slate-100/70`}
-                              style={{ gridTemplateColumns: leftGridTemplate }}
-                            >
-                              <div className="px-4 py-2 text-sm font-semibold text-slate-600">
-                                Summe WP {row.wpIndex + 1}
-                              </div>
-                              {companySums.map((value, idx) => (
-                                <div
-                                  key={`summary-company-${row.wpIndex}-${idx}`}
-                                  className="px-2 py-2 text-sm font-semibold text-slate-600"
-                                >
-                                  {value.toFixed(2)}
-                                </div>
+                            <div className="gantt-grid border-t border-slate-200 text-[10px] text-slate-500" style={monthGridStyle}>
+                              {timeline.map((month, index) => (
+                                <div key={`month-${month.year}-${index}`} className="border-r border-slate-200 py-1 text-center">{month.label}</div>
                               ))}
-                              <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                                {rowSum.toFixed(2)}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        const wpIndex = row.wpIndex;
-                        const subIndex = row.subIndex;
-                        const isWp = row.type === "wp";
-                        const wpNumber = wpIndex + 1;
-                        const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
-                        const rowKey = `row-${row.type}-${wpIndex}-${subIndex ?? "root"}`;
-                        const title =
-                          subIndex === null
-                            ? workPackages[wpIndex].title
-                            : workPackages[wpIndex].sub[subIndex].title;
-                        const values =
-                          subIndex === null
-                            ? workPackages[wpIndex].pm
-                            : workPackages[wpIndex].sub[subIndex].pm;
-                        const rowSum = sumForCompanies(values);
-                        const isPending =
-                          pendingDelete?.wpIndex === wpIndex &&
-                          pendingDelete?.type === "sub" &&
-                          pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
-                        const accent = groupAccentClasses[wpIndex % groupAccentClasses.length];
-                        const isGroupStart = row.type === "wp";
-                        const groupBorder = isGroupStart
-                          ? "border-t border-slate-200"
-                          : "border-t border-slate-100/80";
-
-                        return (
-                          <div
-                            key={`row-${row.type}-${wpIndex}-${subIndex ?? "root"}`}
-                            data-row-key={rowKey}
-                            className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(
-                              row
-                            )} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`}
-                            style={{ gridTemplateColumns: leftGridTemplate }}
-                          >
-                            <div className="px-4 py-2">
-                              <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
-                                <div className="pt-1">
-                                  <span
-                                    className={`inline-flex min-w-[36px] items-center justify-center rounded-full px-2 py-1 font-mono text-xs font-semibold ${
-                                      isWp
-                                        ? "bg-slate-900/10 text-slate-700"
-                                        : "bg-slate-500/10 text-slate-500"
-                                    }`}
-                                  >
-                                    {isWp ? wpNumber : subNumber}
-                                  </span>
-                                </div>
-                                <div className="flex-1">
-                                  <textarea
-                                    value={title}
-                                    onChange={(event) =>
-                                      isWp
-                                        ? updateWpTitle(wpIndex, event.target.value)
-                                        : updateSubTitle(wpIndex, subIndex, event.target.value)
-                                    }
-                                    onInput={(event) => handleTitleInput(event, rowKey)}
-                                    placeholder={
-                                      isWp
-                                        ? "Arbeitspaket beschreiben..."
-                                        : "Unterarbeitspaket hinzufügen..."
-                                    }
-                                    rows={1}
-                                    data-auto-resize="true"
-                                    data-row-key={rowKey}
-                                    className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-snug focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${
-                                      isWp ? "font-semibold" : "font-normal"
-                                    } min-h-[40px] h-auto overflow-hidden`}
-                                  />
-                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                    {isWp && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => addSub(wpIndex)}
-                                          disabled={workPackages[wpIndex].sub.length >= MAX_SUB}
-                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300"
-                                        >
-                                          +
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            requestDelete(
-                                              "sub",
-                                              wpIndex,
-                                              workPackages[wpIndex].sub.length - 1
-                                            )
-                                          }
-                                          disabled={workPackages[wpIndex].sub.length === 0}
-                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300"
-                                        >
-                                          –
-                                        </button>
-                                      </>
-                                    )}
-                                    {isWp && isPending && (
-                                      <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
-                                        Letztes Unterarbeitspaket löschen?
-                                        <button
-                                          type="button"
-                                          onClick={confirmDelete}
-                                          className="rounded border border-rose-200 px-2 py-1 text-rose-700"
-                                        >
-                                          Ja
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={cancelDelete}
-                                          className="rounded border border-slate-200 px-2 py-1 text-slate-600"
-                                        >
-                                          Nein
-                                        </button>
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {activeCompanyIndexes.map((idx) => (
-                              <div
-                                key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`}
-                                className="px-2 py-2"
-                              >
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.1"
-                                  value={values[idx]}
-                                  onChange={(event) =>
-                                    updatePm(wpIndex, subIndex, idx, event.target.value)
-                                  }
-                                  className="h-9 min-w-[60px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
-                                />
-                              </div>
-                            ))}
-
-                            <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
-                              {rowSum.toFixed(2)}
                             </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  <div>
-                    <div className="sticky top-0 z-30 border-b border-slate-200 bg-slate-100/90 backdrop-blur">
-                      <div
-                        className={`flex h-full flex-col px-4 py-3 ${getRowHeight({
-                          type: "header",
-                        })}`}
-                      >
-                        <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
-                          Gantt-Zeitleiste
-                          <span className="text-xs font-medium text-slate-500">
-                            Monate 1–{durationMonths}
-                          </span>
+                <div className="divide-y divide-slate-100/70">
+                  {rows.map((row, rowIndex) => {
+                    const wpIndex = row.wpIndex;
+                    const accent =
+                      row.type === "summary" || row.type === "wp" || row.type === "sub"
+                        ? groupAccentClasses[wpIndex % groupAccentClasses.length]
+                        : "";
+                    const isGroupStart = row.type === "wp";
+                    const groupBorder = isGroupStart ? "border-t border-slate-200" : "border-t border-slate-100/80";
+
+                    let leftCell = null;
+                    let bar = null;
+
+                    if (row.type === "total") {
+                      leftCell = (
+                        <div className={`grid items-center overflow-hidden border-t border-slate-200 ${getRowTone(row)} ${getRowHeight(row)}`} style={{ gridTemplateColumns: leftGridTemplate }}>
+                          <div className="px-4 py-2 text-sm font-semibold text-slate-700">Gesamtsumme</div>
+                          {totalByCompany.map((value, idx) => (
+                            <div key={`total-company-${idx}`} className="px-2 py-2 text-sm font-semibold text-slate-700">{value.toFixed(2)}</div>
+                          ))}
+                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">{totalSum.toFixed(2)}</div>
                         </div>
-                        <div className="mt-2 flex items-center gap-3">
-                          <input
-                            type="range"
-                            min="0"
-                            max={ganttMaxScroll}
-                            value={ganttScrollLeft}
-                            onChange={handleGanttSliderChange}
-                            className="h-2 w-full accent-slate-600"
+                      );
+                    } else if (row.type === "summary") {
+                      const wp = workPackages[row.wpIndex];
+                      const companySums = sumByCompany(wp);
+                      const rowSum = companySums.reduce((acc, value) => acc + value, 0);
+                      leftCell = (
+                        <div className={`grid items-center overflow-hidden border-b border-slate-200 ${accent} border-l-4 ${getRowTone(row)} ${getRowHeight(row)} hover:bg-slate-100/70`} style={{ gridTemplateColumns: leftGridTemplate }}>
+                          <div className="px-4 py-2 text-sm font-semibold text-slate-600">Summe WP {row.wpIndex + 1}</div>
+                          {companySums.map((value, idx) => (
+                            <div key={`summary-company-${row.wpIndex}-${idx}`} className="px-2 py-2 text-sm font-semibold text-slate-600">{value.toFixed(2)}</div>
+                          ))}
+                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">{rowSum.toFixed(2)}</div>
+                        </div>
+                      );
+                    } else {
+                      const subIndex = row.subIndex;
+                      const isWp = row.type === "wp";
+                      const wpNumber = wpIndex + 1;
+                      const subNumber = subIndex !== null ? `${wpNumber}.${subIndex + 1}` : "";
+                      const title = subIndex === null ? workPackages[wpIndex].title : workPackages[wpIndex].sub[subIndex].title;
+                      const values = subIndex === null ? workPackages[wpIndex].pm : workPackages[wpIndex].sub[subIndex].pm;
+                      const rowSum = sumForCompanies(values);
+                      const isPending = pendingDelete?.wpIndex === wpIndex && pendingDelete?.type === "sub" && pendingDelete?.subIndex === workPackages[wpIndex].sub.length - 1;
+                      const rowData = subIndex === null ? workPackages[wpIndex] : workPackages[wpIndex].sub[subIndex];
+                      const ganttBar = ganttBarsByRowId[rowData.id];
+                      if (ganttBar) {
+                        bar = (
+                          <div
+                            className="absolute top-1/2 h-5 -translate-y-1/2 rounded-md bg-sky-500/70"
+                            style={{
+                              left: `${ganttBar.start * ganttMonthWidth + 2}px`,
+                              width: `${(ganttBar.end - ganttBar.start + 1) * ganttMonthWidth - 4}px`,
+                            }}
                           />
-                          <span className="text-[11px] font-medium text-slate-500">
-                            Scroll
-                          </span>
-                        </div>
-                        <div
-                          ref={ganttTimelineRef}
-                          className="mt-2 w-full overflow-hidden rounded-md border border-slate-200 bg-white"
-                        >
-                          <div
-                            className="grid text-center text-[11px] font-semibold uppercase text-slate-500"
-                            style={monthGridStyle}
-                          >
-                            {yearSegments.map((segment, index) => (
-                              <div
-                                key={`year-${segment.year}-${index}`}
-                                className="border-r border-slate-200 py-1"
-                                style={{ gridColumn: `span ${segment.span}` }}
-                              >
-                                {segment.year}
-                              </div>
-                            ))}
-                          </div>
-                          <div
-                            className="gantt-grid border-t border-slate-200 text-[10px] text-slate-500"
-                            style={monthGridStyle}
-                          >
-                            {timeline.map((month, index) => (
-                              <div
-                                key={`month-${month.year}-${index}`}
-                                className="border-r border-slate-200 py-1 text-center"
-                              >
-                                {month.label}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                        );
+                      }
 
-                    <div
-                      ref={ganttScrollRef}
-                      onScroll={handleGanttScroll}
-                      className="overflow-x-auto"
-                    >
-                      <div className="w-max divide-y divide-slate-100/70">
-                        {rows.map((row, rowIndex) => {
-                          const wpIndex = row.wpIndex;
-                          const accent =
-                            row.type === "summary" || row.type === "wp" || row.type === "sub"
-                              ? groupAccentClasses[wpIndex % groupAccentClasses.length]
-                              : "";
-                          const isGroupStart = row.type === "wp";
-                          const groupBorder = isGroupStart
-                            ? "border-t border-slate-200"
-                            : "border-t border-slate-100/80";
-                          const rowKey =
-                            row.type === "wp" || row.type === "sub"
-                              ? `row-${row.type}-${wpIndex}-${row.subIndex ?? "root"}`
-                              : null;
-                          return (
-                            <div
-                              key={`gantt-row-${row.type}-${rowIndex}`}
-                              className={`px-4 py-2 ${groupBorder} ${accent} ${getRowTone(
-                                row
-                              )} ${getRowHeight(row)}`}
-                              style={
-                                rowKey && rowHeights[rowKey]
-                                  ? { height: `${rowHeights[rowKey]}px` }
-                                  : undefined
-                              }
-                            >
-                              <div className="relative w-max overflow-hidden rounded border border-slate-200 bg-white">
-                                <div className="gantt-grid" style={monthGridStyle}>
-                                  {Array.from({ length: durationMonths }, (_, index) => (
-                                    <div
-                                      key={`cell-${row.type}-${rowIndex}-${index}`}
-                                      className="h-6 border-r border-dashed border-slate-200"
-                                    />
-                                  ))}
+                      leftCell = (
+                        <div className={`grid items-stretch overflow-hidden ${groupBorder} ${accent} border-l-4 ${getRowTone(row)} ${getRowHeight(row)} transition-colors hover:bg-slate-100/70`} style={{ gridTemplateColumns: leftGridTemplate }}>
+                          <div className="px-4 py-2">
+                            <div className={`flex gap-3 ${isWp ? "" : "pl-4"}`}>
+                              <div className="pt-1">
+                                <span className={`inline-flex min-w-[36px] items-center justify-center rounded-full px-2 py-1 font-mono text-xs font-semibold ${isWp ? "bg-slate-900/10 text-slate-700" : "bg-slate-500/10 text-slate-500"}`}>{isWp ? wpNumber : subNumber}</span>
+                              </div>
+                              <div className="flex-1">
+                                <textarea
+                                  value={title}
+                                  onChange={(event) => isWp ? updateWpTitle(wpIndex, event.target.value) : updateSubTitle(wpIndex, subIndex, event.target.value)}
+                                  onInput={autoResizeTextarea}
+                                  placeholder={isWp ? "Arbeitspaket beschreiben..." : "Unterarbeitspaket hinzufügen..."}
+                                  rows={1}
+                                  data-auto-resize="true"
+                                  className={`w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-snug focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 ${isWp ? "font-semibold" : "font-normal"} min-h-[32px] h-auto overflow-hidden`}
+                                />
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                  {isWp && (
+                                    <>
+                                      <button type="button" onClick={() => addSub(wpIndex)} disabled={workPackages[wpIndex].sub.length >= MAX_SUB} className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-300">+</button>
+                                      <button type="button" onClick={() => requestDelete("sub", wpIndex, workPackages[wpIndex].sub.length - 1)} disabled={workPackages[wpIndex].sub.length === 0} className="rounded border border-slate-200 px-2 py-1 text-slate-600 transition hover:border-slate-300 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300">–</button>
+                                    </>
+                                  )}
+                                  {isWp && isPending && (
+                                    <span className="ml-1 inline-flex items-center gap-1 text-xs text-rose-600">
+                                      Letztes Unterarbeitspaket löschen?
+                                      <button type="button" onClick={confirmDelete} className="rounded border border-rose-200 px-2 py-1 text-rose-700">Ja</button>
+                                      <button type="button" onClick={cancelDelete} className="rounded border border-slate-200 px-2 py-1 text-slate-600">Nein</button>
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                          );
-                        })}
+                          </div>
+
+                          {activeCompanyIndexes.map((idx) => (
+                            <div key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`} className="px-2 py-2">
+                              <input type="number" min="0" step="0.1" value={values[idx]} onChange={(event) => updatePm(wpIndex, subIndex, idx, event.target.value)} className="h-9 min-w-[60px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100" />
+                            </div>
+                          ))}
+
+                          <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">{rowSum.toFixed(2)}</div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={`combined-row-${row.type}-${rowIndex}`} className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                        <div className="border-r border-slate-200">{leftCell}</div>
+                        <div className={`px-4 py-2 ${groupBorder} ${getRowTone(row)} ${getRowHeight(row)}`}>
+                          <div className="relative overflow-hidden rounded border border-slate-200 bg-white" style={{ width: `${ganttViewportWidth}px` }}>
+                            <div className="relative" style={{ width: `${ganttTrackWidth}px`, transform: `translateX(-${ganttScrollLeft}px)` }}>
+                              <div className="gantt-grid" style={monthGridStyle}>
+                                {Array.from({ length: durationMonths }, (_, index) => (
+                                  <div key={`cell-${row.type}-${rowIndex}-${index}`} className="h-7 border-r border-dashed border-slate-200" />
+                                ))}
+                              </div>
+                              {bar}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -2313,8 +2151,18 @@
                                   {projectYears.map((year) => {
                                     const usedPM =
                                       usedPmByEmployee?.[employeeIndex]?.[year] || 0;
-                                    const utilization =
-                                      YEAR_CAP_PM > 0 ? (usedPM / YEAR_CAP_PM) * 100 : 0;
+                                    const projectPercent = clampNumber(
+                                      parseNumber(employee.projectPercent) || 100,
+                                      0,
+                                      999
+                                    );
+                                    const annualMaxPm =
+                                      projectPercent > 0
+                                        ? YEAR_CAP_PM * (projectPercent / 100)
+                                        : YEAR_CAP_PM;
+                                    const rawUtilization =
+                                      annualMaxPm > 0 ? (usedPM / annualMaxPm) * 100 : 0;
+                                    const utilization = clampNumber(rawUtilization, 0, 999);
                                     return (
                                       <React.Fragment
                                         key={`util-${companyIndex}-${employeeIndex}-${year}`}
