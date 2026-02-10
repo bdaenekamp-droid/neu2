@@ -31,13 +31,63 @@
       };
     </script>
     <style>
+      :root {
+        --ca-green: #5f7f50;
+        --ca-white: #ffffff;
+        --ca-bg: #f2f4f5;
+        --ca-border: #d9e1dc;
+        --ca-text: #1f2937;
+      }
+
       body {
         font-family: "Inter", system-ui, sans-serif;
-        background-color: #f8fafc;
+        background-color: var(--ca-bg);
+        color: var(--ca-text);
       }
 
       .gantt-grid {
         display: grid;
+      }
+
+      .ca-topbar {
+        background-color: var(--ca-green);
+        color: var(--ca-white);
+      }
+
+      .ca-card {
+        border: 1px solid var(--ca-border);
+        background: #ffffff;
+      }
+
+      .ca-primary-btn {
+        background-color: var(--ca-green) !important;
+        color: var(--ca-white) !important;
+      }
+
+      .ca-primary-btn:hover {
+        filter: brightness(0.96);
+      }
+
+      .ca-focus:focus {
+        border-color: var(--ca-green) !important;
+        box-shadow: 0 0 0 3px rgba(95, 127, 80, 0.22) !important;
+      }
+
+      .bg-slate-900 {
+        background-color: var(--ca-green) !important;
+      }
+
+      .hover\:bg-slate-800:hover {
+        background-color: var(--ca-green) !important;
+        filter: brightness(0.96);
+      }
+
+      .focus\:border-slate-500:focus {
+        border-color: var(--ca-green) !important;
+      }
+
+      .focus\:ring-slate-500:focus {
+        --tw-ring-color: rgba(95, 127, 80, 0.35) !important;
       }
     </style>
   </head>
@@ -48,7 +98,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="text/babel" data-presets="typescript,react">
-      const { useMemo, useState, useEffect } = React;
+      const { useMemo, useState, useEffect, useRef, useCallback } = React;
 
       const MAX_WP = 20;
       const MAX_SUB = 20;
@@ -56,7 +106,11 @@
       const MAX_EMPLOYEES = 10;
       const MAX_HISTORY_STEPS = 10;
       const YEAR_CAP_PM = 10.5;
-      const STORAGE_KEY = "zim-fe-kostenkalkulation-v3";
+      const PROJECTS_INDEX_KEY = "ca_projectplanning_projects_index";
+      const CURRENT_PROJECT_KEY = "ca_projectplanning_current_project";
+      const PROJECT_KEY_PREFIX = "ca_projectplanning_project_";
+      const DEFAULT_PROJECT_NAME = "Standardprojekt";
+      const AUTO_SAVE_DEBOUNCE_MS = 500;
       const AUTO_PLANNING_MODE = {
         EMPLOYEES_ONLY: "employees-only",
         DATES_ONLY: "dates-only",
@@ -757,6 +811,52 @@
         return normalizedData.map((entry) => createHistoryState(entry.tabellenEintraege));
       };
 
+      const buildDefaultProjectState = () => ({
+        workPackages: createDefaultWorkPackages(),
+        companyCount: 5,
+        companyNames: [...DEFAULT_COMPANY_NAMES],
+        startDate: DEFAULT_START_DATE,
+        durationMonths: DEFAULT_DURATION_MONTHS,
+        employeesByCompany: createEmployeesByCompany(),
+        companyData: normalizeCompanyData(),
+        isCompany1PresetApplied: false,
+      });
+
+      const getProjectStorageKey = (projectName) =>
+        `${PROJECT_KEY_PREFIX}${encodeURIComponent(projectName)}`;
+
+      const parseStoredProject = (parsed) => {
+        const defaults = buildDefaultProjectState();
+        if (!parsed || typeof parsed !== "object") return defaults;
+
+        const companyCount =
+          typeof parsed.companyCount === "number"
+            ? clampNumber(parsed.companyCount, 1, 5)
+            : defaults.companyCount;
+
+        return {
+          workPackages: parsed?.workPackages?.length
+            ? parsed.workPackages
+            : defaults.workPackages,
+          companyNames: Array.isArray(parsed?.companyNames) && parsed.companyNames.length
+            ? parsed.companyNames
+            : defaults.companyNames,
+          companyCount,
+          startDate: parsed?.startDate || defaults.startDate,
+          durationMonths: clampNumber(parseNumber(parsed?.durationMonths) || defaults.durationMonths, 1, MAX_DURATION),
+          employeesByCompany: Array.isArray(parsed?.employeesByCompany)
+            ? defaults.employeesByCompany.map((fallback, index) => {
+                const list = parsed.employeesByCompany[index];
+                return Array.isArray(list) && list.length ? list : fallback;
+              })
+            : defaults.employeesByCompany,
+          companyData: parsed?.companyData
+            ? normalizeCompanyData(parsed.companyData)
+            : defaults.companyData,
+          isCompany1PresetApplied: Boolean(parsed?.isCompany1PresetApplied),
+        };
+      };
+
       const formatMonthYearFromAbsoluteIndex = (absoluteMonthIndex) => {
         const year = Math.floor(absoluteMonthIndex / 12);
         const month = (absoluteMonthIndex % 12) + 1;
@@ -827,96 +927,181 @@
         const [ganttViewportWidth, setGanttViewportWidth] = useState(0);
         const [ganttScrollWidth, setGanttScrollWidth] = useState(0);
         const [presetNotice, setPresetNotice] = useState("");
-        const presetNoticeTimeoutRef = React.useRef(null);
+        const presetNoticeTimeoutRef = useRef(null);
         const [isCompany1PresetApplied, setIsCompany1PresetApplied] = useState(false);
-        const ganttScrollContainerRef = React.useRef(null);
+        const ganttScrollContainerRef = useRef(null);
+        const [currentProjectName, setCurrentProjectName] = useState(DEFAULT_PROJECT_NAME);
+        const [availableProjects, setAvailableProjects] = useState([]);
+        const [projectModalOpen, setProjectModalOpen] = useState(false);
+        const [newProjectName, setNewProjectName] = useState("");
+        const [projectError, setProjectError] = useState("");
+        const [storageError, setStorageError] = useState("");
+        const [saveState, setSaveState] = useState("gespeichert");
+        const hasInitializedRef = useRef(false);
+        const debounceSaveRef = useRef(null);
 
-        useEffect(() => {
-          const saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (parsed?.isCompany1PresetApplied) {
-                return;
-              }
-              if (parsed?.workPackages?.length) {
-                setWorkPackages(parsed.workPackages);
-              }
-              if (parsed?.companyNames?.length) {
-                setCompanyNames(parsed.companyNames);
-              }
-              if (typeof parsed?.companyCount === "number") {
-                setCompanyCount(clampNumber(parsed.companyCount, 1, 5));
-              } else if (Array.isArray(parsed?.activeCompanies)) {
-                const count = parsed.activeCompanies.filter(Boolean).length || 1;
-                setCompanyCount(clampNumber(count, 1, 5));
-              }
-              if (parsed?.startDate) {
-                setStartDate(parsed.startDate);
-              }
-              if (parsed?.durationMonths) {
-                setDurationMonths(parsed.durationMonths);
-              }
-              if (Array.isArray(parsed?.employeesByCompany)) {
-                const base = createEmployeesByCompany();
-                setEmployeesByCompany(
-                  base.map((fallback, index) => {
-                    const list = parsed.employeesByCompany[index];
-                    return Array.isArray(list) && list.length ? list : fallback;
-                  })
-                );
-              } else if (Array.isArray(parsed?.employees) && parsed.employees.length) {
-                const base = createEmployeesByCompany();
-                base[0] = parsed.employees;
-                setEmployeesByCompany(base);
-              }
-              if (parsed?.companyData) {
-                const normalizedCompanyData = normalizeCompanyData(parsed.companyData);
-                setCompanyData(normalizedCompanyData);
-                setCompanyHistoryByCompany(
-                  createCompanyHistoryByCompany(normalizedCompanyData)
-                );
-              } else if (parsed?.parameters) {
-                const legacy = normalizeCompanyData();
-                const next = legacy.map((entry) => ({
-                  ...entry,
-                  zuschlagsfaktorPercent: parseNumber(parsed.parameters.surchargeFactor),
-                  foerderquotePercent: parseNumber(parsed.parameters.fundingRate),
-                  maximalbetrag: parseNumber(parsed.parameters.maxAmount),
-                }));
-                setCompanyData(next);
-                setCompanyHistoryByCompany(createCompanyHistoryByCompany(next));
-              }
-            } catch (error) {
-              console.warn("Lokaler Zustand konnte nicht geladen werden", error);
-            }
-          }
+        const applyProjectState = useCallback((projectState) => {
+          const parsed = parseStoredProject(projectState);
+          setWorkPackages(parsed.workPackages);
+          setCompanyNames(parsed.companyNames);
+          setCompanyCount(parsed.companyCount);
+          setStartDate(parsed.startDate);
+          setDurationMonths(parsed.durationMonths);
+          setEmployeesByCompany(parsed.employeesByCompany);
+          setCompanyData(parsed.companyData);
+          setCompanyHistoryByCompany(createCompanyHistoryByCompany(parsed.companyData));
+          setIsCompany1PresetApplied(parsed.isCompany1PresetApplied);
+          setPendingDelete(null);
+          setPendingEmployeeDelete(null);
         }, []);
 
+        const collectProjectState = useCallback(
+          () => ({
+            workPackages,
+            companyCount,
+            companyNames,
+            startDate,
+            durationMonths,
+            employeesByCompany,
+            companyData,
+            isCompany1PresetApplied,
+          }),
+          [
+            workPackages,
+            companyCount,
+            companyNames,
+            startDate,
+            durationMonths,
+            employeesByCompany,
+            companyData,
+            isCompany1PresetApplied,
+          ]
+        );
+
+        const persistProject = useCallback((projectName, projectState) => {
+          const key = getProjectStorageKey(projectName);
+          localStorage.setItem(key, JSON.stringify(projectState));
+          localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
+          setAvailableProjects((prev) => {
+            if (prev.includes(projectName)) return prev;
+            const next = [...prev, projectName].sort((a, b) => a.localeCompare(b, "de"));
+            localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(next));
+            return next;
+          });
+        }, []);
+
+        const saveNow = useCallback(() => {
+          if (!hasInitializedRef.current || !currentProjectName) return;
+          try {
+            persistProject(currentProjectName, collectProjectState());
+            setSaveState("gespeichert");
+          } catch (error) {
+            console.warn("Projekt konnte nicht gespeichert werden", error);
+            setStorageError("Projekt konnte nicht gespeichert werden.");
+          }
+        }, [collectProjectState, currentProjectName, persistProject]);
+
         useEffect(() => {
-          localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify({
-              workPackages,
-              companyCount,
-              companyNames,
-              startDate,
-              durationMonths,
-              employeesByCompany,
-              companyData,
-              isCompany1PresetApplied,
-            })
-          );
-        }, [
-          workPackages,
-          companyCount,
-          companyNames,
-          startDate,
-          durationMonths,
-          employeesByCompany,
-          companyData,
-          isCompany1PresetApplied,
-        ]);
+          try {
+            const rawIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
+            const parsedIndex = rawIndex ? JSON.parse(rawIndex) : [];
+            const index = Array.isArray(parsedIndex)
+              ? parsedIndex.filter((entry) => typeof entry === "string" && entry.trim())
+              : [];
+
+            if (!index.length) {
+              const defaultState = buildDefaultProjectState();
+              localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify([DEFAULT_PROJECT_NAME]));
+              localStorage.setItem(
+                getProjectStorageKey(DEFAULT_PROJECT_NAME),
+                JSON.stringify(defaultState)
+              );
+              localStorage.setItem(CURRENT_PROJECT_KEY, DEFAULT_PROJECT_NAME);
+              setAvailableProjects([DEFAULT_PROJECT_NAME]);
+              setCurrentProjectName(DEFAULT_PROJECT_NAME);
+              applyProjectState(defaultState);
+              hasInitializedRef.current = true;
+              return;
+            }
+
+            const preferred = localStorage.getItem(CURRENT_PROJECT_KEY);
+            const nextProject = index.includes(preferred) ? preferred : index[0];
+            const rawProject = localStorage.getItem(getProjectStorageKey(nextProject));
+            if (!rawProject) throw new Error("Leeres Projekt");
+            const parsedProject = parseStoredProject(JSON.parse(rawProject));
+            setAvailableProjects(index);
+            setCurrentProjectName(nextProject);
+            applyProjectState(parsedProject);
+            hasInitializedRef.current = true;
+          } catch (error) {
+            console.warn("Projekt konnte nicht geladen werden", error);
+            const fallback = buildDefaultProjectState();
+            setStorageError("Gespeichertes Projekt war beschädigt. Standardprojekt geladen.");
+            setAvailableProjects([DEFAULT_PROJECT_NAME]);
+            setCurrentProjectName(DEFAULT_PROJECT_NAME);
+            applyProjectState(fallback);
+            hasInitializedRef.current = true;
+          }
+        }, [applyProjectState]);
+
+        useEffect(() => {
+          if (!hasInitializedRef.current) return;
+          setSaveState("speichert...");
+          if (debounceSaveRef.current) {
+            clearTimeout(debounceSaveRef.current);
+          }
+          debounceSaveRef.current = setTimeout(() => {
+            saveNow();
+          }, AUTO_SAVE_DEBOUNCE_MS);
+
+          return () => {
+            if (debounceSaveRef.current) {
+              clearTimeout(debounceSaveRef.current);
+            }
+          };
+        }, [collectProjectState, currentProjectName, saveNow]);
+
+        const createNewProject = () => {
+          const trimmedName = newProjectName.trim();
+          if (!trimmedName) {
+            setProjectError("Projektname ist erforderlich.");
+            return;
+          }
+          if (availableProjects.includes(trimmedName)) {
+            setProjectError("Projektname existiert bereits. Bitte anderen Namen wählen.");
+            return;
+          }
+          const initialState = buildDefaultProjectState();
+          try {
+            persistProject(trimmedName, initialState);
+            applyProjectState(initialState);
+            setCurrentProjectName(trimmedName);
+            setProjectError("");
+            setProjectModalOpen(false);
+            setNewProjectName("");
+            setSaveState("gespeichert");
+          } catch (error) {
+            console.warn("Neues Projekt konnte nicht erstellt werden", error);
+            setProjectError("Projekt konnte nicht erstellt werden.");
+          }
+        };
+
+        const handleProjectLoad = (projectName) => {
+          if (!projectName) return;
+          try {
+            const raw = localStorage.getItem(getProjectStorageKey(projectName));
+            if (!raw) throw new Error("Projekt fehlt");
+            const parsed = parseStoredProject(JSON.parse(raw));
+            setCurrentProjectName(projectName);
+            localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
+            applyProjectState(parsed);
+            setStorageError("");
+            setSaveState("gespeichert");
+          } catch (error) {
+            console.warn("Projekt konnte nicht geladen werden", error);
+            setStorageError("Projektdaten konnten nicht geladen werden (ungültiges JSON).");
+          }
+        };
 
         const activeCompanyIndexes = useMemo(
           () => Array.from({ length: companyCount }, (_, index) => index),
@@ -1928,23 +2113,55 @@
         }, [activeCompanyIndexes, employeesByCompany, employeePmByCompany, companyData, projectYears]);
 
         return (
-          <div className="min-h-screen bg-slate-50 text-slate-900">
-            <header className="border-b border-slate-200 bg-white shadow-subtle">
-              <div className="mx-auto max-w-[1700px] px-6 py-6">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  ZIM F&amp;E Kostenkalkulation
-                </p>
-                <h1 className="mt-2 text-3xl font-semibold text-slate-850">
-                  Seite 1: Arbeitspakete / Personenmonate / Zeitplan (Gantt)
-                </h1>
-                <p className="mt-3 max-w-3xl text-sm text-slate-600">
-                  Alle Eingaben stehen in einer durchgehenden Tabellenzeile. Die Zuordnung von
-                  Arbeitspaketen, Personenmonaten und Zeitplan bleibt jederzeit visuell eindeutig.
-                </p>
+          <div className="min-h-screen bg-slate-50 text-slate-900" onBlurCapture={saveNow}>
+            <header className="ca-topbar sticky top-0 z-50 border-b border-black/10 shadow-subtle">
+              <div className="mx-auto flex h-[96px] max-w-[1700px] items-center justify-between px-6">
+                <div className="flex items-center gap-4">
+                  <img
+                    src="/campusalliance-logo.svg"
+                    alt="CampusAlliance"
+                    className="h-14 w-auto"
+                  />
+                  <div className="text-xl font-semibold tracking-wide text-white">
+                    CampusAlliance Projektplanung
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="rounded-md border border-white/30 bg-white/10 px-3 py-2 text-sm text-white">
+                    Aktives Projekt: <span className="font-semibold">{currentProjectName}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProjectModalOpen(true);
+                      setProjectError("");
+                    }}
+                    className="rounded-md border border-white/40 bg-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/25"
+                  >
+                    Neues Projekt
+                  </button>
+                  <select
+                    value={currentProjectName}
+                    onChange={(event) => handleProjectLoad(event.target.value)}
+                    className="rounded-md border border-white/40 bg-white/15 px-3 py-2 text-sm font-medium text-white outline-none"
+                  >
+                    {availableProjects.map((projectName) => (
+                      <option key={projectName} value={projectName} className="text-slate-900">
+                        {projectName}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-xs text-white/90">{saveState === "speichert..." ? "Speichern..." : "Gespeichert"}</div>
+                </div>
               </div>
             </header>
 
             <main className="mx-auto max-w-[1700px] px-6 py-8">
+              {storageError ? (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {storageError}
+                </div>
+              ) : null}
               <div className="mb-6 grid gap-4 lg:grid-cols-[2.2fr_1.2fr_1fr]">
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-subtle">
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2981,6 +3198,50 @@
                 })}
               </div>
             </main>
+
+            {projectModalOpen ? (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Neues Projekt anlegen</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Bitte geben Sie einen eindeutigen Projektnamen ein.
+                  </p>
+                  <input
+                    type="text"
+                    value={newProjectName}
+                    onChange={(event) => {
+                      setNewProjectName(event.target.value);
+                      setProjectError("");
+                    }}
+                    placeholder="Projektname"
+                    className="ca-focus mt-4 h-10 w-full rounded-md border border-slate-300 px-3 text-sm"
+                  />
+                  {projectError ? (
+                    <div className="mt-2 text-sm font-medium text-rose-600">{projectError}</div>
+                  ) : null}
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProjectModalOpen(false);
+                        setNewProjectName("");
+                        setProjectError("");
+                      }}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={createNewProject}
+                      className="ca-primary-btn rounded-md px-3 py-2 text-sm font-semibold"
+                    >
+                      Projekt erstellen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         );
       };

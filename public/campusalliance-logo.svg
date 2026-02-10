@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120" fill="none">
+  <g fill="#ffffff">
+    <path d="M40 14 56 7v44l-6-4-10 4V14Zm-16 14 14-6v29l-14 5V28Zm32 0 14 6v22l-14-5V28Z"/>
+    <path d="M20 59 46 49l26 10v6H20v-6Zm2 12h14v28H22V71Zm18 0h14v28H40V71Zm18 0h14v28H58V71Z"/>
+    <path d="M20 103h52v7H20v-7Z"/>
+  </g>
+  <text x="96" y="72" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="34" letter-spacing="2">CampusAlliance</text>
+</svg>
