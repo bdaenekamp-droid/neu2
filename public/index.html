@@ -115,10 +115,10 @@
       const PROJECT_KEY_PREFIX = "ca_projectplanning_project_";
       const SEED_PROJECT_NAME = "CryoVision";
       const AUTO_SAVE_DEBOUNCE_MS = 500;
-      const AUTO_PLANNING_MODE = {
-        EMPLOYEES_ONLY: "employees-only",
-        DATES_ONLY: "dates-only",
-        BOTH: "both",
+      const DEFAULT_AUTO_LOCKS = {
+        employeeAssignment: false,
+        workPackageDates: false,
+        personMonths: true,
       };
 
       const formatDateTimeDe = (value) => {
@@ -690,7 +690,7 @@
         zuschlagsfaktorPercent: 100,
         foerderquotePercent: 45,
         maximalbetrag: 560000,
-        autoPlanningMode: AUTO_PLANNING_MODE.BOTH,
+        autoPlanningLocks: { ...DEFAULT_AUTO_LOCKS },
         ergebnisse: {
           personalkosten: 0,
           gemeinkostenzuschlag: 0,
@@ -763,9 +763,10 @@
           return {
             ...fallback,
             ...entry,
-            autoPlanningMode: Object.values(AUTO_PLANNING_MODE).includes(entry.autoPlanningMode)
-              ? entry.autoPlanningMode
-              : AUTO_PLANNING_MODE.BOTH,
+            autoPlanningLocks: {
+              ...DEFAULT_AUTO_LOCKS,
+              ...(entry.autoPlanningLocks || {}),
+            },
             ergebnisse: {
               ...fallback.ergebnisse,
               ...(entry.ergebnisse || {}),
@@ -1694,16 +1695,20 @@
           }
         };
 
+        const getAutoPlanningLocks = (companyIndex) => ({
+          ...DEFAULT_AUTO_LOCKS,
+          ...(companyData[companyIndex]?.autoPlanningLocks || {}),
+        });
+
         const runAutoProjectPlanning = (companyIndex) => {
           const companyRows = filteredWorkPackageRowsByCompany[companyIndex] || [];
           const companyEmployees = employeesByCompany[companyIndex] || [];
-          const mode =
-            companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH;
-          const shouldOptimizeEmployees =
-            mode === AUTO_PLANNING_MODE.EMPLOYEES_ONLY || mode === AUTO_PLANNING_MODE.BOTH;
-          const shouldOptimizeDates =
-            mode === AUTO_PLANNING_MODE.DATES_ONLY || mode === AUTO_PLANNING_MODE.BOTH;
+          const locks = getAutoPlanningLocks(companyIndex);
+          const shouldOptimizeEmployees = !locks.employeeAssignment;
+          const shouldOptimizeDates = !locks.workPackageDates;
+          const shouldOptimizePm = !locks.personMonths;
           if (!companyRows.length) return;
+          if (!shouldOptimizeEmployees && !shouldOptimizeDates && !shouldOptimizePm) return;
           if (shouldOptimizeEmployees && !companyEmployees.length) return;
 
           const projectStart = parseDate(startDate);
@@ -1968,16 +1973,24 @@
             };
           });
 
-          if (areTableEntriesEqual(existingEntries, nextEntries)) return;
-
           const beforeSnapshot = createCompanyHistorySnapshot(
             existingEntries,
             getCompanyPmSnapshot(companyIndex, workPackages)
           );
+          const optimizedWorkPackages = shouldOptimizePm
+            ? optimizePmWorkPackages(companyIndex, workPackages)
+            : workPackages;
+          const hasEntriesChanged = !areTableEntriesEqual(existingEntries, nextEntries);
+          const hasPmChanged =
+            JSON.stringify(getCompanyPmSnapshot(companyIndex, workPackages)) !==
+            JSON.stringify(getCompanyPmSnapshot(companyIndex, optimizedWorkPackages));
+          if (!hasEntriesChanged && !hasPmChanged) return;
+
           const afterSnapshot = createCompanyHistorySnapshot(
             nextEntries,
-            getCompanyPmSnapshot(companyIndex, workPackages)
+            getCompanyPmSnapshot(companyIndex, optimizedWorkPackages)
           );
+
           applyCompanySnapshot(companyIndex, afterSnapshot);
           commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
         };
@@ -2067,16 +2080,13 @@
           return candidate.factor < best.factor;
         };
 
-        const runAutoPmIncrease = (companyIndex) => {
+        const optimizePmWorkPackages = (companyIndex, sourceWorkPackages) => {
           const maxFactorPercent = 200;
           const factorStepPercent = 5;
-          const baseEntries = companyData[companyIndex]?.tabellenEintraege || {};
-          const basePmSnapshot = getCompanyPmSnapshot(companyIndex, workPackages);
-
           let bestCandidate = {
             factor: 0,
-            workPackages,
-            metrics: calculateCompanyFundingMetrics(companyIndex, workPackages),
+            workPackages: sourceWorkPackages,
+            metrics: calculateCompanyFundingMetrics(companyIndex, sourceWorkPackages),
           };
 
           for (
@@ -2085,7 +2095,7 @@
             factorPercent += factorStepPercent
           ) {
             const factor = factorPercent / 100;
-            const candidateState = buildPmIncreaseCandidate(companyIndex, factor, workPackages);
+            const candidateState = buildPmIncreaseCandidate(companyIndex, factor, sourceWorkPackages);
             if (candidateState.changedCells === 0) {
               continue;
             }
@@ -2101,16 +2111,7 @@
               bestCandidate = candidate;
             }
           }
-
-          if (bestCandidate.factor <= 0) return;
-
-          setWorkPackages(bestCandidate.workPackages);
-          const beforeSnapshot = createCompanyHistorySnapshot(baseEntries, basePmSnapshot);
-          const afterSnapshot = createCompanyHistorySnapshot(
-            baseEntries,
-            getCompanyPmSnapshot(companyIndex, bestCandidate.workPackages)
-          );
-          commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
+          return bestCandidate.workPackages;
         };
 
         const updateCompanyField = (companyIndex, field, value) => {
@@ -2817,6 +2818,7 @@
                   const utilizationGridColumns = `140px repeat(${projectYears.length}, minmax(120px, 1fr) minmax(150px, 1fr)) minmax(140px, 1fr)`;
                   const companyHistory =
                     companyHistoryByCompany[companyIndex] || createHistoryState({});
+                  const autoPlanningLocks = getAutoPlanningLocks(companyIndex);
                   const canUndo = companyHistory.historyIndex > 0;
                   const canRedo = companyHistory.historyIndex < companyHistory.history.length - 1;
                   return (
@@ -2849,86 +2851,74 @@
                             </button>
                             <button
                               type="button"
-                              onClick={() => runAutoPmIncrease(companyIndex)}
-                              className="h-10 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
-                            >
-                              Auto PM-Erhöhung
-                            </button>
-                            <button
-                              type="button"
+                              aria-label="Undo"
+                              title="Undo"
                               onClick={() => undoCompanyAssignment(companyIndex)}
                               disabled={!canUndo}
-                              className="h-10 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-xl font-semibold leading-none text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Undo
+                              ↶
                             </button>
                             <button
                               type="button"
+                              aria-label="Redo"
+                              title="Redo"
                               onClick={() => redoCompanyAssignment(companyIndex)}
                               disabled={!canRedo}
-                              className="h-10 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-xl font-semibold leading-none text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Redo
+                              ↷
                             </button>
                           </div>
-                          <div className="mt-4 space-y-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                            <label className="flex items-start gap-2 text-sm text-slate-700">
-                              <input
-                                type="radio"
-                                name={`auto-mode-${companyIndex}`}
-                                checked={
-                                  (companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH) ===
-                                  AUTO_PLANNING_MODE.EMPLOYEES_ONLY
-                                }
-                                onChange={() =>
-                                  updateCompanyField(
-                                    companyIndex,
-                                    "autoPlanningMode",
-                                    AUTO_PLANNING_MODE.EMPLOYEES_ONLY
-                                  )
-                                }
-                                className="mt-1"
-                              />
-                              <span>Nur Mitarbeiterzuordnung optimieren (Start/Ende bleibt unverändert)</span>
-                            </label>
-                            <label className="flex items-start gap-2 text-sm text-slate-700">
-                              <input
-                                type="radio"
-                                name={`auto-mode-${companyIndex}`}
-                                checked={
-                                  (companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH) ===
-                                  AUTO_PLANNING_MODE.DATES_ONLY
-                                }
-                                onChange={() =>
-                                  updateCompanyField(
-                                    companyIndex,
-                                    "autoPlanningMode",
-                                    AUTO_PLANNING_MODE.DATES_ONLY
-                                  )
-                                }
-                                className="mt-1"
-                              />
-                              <span>Nur Start-/Enddaten optimieren (Mitarbeiter bleibt unverändert)</span>
-                            </label>
-                            <label className="flex items-start gap-2 text-sm text-slate-700">
-                              <input
-                                type="radio"
-                                name={`auto-mode-${companyIndex}`}
-                                checked={
-                                  (companyData[companyIndex]?.autoPlanningMode || AUTO_PLANNING_MODE.BOTH) ===
-                                  AUTO_PLANNING_MODE.BOTH
-                                }
-                                onChange={() =>
-                                  updateCompanyField(
-                                    companyIndex,
-                                    "autoPlanningMode",
-                                    AUTO_PLANNING_MODE.BOTH
-                                  )
-                                }
-                                className="mt-1"
-                              />
-                              <span>Beides optimieren (Start/Ende und Mitarbeiter)</span>
-                            </label>
+                          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-sm font-semibold text-slate-800">Unverändert lassen</p>
+                            <p className="mt-1 text-xs text-slate-600">
+                              Diese Einstellungen bleiben bei der Auto-Projektplanung gesperrt.
+                            </p>
+                            <div className="mt-3 space-y-2">
+                              <label className="flex items-start gap-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={autoPlanningLocks.employeeAssignment}
+                                  onChange={(event) =>
+                                    updateCompanyField(companyIndex, "autoPlanningLocks", {
+                                      ...autoPlanningLocks,
+                                      employeeAssignment: event.target.checked,
+                                    })
+                                  }
+                                  className="mt-1"
+                                />
+                                <span>Mitarbeiterzuordnung</span>
+                              </label>
+                              <label className="flex items-start gap-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={autoPlanningLocks.workPackageDates}
+                                  onChange={(event) =>
+                                    updateCompanyField(companyIndex, "autoPlanningLocks", {
+                                      ...autoPlanningLocks,
+                                      workPackageDates: event.target.checked,
+                                    })
+                                  }
+                                  className="mt-1"
+                                />
+                                <span>Start- und Enddatum der Arbeitspakete</span>
+                              </label>
+                              <label className="flex items-start gap-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={autoPlanningLocks.personMonths}
+                                  onChange={(event) =>
+                                    updateCompanyField(companyIndex, "autoPlanningLocks", {
+                                      ...autoPlanningLocks,
+                                      personMonths: event.target.checked,
+                                    })
+                                  }
+                                  className="mt-1"
+                                />
+                                <span>Personenmonate (PM)</span>
+                              </label>
+                            </div>
                           </div>
                         </div>
 
