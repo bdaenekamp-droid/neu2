@@ -5,7 +5,8 @@
   "description": "Minimal Railway-deployable site showing Test",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "mkdir -p dist && cp -r public/. dist/"
   },
   "dependencies": {
     "express": "^4.19.2"
