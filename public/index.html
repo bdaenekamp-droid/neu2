@@ -99,8 +99,7 @@
 
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="text/babel" data-presets="typescript,react">
       const { useMemo, useState, useEffect, useRef, useCallback } = React;
 
@@ -121,20 +120,6 @@
         workPackageDates: false,
         personMonths: true,
       };
-      const ZIM_FIELD_MAP = [
-        { key: "projectAcronym", patterns: [/^akronym$/i, /projektakronym/i, /projektname/i, /kurzbezeichnung/i] },
-        { key: "companyName", patterns: [/antragsteller/i, /unternehmen/i, /firma/i] },
-        { key: "projectStart", patterns: [/projektstart/i, /startdatum/i, /projektbeginn/i] },
-        { key: "projectEnd", patterns: [/projektende/i, /endedatum/i] },
-        { key: "projectDurationMonths", patterns: [/laufzeit/i, /dauer/i, /monat/i] },
-        { key: "personalkosten", patterns: [/personalkosten/i] },
-        { key: "projektsumme", patterns: [/projektsumme/i, /projektkosten/i, /gesamtkosten/i] },
-        { key: "foerdersumme", patterns: [/fördersumme/i, /foerdersumme/i, /zuwendung/i] },
-        { key: "foerderquote", patterns: [/förderquote/i, /foerderquote/i] },
-        { key: "zuschlagsfaktor", patterns: [/zuschlagsfaktor/i] },
-        { key: "maxFoerdersumme", patterns: [/maximale?.*förder/i, /maximale?.*foerder/i, /maximalbetrag/i] },
-      ];
-
       const formatDateTimeDe = (value) => {
         if (!value) return "–";
         const date = new Date(value);
@@ -799,6 +784,11 @@
         return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
       };
 
+      const toIsoDate = (dateValue) => {
+        const date = dateValue instanceof Date ? dateValue : parseDate(dateValue);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      };
+
       const parseMonthYear = (value) => {
         if (!value) return null;
         const [monthPart, yearPart] = `${value}`.trim().split(".");
@@ -1059,7 +1049,7 @@
           analysisMessage: "",
           analysisError: "",
           noFormFields: false,
-          basePdfBytes: null,
+          uploadedFile: null,
           downloadUrl: "",
           downloadName: "",
         });
@@ -2470,7 +2460,7 @@
               analysisMessage: "",
               analysisError: "",
               noFormFields: false,
-              basePdfBytes: null,
+              uploadedFile: null,
               downloadUrl: "",
               downloadName: "",
             };
@@ -2485,125 +2475,88 @@
           const companyEmployees = employeesByCompany[companyIndex] || [];
           const projectStartDate = parseDate(startDate);
           const projectEndDate = new Date(projectStartDate.getFullYear(), projectStartDate.getMonth() + durationMonths - 1, 1);
+          const yearlyFundingSums = Object.entries(fundingResults.annualFunding || {}).reduce((acc, [year, value]) => {
+            acc[year] = roundToTwo(value || 0);
+            return acc;
+          }, {});
           return {
             projectName: currentProjectName,
             companyName,
-            projectStart: `${String(projectStartDate.getDate()).padStart(2, "0")}.${String(projectStartDate.getMonth() + 1).padStart(2, "0")}.${projectStartDate.getFullYear()}`,
-            projectEnd: `${String(projectEndDate.getDate()).padStart(2, "0")}.${String(projectEndDate.getMonth() + 1).padStart(2, "0")}.${projectEndDate.getFullYear()}`,
-            projectDurationMonths: `${durationMonths}`,
-            personalkosten: `${roundToTwo(fundingResults.personalkosten || 0)}`,
-            projektsumme: `${roundToTwo(fundingResults.projektsumme || 0)}`,
-            foerdersumme: `${roundToTwo(fundingResults.foerdersumme || 0)}`,
-            foerderquote: `${roundToTwo(companyData[companyIndex]?.foerderquotePercent || 0)}`,
-            zuschlagsfaktor: `${roundToTwo(companyData[companyIndex]?.zuschlagsfaktorPercent || 0)}`,
-            maxFoerdersumme: `${roundToTwo(companyData[companyIndex]?.maximalbetrag || 0)}`,
-            workPackages: companyRows.map((row) => ({
-              number: row.number,
-              title: row.title,
-              pm: `${normalizePmValue(row.pmByCompany?.[companyIndex])}`,
-              start: tabellenEintraege[row.id]?.start || "",
-              ende: tabellenEintraege[row.id]?.ende || "",
-              mitarbeiterNummer: tabellenEintraege[row.id]?.mitarbeiterNummer || "",
-              mitarbeiterName: companyEmployees[parseInt(tabellenEintraege[row.id]?.mitarbeiterNummer, 10) - 1]?.name || "",
-            })),
+            payload: {
+              project: {
+                name: currentProjectName,
+                startDate,
+                durationMonths,
+                endDate: toIsoDate(projectEndDate),
+              },
+              company: {
+                id: companyIndex,
+                name: companyName,
+                funding: {
+                  ratePct: roundToTwo(companyData[companyIndex]?.foerderquotePercent || 0),
+                  surchargePct: roundToTwo(companyData[companyIndex]?.zuschlagsfaktorPercent || 0),
+                  maxProjectSum: roundToTwo(companyData[companyIndex]?.maximalbetrag || 0),
+                },
+                computed: {
+                  personnelCost: roundToTwo(fundingResults.personalkosten || 0),
+                  projectSum: roundToTwo(fundingResults.projektsumme || 0),
+                  fundingSum: roundToTwo(fundingResults.foerdersumme || 0),
+                  verschenkt: roundToTwo(fundingResults.verschenkt || 0),
+                  realSurchargePct: roundToTwo(fundingResults.realerZuschlagsfaktor || 0),
+                },
+                yearlyFundingSums,
+              },
+              workPackages: companyRows.map((row) => {
+                const pm = normalizePmValue(row.pmByCompany?.[companyIndex]);
+                if (pm <= 0) return null;
+                return {
+                  nr: row.number,
+                  title: row.title,
+                  pm,
+                  startMonth: tabellenEintraege[row.id]?.start || "",
+                  endMonth: tabellenEintraege[row.id]?.ende || "",
+                  employeeNo: tabellenEintraege[row.id]?.mitarbeiterNummer || "",
+                };
+              }).filter(Boolean),
+              employees: companyEmployees.map((employee, index) => ({
+                no: `${index + 1}`,
+                name: employee.name || "",
+                annualSalary: parseNumber(employee.annualSalary),
+              })),
+            },
           };
         };
 
-        const getMappedValueForRule = (ruleKey, context) => {
-          return context[ruleKey] || "";
-        };
-
-        const getWorkPackageFieldValue = (fieldName, context) => {
-          if (!/(arbeitspaket|\bap\b)/i.test(fieldName)) return null;
-          const rowMatch = fieldName.match(/(?:^|[^0-9])(\d{1,2})(?:[^0-9]|$)/);
-          if (!rowMatch) return null;
-          const rowIndex = parseInt(rowMatch[1], 10) - 1;
-          const row = context.workPackages[rowIndex];
-          if (!row) return null;
-          if (/(bezeichnung|titel|beschreibung)/i.test(fieldName)) return row.title || "";
-          if (/(^|[_\-.\s])pm([_\-.\s]|$)|personenmonat/i.test(fieldName)) return row.pm || "";
-          if (/start/i.test(fieldName)) return row.start || "";
-          if (/ende|end/i.test(fieldName)) return row.ende || "";
-          if (/mitarbeiter.*(nr|nummer)|personalnummer/i.test(fieldName)) return row.mitarbeiterNummer || "";
-          if (/mitarbeiter.*name/i.test(fieldName)) return row.mitarbeiterName || "";
-          return null;
-        };
-
-        const analyzeZimPdf = async (file, companyIndex) => {
-          if (!file) return;
-          const context = getCompanyExportContext(companyIndex);
+        const analyzeZimPdf = async () => {
+          if (!zimPdfModalState.uploadedFile || zimPdfModalState.companyIndex === null) return;
+          const context = getCompanyExportContext(zimPdfModalState.companyIndex);
+          const formData = new FormData();
+          formData.append("file", zimPdfModalState.uploadedFile);
+          formData.append("payload", JSON.stringify(context.payload));
           try {
-            const bytes = await file.arrayBuffer();
-            const pdfDoc = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
-            const form = pdfDoc.getForm();
-            const fields = form.getFields();
-            const fieldNames = fields.map((field) => field.getName());
-            const mappings = [];
-            const unmappedFields = [];
-            const acronymCandidates = fieldNames.filter((name) => /(akronym|projektakronym|projektname|kurzbezeichnung)/i.test(name));
-            let acronymInPdf = "";
-            acronymCandidates.some((candidateName) => {
-              const field = fields.find((entry) => entry.getName() === candidateName);
-              try {
-                if (field && typeof field.getText === "function") {
-                  acronymInPdf = `${field.getText() || ""}`.trim();
-                }
-              } catch (_) {}
-              return Boolean(acronymInPdf);
-            });
-
-            fieldNames.forEach((fieldName) => {
-              const matchingRules = ZIM_FIELD_MAP.filter((rule) =>
-                rule.patterns.some((pattern) => pattern.test(fieldName))
-              );
-              let mappedValue = "";
-              let mappedBy = "";
-              if (matchingRules.length === 1) {
-                mappedBy = matchingRules[0].key;
-                mappedValue = getMappedValueForRule(matchingRules[0].key, context);
-              } else {
-                const wpValue = getWorkPackageFieldValue(fieldName, context);
-                if (wpValue !== null) {
-                  mappedBy = "workPackage";
-                  mappedValue = wpValue;
-                }
-              }
-              if (mappedBy) {
-                mappings.push({ fieldName, mappedBy, value: mappedValue });
-              } else {
-                unmappedFields.push(fieldName);
-              }
-            });
-
-            const acronymStatus = !acronymCandidates.length || !acronymInPdf
-              ? "missing"
-              : acronymInPdf.trim().toLowerCase() === (context.projectName || "").trim().toLowerCase()
-                ? "match"
-                : "mismatch";
-
+            setZimPdfModalState((prev) => ({ ...prev, analysisError: "", analysisMessage: "Analysiere PDF-Felder..." }));
+            const response = await fetch("/api/zim/fields", { method: "POST", body: formData });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data?.error || "PDF konnte nicht analysiert werden.");
             setZimPdfModalState((prev) => ({
               ...prev,
-              companyIndex,
               companyName: context.companyName,
-              fieldNames,
-              mappings,
-              unmappedFields,
-              acronymInPdf,
-              acronymStatus,
+              fieldNames: data.leafPaths || [],
+              mappings: data.mappings || [],
+              unmappedFields: data.unmappedPaths || [],
+              acronymInPdf: data.pdfAkronym || "",
+              acronymStatus: data.mismatch ? "mismatch" : data.pdfAkronym ? "match" : "missing",
               warningAccepted: false,
-              analysisMessage: fieldNames.length
-                ? "PDF-Felder wurden analysiert."
-                : "PDF-Felder wurden analysiert (keine Feldnamen gefunden).",
+              analysisMessage: "PDF-Felder wurden analysiert.",
               analysisError: "",
-              noFormFields: fields.length === 0,
-              basePdfBytes: bytes,
+              noFormFields: !(data.leafPaths || []).length,
               downloadUrl: "",
               downloadName: "",
             }));
           } catch (error) {
             setZimPdfModalState((prev) => ({
               ...prev,
-              analysisError: "PDF konnte nicht gelesen werden.",
+              analysisError: error.message || "PDF konnte nicht analysiert werden.",
               analysisMessage: "",
               fieldNames: [],
               mappings: [],
@@ -2614,36 +2567,37 @@
         };
 
         const exportZimPdf = async () => {
-          if (!zimPdfModalState.basePdfBytes || zimPdfModalState.companyIndex === null) return;
+          if (!zimPdfModalState.uploadedFile || zimPdfModalState.companyIndex === null) return;
           try {
             const context = getCompanyExportContext(zimPdfModalState.companyIndex);
-            const pdfDoc = await PDFLib.PDFDocument.load(zimPdfModalState.basePdfBytes, { ignoreEncryption: true });
-            const form = pdfDoc.getForm();
-            const fieldsByName = form.getFields().reduce((acc, field) => {
-              acc[field.getName()] = field;
-              return acc;
-            }, {});
-            zimPdfModalState.mappings.forEach((entry) => {
-              const field = fieldsByName[entry.fieldName];
-              if (!field) return;
-              try {
-                if (field instanceof PDFLib.PDFCheckBox) {
-                  if (entry.value === true || `${entry.value}`.toLowerCase() === "true") field.check();
-                  else field.uncheck();
-                } else if (typeof field.setText === "function") {
-                  field.setText(`${entry.value || ""}`);
-                }
-              } catch (_) {}
-            });
-            const outputBytes = await pdfDoc.save();
-            const blob = new Blob([outputBytes], { type: "application/pdf" });
-            const safeProject = (context.projectName || "Projekt").replace(/[^a-z0-9äöüß_-]+/gi, "_");
-            const safeCompany = (context.companyName || "Unternehmen").replace(/[^a-z0-9äöüß_-]+/gi, "_");
-            const downloadName = `${safeProject}_${safeCompany}_Mantelbogen.pdf`;
+            const formData = new FormData();
+            formData.append("file", zimPdfModalState.uploadedFile);
+            formData.append("payload", JSON.stringify(context.payload));
+            formData.append("confirmMismatch", zimPdfModalState.warningAccepted ? "true" : "false");
+            const response = await fetch("/api/zim/fill", { method: "POST", body: formData });
+            if (!response.ok) {
+              const data = await response.json();
+              if (response.status === 409) {
+                setZimPdfModalState((prev) => ({
+                  ...prev,
+                  acronymInPdf: data.pdfAkronym || prev.acronymInPdf,
+                  acronymStatus: "mismatch",
+                  analysisError: "Akronym in PDF weicht vom Projektnamen ab. Bitte bestätigen.",
+                }));
+                return;
+              }
+              throw new Error(data?.error || "PDF konnte nicht ausgefüllt werden.");
+            }
+
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get("Content-Disposition") || "";
+            const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+            const downloadName = filenameMatch?.[1] || `${context.projectName}_${context.companyName}_Mantelbogen.pdf`;
             setZimPdfModalState((prev) => {
               if (prev.downloadUrl) URL.revokeObjectURL(prev.downloadUrl);
               return {
                 ...prev,
+                analysisError: "",
                 downloadUrl: URL.createObjectURL(blob),
                 downloadName,
               };
@@ -2651,7 +2605,7 @@
           } catch (error) {
             setZimPdfModalState((prev) => ({
               ...prev,
-              analysisError: "PDF konnte nicht ausgefüllt werden.",
+              analysisError: error.message || "PDF konnte nicht ausgefüllt werden.",
             }));
           }
         };
@@ -3088,7 +3042,18 @@
                               open: true,
                               companyIndex,
                               companyName,
+                              fieldNames: [],
+                              mappings: [],
+                              unmappedFields: [],
+                              acronymInPdf: "",
+                              acronymStatus: "unknown",
+                              warningAccepted: false,
+                              analysisMessage: "",
                               analysisError: "",
+                              noFormFields: false,
+                              uploadedFile: null,
+                              downloadUrl: "",
+                              downloadName: "",
                             }))
                           }
                           className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
@@ -3747,9 +3712,17 @@
                     <input
                       type="file"
                       accept="application/pdf"
-                      onChange={(event) => analyzeZimPdf(event.target.files?.[0], zimPdfModalState.companyIndex)}
+                      onChange={(event) => setZimPdfModalState((prev) => ({ ...prev, uploadedFile: event.target.files?.[0] || null }))}
                       className="mt-2 block w-full text-sm"
                     />
+                    <button
+                      type="button"
+                      onClick={analyzeZimPdf}
+                      disabled={!zimPdfModalState.uploadedFile}
+                      className="mt-3 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Felder analysieren
+                    </button>
                   </div>
                   {zimPdfModalState.analysisError ? <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{zimPdfModalState.analysisError}</div> : null}
                   {zimPdfModalState.analysisMessage ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{zimPdfModalState.analysisMessage}</div> : null}
@@ -3777,7 +3750,7 @@
                       <div className="mt-2 text-xs text-slate-500">Befüllbare Felder: {zimPdfModalState.mappings.length}</div>
                       <div className="max-h-40 overflow-auto text-xs">
                         {zimPdfModalState.mappings.map((entry) => (
-                          <div key={`map-${entry.fieldName}`} className="mt-1 rounded bg-emerald-50 px-2 py-1 text-emerald-800">{entry.fieldName} ← {`${entry.value}` || ""}</div>
+                          <div key={`map-${entry.path}`} className="mt-1 rounded bg-emerald-50 px-2 py-1 text-emerald-800">{entry.path} ← {`${entry.value}` || ""}</div>
                         ))}
                       </div>
                       <div className="mt-3 text-xs text-slate-500">Nicht automatisch befüllbar: {zimPdfModalState.unmappedFields.length}</div>
@@ -3786,7 +3759,7 @@
                           <div key={`unmap-${fieldName}`} className="mt-1 rounded bg-slate-100 px-2 py-1 text-slate-600">{fieldName}</div>
                         ))}
                       </div>
-                      {!zimPdfModalState.mappings.some((entry) => /arbeitspaket|\bap\b/i.test(entry.fieldName)) ? (
+                      {!zimPdfModalState.mappings.some((entry) => /arbeitspaket|\bap\b/i.test(entry.path || "")) ? (
                         <div className="mt-2 text-xs text-amber-700">AP-Tabelle nicht als Formularfelder vorhanden.</div>
                       ) : null}
                     </div>
@@ -3803,10 +3776,10 @@
                     <button
                       type="button"
                       onClick={exportZimPdf}
-                      disabled={!zimPdfModalState.basePdfBytes || (zimPdfModalState.acronymStatus === "mismatch" && !zimPdfModalState.warningAccepted)}
+                      disabled={!zimPdfModalState.uploadedFile || !zimPdfModalState.fieldNames.length || (zimPdfModalState.acronymStatus === "mismatch" && !zimPdfModalState.warningAccepted)}
                       className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
-                      PDF ausfüllen
+                      PDF ausfüllen & herunterladen
                     </button>
                     {zimPdfModalState.downloadUrl ? (
                       <a href={zimPdfModalState.downloadUrl} download={zimPdfModalState.downloadName} className="rounded-md border border-emerald-400 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
