@@ -2535,21 +2535,21 @@
           formData.append("payload", JSON.stringify(context.payload));
           try {
             setZimPdfModalState((prev) => ({ ...prev, analysisError: "", analysisMessage: "Analysiere PDF-Felder..." }));
-            const response = await fetch("/api/zim/fields", { method: "POST", body: formData });
+            const response = await fetch("/api/zim/analyze", { method: "POST", body: formData });
             const data = await response.json();
-            if (!response.ok) throw new Error(data?.error || "PDF konnte nicht analysiert werden.");
+            if (!response.ok) throw new Error(data?.detail || data?.error || "PDF konnte nicht analysiert werden.");
             setZimPdfModalState((prev) => ({
               ...prev,
               companyName: context.companyName,
-              fieldNames: data.leafPaths || [],
-              mappings: data.mappings || [],
-              unmappedFields: data.unmappedPaths || [],
-              acronymInPdf: data.pdfAkronym || "",
-              acronymStatus: data.mismatch ? "mismatch" : data.pdfAkronym ? "match" : "missing",
+              fieldNames: data.fields || [],
+              mappings: (data.mappingPreview || []).filter((entry) => entry.status === "willFill"),
+              unmappedFields: (data.mappingPreview || []).filter((entry) => entry.status !== "willFill").map((entry) => entry.path),
+              acronymInPdf: data.pdfAcronym || "",
+              acronymStatus: data.acronymMismatch ? "mismatch" : data.pdfAcronym ? "match" : "missing",
               warningAccepted: false,
               analysisMessage: "PDF-Felder wurden analysiert.",
               analysisError: "",
-              noFormFields: !(data.leafPaths || []).length,
+              noFormFields: !(data.fields || []).length,
               downloadUrl: "",
               downloadName: "",
             }));
@@ -2580,13 +2580,13 @@
               if (response.status === 409) {
                 setZimPdfModalState((prev) => ({
                   ...prev,
-                  acronymInPdf: data.pdfAkronym || prev.acronymInPdf,
+                  acronymInPdf: data.pdfAcronym || prev.acronymInPdf,
                   acronymStatus: "mismatch",
                   analysisError: "Akronym in PDF weicht vom Projektnamen ab. Bitte bestätigen.",
                 }));
                 return;
               }
-              throw new Error(data?.error || "PDF konnte nicht ausgefüllt werden.");
+              throw new Error(data?.detail || data?.error || "PDF konnte nicht ausgefüllt werden.");
             }
 
             const blob = await response.blob();
@@ -3721,7 +3721,7 @@
                       disabled={!zimPdfModalState.uploadedFile}
                       className="mt-3 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Felder analysieren
+                      PDF analysieren
                     </button>
                   </div>
                   {zimPdfModalState.analysisError ? <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{zimPdfModalState.analysisError}</div> : null}
