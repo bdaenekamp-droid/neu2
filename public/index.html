@@ -99,6 +99,7 @@
 
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="text/babel" data-presets="typescript,react">
       const { useMemo, useState, useEffect, useRef, useCallback } = React;
@@ -120,6 +121,19 @@
         workPackageDates: false,
         personMonths: true,
       };
+      const ZIM_FIELD_MAP = [
+        { key: "projectAcronym", patterns: [/^akronym$/i, /projektakronym/i, /projektname/i, /kurzbezeichnung/i] },
+        { key: "companyName", patterns: [/antragsteller/i, /unternehmen/i, /firma/i] },
+        { key: "projectStart", patterns: [/projektstart/i, /startdatum/i, /projektbeginn/i] },
+        { key: "projectEnd", patterns: [/projektende/i, /endedatum/i] },
+        { key: "projectDurationMonths", patterns: [/laufzeit/i, /dauer/i, /monat/i] },
+        { key: "personalkosten", patterns: [/personalkosten/i] },
+        { key: "projektsumme", patterns: [/projektsumme/i, /projektkosten/i, /gesamtkosten/i] },
+        { key: "foerdersumme", patterns: [/fördersumme/i, /foerdersumme/i, /zuwendung/i] },
+        { key: "foerderquote", patterns: [/förderquote/i, /foerderquote/i] },
+        { key: "zuschlagsfaktor", patterns: [/zuschlagsfaktor/i] },
+        { key: "maxFoerdersumme", patterns: [/maximale?.*förder/i, /maximale?.*foerder/i, /maximalbetrag/i] },
+      ];
 
       const formatDateTimeDe = (value) => {
         if (!value) return "–";
@@ -1032,8 +1046,33 @@
         const [projectError, setProjectError] = useState("");
         const [storageError, setStorageError] = useState("");
         const [saveState, setSaveState] = useState("gespeichert");
+        const [zimPdfModalState, setZimPdfModalState] = useState({
+          open: false,
+          companyIndex: null,
+          companyName: "",
+          fieldNames: [],
+          mappings: [],
+          unmappedFields: [],
+          acronymInPdf: "",
+          acronymStatus: "unknown",
+          warningAccepted: false,
+          analysisMessage: "",
+          analysisError: "",
+          noFormFields: false,
+          basePdfBytes: null,
+          downloadUrl: "",
+          downloadName: "",
+        });
         const hasInitializedRef = useRef(false);
         const debounceSaveRef = useRef(null);
+
+        useEffect(() => {
+          return () => {
+            if (zimPdfModalState.downloadUrl) {
+              URL.revokeObjectURL(zimPdfModalState.downloadUrl);
+            }
+          };
+        }, [zimPdfModalState.downloadUrl]);
 
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
@@ -2413,6 +2452,210 @@
           }, {});
         }, [activeCompanyIndexes, employeesByCompany, employeePmByCompany, companyData, projectYears]);
 
+        const closeZimModal = () => {
+          setZimPdfModalState((prev) => {
+            if (prev.downloadUrl) {
+              URL.revokeObjectURL(prev.downloadUrl);
+            }
+            return {
+              open: false,
+              companyIndex: null,
+              companyName: "",
+              fieldNames: [],
+              mappings: [],
+              unmappedFields: [],
+              acronymInPdf: "",
+              acronymStatus: "unknown",
+              warningAccepted: false,
+              analysisMessage: "",
+              analysisError: "",
+              noFormFields: false,
+              basePdfBytes: null,
+              downloadUrl: "",
+              downloadName: "",
+            };
+          });
+        };
+
+        const getCompanyExportContext = (companyIndex) => {
+          const companyName = companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
+          const fundingResults = fundingResultsByCompany[companyIndex] || {};
+          const companyRows = filteredWorkPackageRowsByCompany[companyIndex] || [];
+          const tabellenEintraege = companyData[companyIndex]?.tabellenEintraege || {};
+          const companyEmployees = employeesByCompany[companyIndex] || [];
+          const projectStartDate = parseDate(startDate);
+          const projectEndDate = new Date(projectStartDate.getFullYear(), projectStartDate.getMonth() + durationMonths - 1, 1);
+          return {
+            projectName: currentProjectName,
+            companyName,
+            projectStart: `${String(projectStartDate.getDate()).padStart(2, "0")}.${String(projectStartDate.getMonth() + 1).padStart(2, "0")}.${projectStartDate.getFullYear()}`,
+            projectEnd: `${String(projectEndDate.getDate()).padStart(2, "0")}.${String(projectEndDate.getMonth() + 1).padStart(2, "0")}.${projectEndDate.getFullYear()}`,
+            projectDurationMonths: `${durationMonths}`,
+            personalkosten: `${roundToTwo(fundingResults.personalkosten || 0)}`,
+            projektsumme: `${roundToTwo(fundingResults.projektsumme || 0)}`,
+            foerdersumme: `${roundToTwo(fundingResults.foerdersumme || 0)}`,
+            foerderquote: `${roundToTwo(companyData[companyIndex]?.foerderquotePercent || 0)}`,
+            zuschlagsfaktor: `${roundToTwo(companyData[companyIndex]?.zuschlagsfaktorPercent || 0)}`,
+            maxFoerdersumme: `${roundToTwo(companyData[companyIndex]?.maximalbetrag || 0)}`,
+            workPackages: companyRows.map((row) => ({
+              number: row.number,
+              title: row.title,
+              pm: `${normalizePmValue(row.pmByCompany?.[companyIndex])}`,
+              start: tabellenEintraege[row.id]?.start || "",
+              ende: tabellenEintraege[row.id]?.ende || "",
+              mitarbeiterNummer: tabellenEintraege[row.id]?.mitarbeiterNummer || "",
+              mitarbeiterName: companyEmployees[parseInt(tabellenEintraege[row.id]?.mitarbeiterNummer, 10) - 1]?.name || "",
+            })),
+          };
+        };
+
+        const getMappedValueForRule = (ruleKey, context) => {
+          return context[ruleKey] || "";
+        };
+
+        const getWorkPackageFieldValue = (fieldName, context) => {
+          if (!/(arbeitspaket|\bap\b)/i.test(fieldName)) return null;
+          const rowMatch = fieldName.match(/(?:^|[^0-9])(\d{1,2})(?:[^0-9]|$)/);
+          if (!rowMatch) return null;
+          const rowIndex = parseInt(rowMatch[1], 10) - 1;
+          const row = context.workPackages[rowIndex];
+          if (!row) return null;
+          if (/(bezeichnung|titel|beschreibung)/i.test(fieldName)) return row.title || "";
+          if (/(^|[_\-.\s])pm([_\-.\s]|$)|personenmonat/i.test(fieldName)) return row.pm || "";
+          if (/start/i.test(fieldName)) return row.start || "";
+          if (/ende|end/i.test(fieldName)) return row.ende || "";
+          if (/mitarbeiter.*(nr|nummer)|personalnummer/i.test(fieldName)) return row.mitarbeiterNummer || "";
+          if (/mitarbeiter.*name/i.test(fieldName)) return row.mitarbeiterName || "";
+          return null;
+        };
+
+        const analyzeZimPdf = async (file, companyIndex) => {
+          if (!file) return;
+          const context = getCompanyExportContext(companyIndex);
+          try {
+            const bytes = await file.arrayBuffer();
+            const pdfDoc = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+            const form = pdfDoc.getForm();
+            const fields = form.getFields();
+            const fieldNames = fields.map((field) => field.getName());
+            const mappings = [];
+            const unmappedFields = [];
+            const acronymCandidates = fieldNames.filter((name) => /(akronym|projektakronym|projektname|kurzbezeichnung)/i.test(name));
+            let acronymInPdf = "";
+            acronymCandidates.some((candidateName) => {
+              const field = fields.find((entry) => entry.getName() === candidateName);
+              try {
+                if (field && typeof field.getText === "function") {
+                  acronymInPdf = `${field.getText() || ""}`.trim();
+                }
+              } catch (_) {}
+              return Boolean(acronymInPdf);
+            });
+
+            fieldNames.forEach((fieldName) => {
+              const matchingRules = ZIM_FIELD_MAP.filter((rule) =>
+                rule.patterns.some((pattern) => pattern.test(fieldName))
+              );
+              let mappedValue = "";
+              let mappedBy = "";
+              if (matchingRules.length === 1) {
+                mappedBy = matchingRules[0].key;
+                mappedValue = getMappedValueForRule(matchingRules[0].key, context);
+              } else {
+                const wpValue = getWorkPackageFieldValue(fieldName, context);
+                if (wpValue !== null) {
+                  mappedBy = "workPackage";
+                  mappedValue = wpValue;
+                }
+              }
+              if (mappedBy) {
+                mappings.push({ fieldName, mappedBy, value: mappedValue });
+              } else {
+                unmappedFields.push(fieldName);
+              }
+            });
+
+            const acronymStatus = !acronymCandidates.length || !acronymInPdf
+              ? "missing"
+              : acronymInPdf.trim().toLowerCase() === (context.projectName || "").trim().toLowerCase()
+                ? "match"
+                : "mismatch";
+
+            setZimPdfModalState((prev) => ({
+              ...prev,
+              companyIndex,
+              companyName: context.companyName,
+              fieldNames,
+              mappings,
+              unmappedFields,
+              acronymInPdf,
+              acronymStatus,
+              warningAccepted: false,
+              analysisMessage: fieldNames.length
+                ? "PDF-Felder wurden analysiert."
+                : "PDF-Felder wurden analysiert (keine Feldnamen gefunden).",
+              analysisError: "",
+              noFormFields: fields.length === 0,
+              basePdfBytes: bytes,
+              downloadUrl: "",
+              downloadName: "",
+            }));
+          } catch (error) {
+            setZimPdfModalState((prev) => ({
+              ...prev,
+              analysisError: "PDF konnte nicht gelesen werden.",
+              analysisMessage: "",
+              fieldNames: [],
+              mappings: [],
+              unmappedFields: [],
+              noFormFields: false,
+            }));
+          }
+        };
+
+        const exportZimPdf = async () => {
+          if (!zimPdfModalState.basePdfBytes || zimPdfModalState.companyIndex === null) return;
+          try {
+            const context = getCompanyExportContext(zimPdfModalState.companyIndex);
+            const pdfDoc = await PDFLib.PDFDocument.load(zimPdfModalState.basePdfBytes, { ignoreEncryption: true });
+            const form = pdfDoc.getForm();
+            const fieldsByName = form.getFields().reduce((acc, field) => {
+              acc[field.getName()] = field;
+              return acc;
+            }, {});
+            zimPdfModalState.mappings.forEach((entry) => {
+              const field = fieldsByName[entry.fieldName];
+              if (!field) return;
+              try {
+                if (field instanceof PDFLib.PDFCheckBox) {
+                  if (entry.value === true || `${entry.value}`.toLowerCase() === "true") field.check();
+                  else field.uncheck();
+                } else if (typeof field.setText === "function") {
+                  field.setText(`${entry.value || ""}`);
+                }
+              } catch (_) {}
+            });
+            const outputBytes = await pdfDoc.save();
+            const blob = new Blob([outputBytes], { type: "application/pdf" });
+            const safeProject = (context.projectName || "Projekt").replace(/[^a-z0-9äöüß_-]+/gi, "_");
+            const safeCompany = (context.companyName || "Unternehmen").replace(/[^a-z0-9äöüß_-]+/gi, "_");
+            const downloadName = `${safeProject}_${safeCompany}_Mantelbogen.pdf`;
+            setZimPdfModalState((prev) => {
+              if (prev.downloadUrl) URL.revokeObjectURL(prev.downloadUrl);
+              return {
+                ...prev,
+                downloadUrl: URL.createObjectURL(blob),
+                downloadName,
+              };
+            });
+          } catch (error) {
+            setZimPdfModalState((prev) => ({
+              ...prev,
+              analysisError: "PDF konnte nicht ausgefüllt werden.",
+            }));
+          }
+        };
+
         return (
           <div className="min-h-screen bg-slate-50 text-slate-900" onBlurCapture={saveNow}>
             <header className="ca-topbar border-b border-black/10 shadow-subtle">
@@ -2837,6 +3080,21 @@
                         <h3 className="mt-2 text-xl font-semibold text-slate-850">
                           Unternehmensplanung: {companyName}
                         </h3>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setZimPdfModalState((prev) => ({
+                              ...prev,
+                              open: true,
+                              companyIndex,
+                              companyName,
+                              analysisError: "",
+                            }))
+                          }
+                          className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                        >
+                          Projektplanung in ZIM-Fördermittelantrag übertragen
+                        </button>
                       </div>
 
                       <div className="mt-6 space-y-6">
@@ -2871,7 +3129,6 @@
                             </button>
                           </div>
                           <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                            <p className="text-sm font-semibold text-slate-800">Unverändert lassen</p>
                             <p className="mt-1 text-xs text-slate-600">
                               Diese Einstellungen bleiben bei der Auto-Projektplanung gesperrt.
                             </p>
@@ -2888,7 +3145,7 @@
                                   }
                                   className="mt-1"
                                 />
-                                <span>Mitarbeiterzuordnung</span>
+                                <span>Zuordnung von Mitarbeitenden zu Arbeitspaketen</span>
                               </label>
                               <label className="flex items-start gap-2 text-sm text-slate-700">
                                 <input
@@ -2916,7 +3173,7 @@
                                   }
                                   className="mt-1"
                                 />
-                                <span>Personenmonate (PM)</span>
+                                <span>Absolute Anzahl an Personenmonaten</span>
                               </label>
                             </div>
                           </div>
@@ -3474,6 +3731,92 @@
                 })}
               </div>
             </main>
+
+            {zimPdfModalState.open ? (
+              <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 px-4">
+                <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Projektplanung in ZIM-Fördermittelantrag übertragen</h3>
+                      <p className="mt-1 text-sm text-slate-600">Bitte Mantelbogen-PDF hochladen (Formular-PDF)</p>
+                    </div>
+                    <button type="button" onClick={closeZimModal} className="rounded-md border border-slate-300 px-3 py-1 text-sm">Schließen</button>
+                  </div>
+                  <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4">
+                    <label className="text-sm font-semibold text-slate-800">1) PDF hochladen</label>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={(event) => analyzeZimPdf(event.target.files?.[0], zimPdfModalState.companyIndex)}
+                      className="mt-2 block w-full text-sm"
+                    />
+                  </div>
+                  {zimPdfModalState.analysisError ? <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{zimPdfModalState.analysisError}</div> : null}
+                  {zimPdfModalState.analysisMessage ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{zimPdfModalState.analysisMessage}</div> : null}
+                  {zimPdfModalState.noFormFields ? (
+                    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">Diese PDF scheint keine ausfüllbaren Formularfelder zu enthalten.</div>
+                  ) : null}
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-md border border-slate-200 p-3">
+                      <h4 className="text-sm font-semibold text-slate-800">2) Akronym-Check</h4>
+                      <div className="mt-2 text-sm text-slate-700">Acronym in PDF: <strong>{zimPdfModalState.acronymInPdf || "–"}</strong></div>
+                      <div className="text-sm text-slate-700">Projektname (Acronym) in Software: <strong>{currentProjectName || "–"}</strong></div>
+                      {zimPdfModalState.acronymStatus === "missing" ? <div className="mt-2 text-sm text-amber-700">Akronym konnte in der PDF nicht automatisch gefunden werden.</div> : null}
+                      {zimPdfModalState.acronymStatus === "mismatch" ? (
+                        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                          Warnung: Akronym in der PDF stimmt nicht mit dem Projektnamen überein.
+                          <div className="mt-2 flex gap-2">
+                            <button type="button" onClick={() => setZimPdfModalState((prev) => ({ ...prev, warningAccepted: true }))} className="rounded-md border border-amber-400 bg-white px-2 py-1 text-xs font-semibold">Trotzdem fortfahren</button>
+                            <button type="button" onClick={closeZimModal} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold">Abbrechen</button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="rounded-md border border-slate-200 p-3">
+                      <h4 className="text-sm font-semibold text-slate-800">3) Mapping-Vorschau</h4>
+                      <div className="mt-2 text-xs text-slate-500">Befüllbare Felder: {zimPdfModalState.mappings.length}</div>
+                      <div className="max-h-40 overflow-auto text-xs">
+                        {zimPdfModalState.mappings.map((entry) => (
+                          <div key={`map-${entry.fieldName}`} className="mt-1 rounded bg-emerald-50 px-2 py-1 text-emerald-800">{entry.fieldName} ← {`${entry.value}` || ""}</div>
+                        ))}
+                      </div>
+                      <div className="mt-3 text-xs text-slate-500">Nicht automatisch befüllbar: {zimPdfModalState.unmappedFields.length}</div>
+                      <div className="max-h-28 overflow-auto text-xs">
+                        {zimPdfModalState.unmappedFields.map((fieldName) => (
+                          <div key={`unmap-${fieldName}`} className="mt-1 rounded bg-slate-100 px-2 py-1 text-slate-600">{fieldName}</div>
+                        ))}
+                      </div>
+                      {!zimPdfModalState.mappings.some((entry) => /arbeitspaket|\bap\b/i.test(entry.fieldName)) ? (
+                        <div className="mt-2 text-xs text-amber-700">AP-Tabelle nicht als Formularfelder vorhanden.</div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-md border border-slate-200 p-3">
+                    <h4 className="text-sm font-semibold text-slate-800">Debug/Entwickleransicht: Erkannte PDF-Feldnamen</h4>
+                    <div className="mt-2 max-h-40 overflow-auto text-xs text-slate-700">
+                      {zimPdfModalState.fieldNames.map((fieldName) => (
+                        <div key={`field-${fieldName}`} className="border-b border-slate-100 py-1">{fieldName}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={exportZimPdf}
+                      disabled={!zimPdfModalState.basePdfBytes || (zimPdfModalState.acronymStatus === "mismatch" && !zimPdfModalState.warningAccepted)}
+                      className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      PDF ausfüllen
+                    </button>
+                    {zimPdfModalState.downloadUrl ? (
+                      <a href={zimPdfModalState.downloadUrl} download={zimPdfModalState.downloadName} className="rounded-md border border-emerald-400 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                        Download: {zimPdfModalState.downloadName}
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {newProjectModalOpen ? (
               <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4">
