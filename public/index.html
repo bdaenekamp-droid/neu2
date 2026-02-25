@@ -122,6 +122,8 @@
       const PROJECT_KEY_PREFIX = "project:";
       const SEED_PROJECT_NAME = "CryoVision";
       const AUTO_SAVE_DEBOUNCE_MS = 300;
+      const PROJECT_SCHEMA_VERSION = 1;
+      const CRYOVISION_SEED_PATH = "/seeds/cryovision.json";
       const DEFAULT_AUTO_LOCKS = {
         employeeAssignment: false,
         workPackageDates: false,
@@ -678,6 +680,9 @@
       const DEFAULT_COMPANY_NAMES = Array.from({ length: 5 }, (_, index) => `Unternehmen ${index + 1}`);
       const DEFAULT_START_DATE = "2026-07-15";
       const DEFAULT_DURATION_MONTHS = 48;
+      const SUB_WORK_PACKAGE_NUMBER_REGEX = /^\d+(\.\d+)+$/;
+
+      const isSubWorkPackageNumber = (value) => SUB_WORK_PACKAGE_NUMBER_REGEX.test(`${value || ""}`.trim());
 
       const createWp = (index) => ({
         id: `wp-${Date.now()}-${index}`,
@@ -860,6 +865,7 @@
       const buildDefaultProjectState = () => {
         const companyData = normalizeCompanyData();
         return {
+          schemaVersion: PROJECT_SCHEMA_VERSION,
           workPackages: createDefaultWorkPackages(),
           companyCount: DEFAULT_ACTIVE_COMPANY_COUNT,
           companyNames: [...DEFAULT_COMPANY_NAMES],
@@ -898,6 +904,7 @@
         }, {});
 
         return {
+          schemaVersion: PROJECT_SCHEMA_VERSION,
           workPackages,
           companyCount: 5,
           companyNames: DEFAULT_COMPANY_NAMES.map((name, index) =>
@@ -914,21 +921,60 @@
       const getProjectStorageKey = (projectId) =>
         `${PROJECT_KEY_PREFIX}${encodeURIComponent(projectId)}`;
 
-      const parseStoredProject = (parsed) => {
-        const defaults = buildDefaultProjectState();
-        if (!parsed || typeof parsed !== "object") return defaults;
+      const sanitizePmValue = (value) => {
+        if (value === "" || value === null || value === undefined) return "";
+        const parsed = Number.parseFloat(`${value}`.replace(",", "."));
+        if (!Number.isFinite(parsed) || parsed < 0) return "";
+        return parsed;
+      };
 
+      const sanitizePmRow = (pmRow, { allowValues = true, context = "" } = {}) => {
+        const next = Array.from({ length: 5 }, (_, index) => sanitizePmValue(pmRow?.[index]));
+        if (!allowValues) {
+          next.forEach((value, index) => {
+            if (value !== "" && value > 0) {
+              console.warn(`PM-Wert für Überschrift entfernt (${context}, Unternehmen ${index + 1}).`);
+            }
+          });
+          return Array(5).fill("");
+        }
+        return next;
+      };
+
+      const sanitizeWorkPackages = (workPackages) => {
+        if (!Array.isArray(workPackages) || !workPackages.length) return createDefaultWorkPackages();
+        return workPackages.map((wp, wpIndex) => ({
+          id: wp?.id || `wp-${Date.now()}-${wpIndex}`,
+          title: wp?.title || "",
+          pm: sanitizePmRow(wp?.pm, {
+            allowValues: false,
+            context: `${wpIndex + 1}`,
+          }),
+          sub: Array.isArray(wp?.sub) && wp.sub.length
+            ? wp.sub.map((sub, subIndex) => ({
+                id: sub?.id || `sub-${Date.now()}-${wpIndex}-${subIndex}`,
+                title: sub?.title || "",
+                pm: sanitizePmRow(sub?.pm, {
+                  allowValues: true,
+                  context: `${wpIndex + 1}.${subIndex + 1}`,
+                }),
+              }))
+            : [createSub(wpIndex, 0)],
+        }));
+      };
+
+      const migrateProjectState = (oldState) => {
+        const defaults = buildDefaultProjectState();
+        const parsed = oldState && typeof oldState === "object" ? oldState : {};
         const companyCount =
           typeof parsed.companyCount === "number"
             ? clampNumber(parsed.companyCount, 1, 5)
             : defaults.companyCount;
-
-        return {
-          workPackages: parsed?.workPackages?.length
-            ? parsed.workPackages
-            : defaults.workPackages,
-          companyNames: Array.isArray(parsed?.companyNames) && parsed.companyNames.length
-            ? parsed.companyNames
+        const next = {
+          schemaVersion: PROJECT_SCHEMA_VERSION,
+          workPackages: sanitizeWorkPackages(parsed.workPackages),
+          companyNames: Array.isArray(parsed.companyNames) && parsed.companyNames.length
+            ? [...defaults.companyNames].map((name, index) => `${parsed.companyNames[index] || name}`)
             : defaults.companyNames,
           companyCount,
           startDate: parsed?.startDate || defaults.startDate,
@@ -936,24 +982,39 @@
           employeesByCompany: Array.isArray(parsed?.employeesByCompany)
             ? defaults.employeesByCompany.map((fallback, index) => {
                 const list = parsed.employeesByCompany[index];
-                return Array.isArray(list) && list.length ? list : fallback;
+                return Array.isArray(list)
+                  ? list.map((employee) => ({
+                      ...createEmployee(),
+                      ...employee,
+                      partTimeFactor: clampNumber(parseNumber(employee?.partTimeFactor), 0, 1),
+                      projectPercent: clampNumber(parseNumber(employee?.projectPercent), 0, 100),
+                      weeklyHours: clampNumber(parseNumber(employee?.weeklyHours), 0, 999),
+                      actualHours: clampNumber(parseNumber(employee?.actualHours), 0, 999),
+                      annualSalary: clampNumber(parseNumber(employee?.annualSalary), 0, 999999999),
+                    }))
+                  : fallback;
               })
             : defaults.employeesByCompany,
           companyData: parsed?.companyData
             ? normalizeCompanyData(parsed.companyData)
             : defaults.companyData,
-          companyHistoryByCompany: Array.isArray(parsed?.companyHistoryByCompany)
-            ? parsed.companyHistoryByCompany.map((entry, companyIndex) => {
-                const fallback = createHistoryState(defaults.companyData[companyIndex]?.tabellenEintraege || {});
-                if (!entry || typeof entry !== "object") return fallback;
-                const history = Array.isArray(entry.history) && entry.history.length
-                  ? entry.history.map((snapshot) => normalizeCompanyHistorySnapshot(snapshot))
-                  : fallback.history;
-                const historyIndex = clampNumber(parseInt(entry.historyIndex, 10) || 0, 0, history.length - 1);
-                return { history, historyIndex };
-              })
-            : createCompanyHistoryByCompany(parsed?.companyData),
         };
+        next.companyHistoryByCompany = Array.isArray(parsed?.companyHistoryByCompany)
+          ? parsed.companyHistoryByCompany.map((entry, companyIndex) => {
+              const fallback = createHistoryState(next.companyData[companyIndex]?.tabellenEintraege || {});
+              if (!entry || typeof entry !== "object") return fallback;
+              const history = Array.isArray(entry.history) && entry.history.length
+                ? entry.history.map((snapshot) => normalizeCompanyHistorySnapshot(snapshot))
+                : fallback.history;
+              const historyIndex = clampNumber(parseInt(entry.historyIndex, 10) || 0, 0, history.length - 1);
+              return { history, historyIndex };
+            })
+          : createCompanyHistoryByCompany(next.companyData);
+        return next;
+      };
+
+      const parseStoredProject = (parsed) => {
+        return migrateProjectState(parsed);
       };
 
       const parseStoredProjectPayload = (rawValue, fallbackProjectName = "") => {
@@ -962,21 +1023,24 @@
         try {
           parsed = JSON.parse(rawValue);
         } catch (error) {
-          parsed = null;
-        }
-        if (parsed && typeof parsed === "object" && parsed.state) {
           return {
-            name: parsed.name || fallbackProjectName || "",
-            createdAt: parsed.createdAt || nowIso,
-            lastModified: parsed.lastModified || parsed.createdAt || nowIso,
-            state: parseStoredProject(parsed.state),
+            name: fallbackProjectName || "",
+            createdAt: nowIso,
+            lastModified: nowIso,
+            state: null,
+            loadable: false,
+            error: "parse_error",
           };
         }
+        const payload = parsed && typeof parsed === "object" && parsed.state ? parsed : null;
+        const stateSource = payload ? payload.state : parsed;
         return {
-          name: fallbackProjectName || "",
-          createdAt: nowIso,
-          lastModified: nowIso,
-          state: parseStoredProject(parsed),
+          name: payload?.name || fallbackProjectName || "",
+          createdAt: payload?.createdAt || nowIso,
+          lastModified: payload?.lastModified || payload?.createdAt || nowIso,
+          state: parseStoredProject(stateSource),
+          loadable: true,
+          error: null,
         };
       };
 
@@ -1108,6 +1172,7 @@
 
         const collectProjectState = useCallback(
           () => ({
+            schemaVersion: PROJECT_SCHEMA_VERSION,
             workPackages,
             companyCount,
             companyNames,
@@ -1131,27 +1196,31 @@
 
         const persistProject = useCallback((projectName, projectState, options = {}) => {
           const key = getProjectStorageKey(projectName);
+          const tempKey = `${key}:tmp`;
           const existingRaw = localStorage.getItem(key);
           const existingPayload = existingRaw
             ? parseStoredProjectPayload(existingRaw, projectName)
             : null;
           const createdAt = options.createdAt || existingPayload?.createdAt || new Date().toISOString();
           const lastModified = options.lastModified || new Date().toISOString();
+          const sanitizedState = parseStoredProject(projectState);
           const payload = {
             projectId: projectName,
             name: projectName,
             createdAt,
             lastModified,
-            state: projectState,
+            state: sanitizedState,
           };
 
-          localStorage.setItem(key, JSON.stringify(payload));
+          localStorage.setItem(tempKey, JSON.stringify(payload));
+          localStorage.setItem(key, localStorage.getItem(tempKey));
+          localStorage.removeItem(tempKey);
           localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
           setProjectRecords((prev) => {
             const withoutCurrent = prev.filter((entry) => entry.name !== projectName);
-            const next = [...withoutCurrent, { name: projectName, createdAt, lastModified }]
+            const next = [...withoutCurrent, { name: projectName, createdAt, lastModified, loadable: true, error: null }]
               .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-            localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(next));
+            localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(next.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified }))));
             return next;
           });
 
@@ -1176,45 +1245,74 @@
         }, [collectProjectState, currentProjectName, persistProject]);
 
         useEffect(() => {
-          try {
-            const rawIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
-            const parsedIndex = rawIndex ? JSON.parse(rawIndex) : [];
-            const nowIso = new Date().toISOString();
-            const indexRecords = Array.isArray(parsedIndex)
-              ? parsedIndex
-                  .map((entry) => {
-                    if (typeof entry === "string") {
-                      return { name: entry.trim(), createdAt: nowIso, lastModified: nowIso };
-                    }
-                    if (entry && typeof entry === "object" && entry.name) {
-                      return {
-                        name: `${entry.name}`.trim(),
-                        createdAt: entry.createdAt || nowIso,
-                        lastModified: entry.lastModified || entry.createdAt || nowIso,
-                      };
-                    }
-                    return null;
-                  })
-                  .filter((entry) => entry && entry.name)
-              : [];
-
-            let nextRecords = indexRecords;
-            if (!nextRecords.length) {
-              const seedState = buildSeedCryoVisionState();
-              const timestamp = new Date().toISOString();
-              persistProject(SEED_PROJECT_NAME, seedState, {
-                createdAt: timestamp,
+          const ensureCryoVision = async (records) => {
+            const cryoRecord = records.find((entry) => entry.name === SEED_PROJECT_NAME);
+            if (cryoRecord && cryoRecord.loadable) return records;
+            let seedState = null;
+            try {
+              const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
+              if (response.ok) {
+                const seedJson = await response.json();
+                if (seedJson?.template === "cryoVisionBuiltIn") {
+                  seedState = buildSeedCryoVisionState();
+                } else if (Array.isArray(seedJson?.workPackages) && seedJson.workPackages.length) {
+                  seedState = parseStoredProject(seedJson);
+                }
+              }
+            } catch (error) {
+              seedState = null;
+            }
+            const fallbackSeed = seedState || buildSeedCryoVisionState();
+            const timestamp = new Date().toISOString();
+            persistProject(SEED_PROJECT_NAME, fallbackSeed, {
+              createdAt: cryoRecord?.createdAt || timestamp,
+              lastModified: timestamp,
+            });
+            return [
+              ...records.filter((entry) => entry.name !== SEED_PROJECT_NAME),
+              {
+                name: SEED_PROJECT_NAME,
+                createdAt: cryoRecord?.createdAt || timestamp,
                 lastModified: timestamp,
-              });
-              nextRecords = [
-                { name: SEED_PROJECT_NAME, createdAt: timestamp, lastModified: timestamp },
-              ];
-            } else {
-              nextRecords.forEach((record) => {
+                loadable: true,
+                error: null,
+              },
+            ];
+          };
+
+          (async () => {
+            try {
+              const rawIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
+              const parsedIndex = rawIndex ? JSON.parse(rawIndex) : [];
+              const nowIso = new Date().toISOString();
+              const indexRecords = Array.isArray(parsedIndex)
+                ? parsedIndex
+                    .map((entry) => {
+                      if (typeof entry === "string") {
+                        return { name: entry.trim(), createdAt: nowIso, lastModified: nowIso };
+                      }
+                      if (entry && typeof entry === "object" && entry.name) {
+                        return {
+                          name: `${entry.name}`.trim(),
+                          createdAt: entry.createdAt || nowIso,
+                          lastModified: entry.lastModified || entry.createdAt || nowIso,
+                        };
+                      }
+                      return null;
+                    })
+                    .filter((entry) => entry && entry.name)
+                : [];
+
+              const recordsWithStatus = indexRecords.map((record) => {
                 const key = getProjectStorageKey(record.name);
                 const raw = localStorage.getItem(key);
-                if (!raw) return;
+                if (!raw) {
+                  return { ...record, loadable: false, error: "missing" };
+                }
                 const payload = parseStoredProjectPayload(raw, record.name);
+                if (!payload.loadable) {
+                  return { ...record, loadable: false, error: payload.error };
+                }
                 localStorage.setItem(
                   key,
                   JSON.stringify({
@@ -1225,38 +1323,29 @@
                     state: payload.state,
                   })
                 );
+                return { ...record, loadable: true, error: null };
               });
-              nextRecords = [...nextRecords].sort(
-                (a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
-              );
-              localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(nextRecords));
-              setProjectRecords(nextRecords);
-            }
 
-            const preferred = localStorage.getItem(CURRENT_PROJECT_KEY);
-            const nextProject = nextRecords.find((entry) => entry.name === preferred)?.name || nextRecords[0]?.name;
-            if (!nextProject) throw new Error("Leeres Projekt");
-            const rawProject = localStorage.getItem(getProjectStorageKey(nextProject));
-            if (!rawProject) throw new Error("Leeres Projekt");
-            const parsedProject = parseStoredProjectPayload(rawProject, nextProject);
-            setProjectRecords((prev) => (prev.length ? prev : nextRecords));
-            setCurrentProjectName(nextProject);
-            applyProjectState(parsedProject.state);
-            localStorage.setItem(CURRENT_PROJECT_KEY, nextProject);
-            hasInitializedRef.current = true;
-          } catch (error) {
-            console.warn("Projekt konnte nicht geladen werden", error);
-            const fallbackName = `Projekt ${new Date().toISOString().slice(0, 16)}`;
-            const fallbackState = buildDefaultProjectState();
-            const now = new Date().toISOString();
-            setStorageError("Gespeichertes Projekt war beschädigt. Leeres Projekt geladen.");
-            setProjectRecords([{ name: fallbackName, createdAt: now, lastModified: now }]);
-            setCurrentProjectName(fallbackName);
-            persistProject(fallbackName, fallbackState, { createdAt: now, lastModified: now });
-            applyProjectState(fallbackState);
-            hasInitializedRef.current = true;
-          }
-        }, [applyProjectState, persistProject]);
+              const withCryo = await ensureCryoVision(recordsWithStatus);
+              const nextRecords = withCryo
+                .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+
+              localStorage.setItem(
+                PROJECTS_INDEX_KEY,
+                JSON.stringify(nextRecords.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
+              );
+              setProjectRecords(nextRecords);
+              setCurrentProjectName("");
+              localStorage.removeItem(CURRENT_PROJECT_KEY);
+              setStorageError("");
+              hasInitializedRef.current = true;
+            } catch (error) {
+              console.warn("Projektliste konnte nicht geladen werden", error);
+              setStorageError("Projektliste konnte nicht geladen werden.");
+              hasInitializedRef.current = true;
+            }
+          })();
+        }, [persistProject]);
 
         const projectStateSnapshot = collectProjectState();
 
@@ -1320,6 +1409,9 @@
             const raw = localStorage.getItem(getProjectStorageKey(projectName));
             if (!raw) throw new Error("Projekt fehlt");
             const parsedPayload = parseStoredProjectPayload(raw, projectName);
+            if (!parsedPayload.loadable || !parsedPayload.state) {
+              throw new Error("Projekt konnte nicht geparst werden");
+            }
             setCurrentProjectName(projectName);
             localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
             applyProjectState(parsedPayload.state);
@@ -1328,7 +1420,12 @@
             setSaveState("gespeichert");
           } catch (error) {
             console.warn("Projekt konnte nicht geladen werden", error);
-            setStorageError("Projektdaten konnten nicht geladen werden (ungültiges JSON).");
+            setStorageError("Projekt konnte nicht geladen werden.");
+            setProjectRecords((prev) =>
+              prev.map((entry) =>
+                entry.name === projectName ? { ...entry, loadable: false, error: "parse_error" } : entry
+              )
+            );
           }
         };
 
@@ -1338,6 +1435,25 @@
             .filter((entry) => entry.name.toLowerCase().includes(term))
             .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
         }, [projectRecords, projectSearchTerm]);
+
+        const restoreCryoVisionProject = async () => {
+          let seedState = null;
+          try {
+            const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
+            if (response.ok) {
+              const seedJson = await response.json();
+              seedState = parseStoredProject(seedJson);
+            }
+          } catch (error) {
+            seedState = null;
+          }
+          const now = new Date().toISOString();
+          persistProject(SEED_PROJECT_NAME, seedState || buildSeedCryoVisionState(), {
+            createdAt: now,
+            lastModified: now,
+          });
+          setStorageError("");
+        };
 
         const activeCompanyIndexes = useMemo(
           () => Array.from({ length: companyCount }, (_, index) => index),
@@ -1428,7 +1544,7 @@
         const filteredWorkPackageRowsByCompany = useMemo(() => {
           return activeCompanyIndexes.reduce((acc, companyIndex) => {
             acc[companyIndex] = workPackageRows.filter(
-              (row) => normalizePmValue(row.pmByCompany?.[companyIndex]) > 0
+              (row) => isSubWorkPackageNumber(row.number) && normalizePmValue(row.pmByCompany?.[companyIndex]) > 0
             );
             return acc;
           }, {});
@@ -1503,25 +1619,18 @@
 
         const updatePm = (wpIndex, subIndex, companyIndex, value) => {
           const numeric = value === "" ? "" : parseNumber(value);
+          if (subIndex === null) return;
           setWorkPackages((prev) => {
             const next = [...prev];
-            if (subIndex === null) {
-              const wp = { ...next[wpIndex] };
-              const pm = [...wp.pm];
-              pm[companyIndex] = numeric;
-              wp.pm = pm;
-              next[wpIndex] = wp;
-            } else {
-              const wp = { ...next[wpIndex] };
-              const sub = [...wp.sub];
-              const subItem = { ...sub[subIndex] };
-              const pm = [...subItem.pm];
-              pm[companyIndex] = numeric;
-              subItem.pm = pm;
-              sub[subIndex] = subItem;
-              wp.sub = sub;
-              next[wpIndex] = wp;
-            }
+            const wp = { ...next[wpIndex] };
+            const sub = [...wp.sub];
+            const subItem = { ...sub[subIndex] };
+            const pm = [...subItem.pm];
+            pm[companyIndex] = numeric;
+            subItem.pm = pm;
+            sub[subIndex] = subItem;
+            wp.sub = sub;
+            next[wpIndex] = wp;
             return next;
           });
         };
@@ -1675,13 +1784,9 @@
           const pmByRowId = pmSnapshot.pmByRowId;
           setWorkPackages((prev) =>
             prev.map((wp) => {
-              const nextWpPm = [...wp.pm];
-              if (Object.prototype.hasOwnProperty.call(pmByRowId, wp.id)) {
-                nextWpPm[companyIndex] = pmByRowId[wp.id];
-              }
               return {
                 ...wp,
-                pm: nextWpPm,
+                pm: Array(5).fill(""),
                 sub: wp.sub.map((sub) => {
                   const nextSubPm = [...sub.pm];
                   if (Object.prototype.hasOwnProperty.call(pmByRowId, sub.id)) {
@@ -2223,24 +2328,21 @@
 
         const sumByCompany = (wp) => {
           return activeCompanyIndexes.map((idx) => {
-            const wpValue = normalizePmValue(wp.pm[idx]);
-            const subValue = wp.sub.reduce(
+            return wp.sub.reduce(
               (acc, sub) => acc + normalizePmValue(sub.pm[idx]),
               0
             );
-            return wpValue + subValue;
           });
         };
 
         const totalByCompany = useMemo(() => {
           return activeCompanyIndexes.map((idx) => {
             return workPackages.reduce((acc, wp) => {
-              const wpValue = normalizePmValue(wp.pm[idx]);
               const subValue = wp.sub.reduce(
                 (inner, sub) => inner + normalizePmValue(sub.pm[idx]),
                 0
               );
-              return acc + wpValue + subValue;
+              return acc + subValue;
             }, 0);
           });
         }, [workPackages, activeCompanyIndexes]);
@@ -3107,7 +3209,11 @@
 
                           pmCells = activeCompanyIndexes.map((idx) => (
                             <div key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`} className="px-2 py-2">
-                              <input type="number" min="0" step="0.1" value={values[idx]} onChange={(event) => updatePm(wpIndex, subIndex, idx, event.target.value)} className="h-9 min-w-[60px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100" />
+                              {isWp ? (
+                                <div className="h-9 flex items-center justify-center text-xs text-slate-400">–</div>
+                              ) : (
+                                <input type="number" min="0" step="0.1" value={values[idx]} onChange={(event) => updatePm(wpIndex, subIndex, idx, event.target.value)} className="h-9 min-w-[60px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100" />
+                              )}
                             </div>
                           ));
                         }
@@ -4145,17 +4251,19 @@
                           <tr>
                             <th className="px-3 py-2">Projektname</th>
                             <th className="px-3 py-2">Zuletzt bearbeitet</th>
+                            <th className="px-3 py-2">Status</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredProjectRecords.map((project) => (
                             <tr
                               key={project.name}
-                              className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
-                              onClick={() => handleProjectLoad(project.name)}
+                              className={`border-t border-slate-100 ${project.loadable === false ? "bg-rose-50" : "cursor-pointer hover:bg-slate-50"}`}
+                              onClick={() => project.loadable === false ? null : handleProjectLoad(project.name)}
                             >
                               <td className="px-3 py-2 font-medium text-slate-800">{project.name}</td>
                               <td className="px-3 py-2 text-slate-600">{formatDateTimeDe(project.lastModified)}</td>
+                              <td className="px-3 py-2 text-slate-600">{project.loadable === false ? "Nicht ladbar" : "Ladbar"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -4164,7 +4272,14 @@
                       <div className="px-3 py-4 text-sm text-slate-500">Keine Projekte gefunden</div>
                     )}
                   </div>
-                  <div className="mt-5 flex justify-end gap-2">
+                  <div className="mt-5 flex justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={restoreCryoVisionProject}
+                      className="rounded-md border border-[var(--ca-green-border)] px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      CryoVision wiederherstellen
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
