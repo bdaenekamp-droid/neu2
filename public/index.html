@@ -1945,9 +1945,13 @@
           const pmByRowId = pmSnapshot.pmByRowId;
           setWorkPackages((prev) =>
             prev.map((wp) => {
+              const nextWpPm = [...wp.pm];
+              if (Object.prototype.hasOwnProperty.call(pmByRowId, wp.id)) {
+                nextWpPm[companyIndex] = pmByRowId[wp.id];
+              }
               return {
                 ...wp,
-                pm: Array(5).fill(""),
+                pm: nextWpPm,
                 sub: wp.sub.map((sub) => {
                   const nextSubPm = [...sub.pm];
                   if (Object.prototype.hasOwnProperty.call(pmByRowId, sub.id)) {
@@ -2081,29 +2085,31 @@
           if (shouldOptimizeDates) {
             const rowCount = rowsWithPm.length;
             const timelineLength = projectEndIndex - projectStartIndex + 1;
-            let rollingStart = projectStartIndex;
+            const durations = rowsWithPm.map((entry) =>
+              clampNumber(Math.ceil(entry.pmDemand), 1, timelineLength)
+            );
+            const lastDuration = durations[rowCount - 1] || 1;
+            const lastRowStart = Math.max(projectStartIndex, projectEndIndex - lastDuration + 1);
+            let previousStart = projectStartIndex;
+
             rowsWithPm.forEach((entry, index) => {
-              const isFirst = index === 0;
-              const isLast = index === rowCount - 1;
-              const duration = clampNumber(Math.ceil(entry.pmDemand), 1, timelineLength);
+              const duration = durations[index];
               const latestStart = Math.max(projectStartIndex, projectEndIndex - duration + 1);
               const baseStart =
                 rowCount === 1
                   ? projectStartIndex
                   : Math.round(
                       projectStartIndex +
-                        ((projectEndIndex - projectStartIndex) * index) / (rowCount - 1)
+                        ((lastRowStart - projectStartIndex) * index) / (rowCount - 1)
                     );
-              let start = clampNumber(Math.max(baseStart, rollingStart), projectStartIndex, latestStart);
-              if (isFirst) {
+
+              let start = clampNumber(Math.max(baseStart, previousStart), projectStartIndex, latestStart);
+              if (index === 0) {
                 start = projectStartIndex;
               }
-              let end = clampNumber(start + duration - 1, start, projectEndIndex);
-              if (isLast) {
-                end = projectEndIndex;
-                start = clampNumber(end - duration + 1, projectStartIndex, end);
-              }
-              rollingStart = Math.min(projectEndIndex, end + 1);
+
+              const end = clampNumber(start + duration - 1, start, projectEndIndex);
+              previousStart = start;
               plannedByRowId[entry.row.id] = {
                 start: formatMonthYearFromAbsoluteIndex(start),
                 ende: formatMonthYearFromAbsoluteIndex(end),
@@ -2186,6 +2192,11 @@
               };
               return;
             }
+
+            assignments[row.id] = {
+              ...dateAssignment,
+              mitarbeiterNummer: "",
+            };
 
             const span = getStartEndMonthIndex(dateAssignment);
             if (!span) return;
