@@ -94,6 +94,17 @@
         --tw-ring-color: rgba(95, 127, 80, 0.35) !important;
       }
 
+      .pm-text-input {
+        appearance: textfield;
+      }
+
+      .pm-text-input::-webkit-outer-spin-button,
+      .pm-text-input::-webkit-inner-spin-button {
+        display: none;
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
       @media print {
         .fullscreen-overlay-close {
           display: none !important;
@@ -117,6 +128,8 @@
       const DEFAULT_ACTIVE_COMPANY_COUNT = 2;
       const MAX_HISTORY_STEPS = 10;
       const YEAR_CAP_PM = 10.5;
+      const PM_STEP = 0.25;
+      const PM_EPSILON = 1e-9;
       const PROJECTS_INDEX_KEY = "ca_projectplanning_projects_index";
       const CURRENT_PROJECT_KEY = "ca_projectplanning_current_project";
       const PROJECT_KEY_PREFIX = "project:";
@@ -653,6 +666,38 @@
         return clampNumber(parseNumber(value), 0, 999);
       };
 
+      const parsePmTextValue = (rawValue) => {
+        const input = `${rawValue ?? ""}`.trim();
+        if (!input) return { empty: true, valid: false, value: 0 };
+        const normalized = input.replace(/\s+/g, "").replace(",", ".");
+        if (!/^[+-]?\d*(?:\.\d*)?$/.test(normalized)) {
+          return { empty: false, valid: false, value: 0 };
+        }
+        if (["+", "-", ".", "+.", "-."].includes(normalized)) {
+          return { empty: false, valid: false, value: 0 };
+        }
+        const parsed = Number.parseFloat(normalized);
+        if (!Number.isFinite(parsed)) {
+          return { empty: false, valid: false, value: 0 };
+        }
+        return { empty: false, valid: true, value: parsed };
+      };
+
+      const roundPmToQuarterStep = (value) => {
+        const normalized = Number.isFinite(value) ? value : 0;
+        return Math.round(normalized / PM_STEP) * PM_STEP;
+      };
+
+      const formatPmDisplay = (value) => {
+        if (value === "" || value === null || value === undefined) return "";
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return "";
+        return new Intl.NumberFormat("de-DE", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        }).format(roundToTwo(numeric));
+      };
+
       const COMPANY_COLORS = ["#5b8fd6", "#cf6a5e", "#8ebf6a", "#d0a45e", "#7a5bb8"];
       const withAlpha = (hex, alpha) => {
         const normalized = `${hex}`.replace("#", "");
@@ -1128,6 +1173,8 @@
         const [pendingDelete, setPendingDelete] = useState(null);
         const [pendingEmployeeDelete, setPendingEmployeeDelete] = useState(null);
         const [focusedCurrencyField, setFocusedCurrencyField] = useState(null);
+        const [pmInputDrafts, setPmInputDrafts] = useState({});
+        const [pmInputHint, setPmInputHint] = useState({ key: "", message: "" });
         const [rowHeights, setRowHeights] = useState({});
         const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
         const [ganttViewportWidth, setGanttViewportWidth] = useState(0);
@@ -1172,6 +1219,14 @@
           };
         }, [zimPdfModalState.downloadUrl]);
 
+        useEffect(() => {
+          if (!pmInputHint.message) return undefined;
+          const timeout = window.setTimeout(() => {
+            setPmInputHint({ key: "", message: "" });
+          }, 1800);
+          return () => window.clearTimeout(timeout);
+        }, [pmInputHint]);
+
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
           setWorkPackages(parsed.workPackages);
@@ -1186,6 +1241,7 @@
               ? parsed.companyHistoryByCompany
               : createCompanyHistoryByCompany(parsed.companyData)
           );
+          setPmInputDrafts({});
           setPendingDelete(null);
           setPendingEmployeeDelete(null);
         }, []);
@@ -1669,7 +1725,6 @@
         };
 
         const updatePm = (wpIndex, subIndex, companyIndex, value) => {
-          const numeric = value === "" ? "" : parseNumber(value);
           if (subIndex === null) return;
           setWorkPackages((prev) => {
             const next = [...prev];
@@ -1677,13 +1732,68 @@
             const sub = [...wp.sub];
             const subItem = { ...sub[subIndex] };
             const pm = [...subItem.pm];
-            pm[companyIndex] = numeric;
+            pm[companyIndex] = value;
             subItem.pm = pm;
             sub[subIndex] = subItem;
             wp.sub = sub;
             next[wpIndex] = wp;
             return next;
           });
+        };
+
+        const buildPmDraftKey = (wpIndex, subIndex, companyIndex) =>
+          `${wpIndex}-${subIndex}-${companyIndex}`;
+
+        const handlePmDraftChange = (wpIndex, subIndex, companyIndex, value) => {
+          if (subIndex === null) return;
+          const key = buildPmDraftKey(wpIndex, subIndex, companyIndex);
+          setPmInputDrafts((prev) => ({
+            ...prev,
+            [key]: value,
+          }));
+        };
+
+        const commitPmDraft = (wpIndex, subIndex, companyIndex) => {
+          if (subIndex === null) return;
+          const key = buildPmDraftKey(wpIndex, subIndex, companyIndex);
+          const fallbackValue = workPackages?.[wpIndex]?.sub?.[subIndex]?.pm?.[companyIndex] ?? "";
+          const rawValue = Object.prototype.hasOwnProperty.call(pmInputDrafts, key)
+            ? pmInputDrafts[key]
+            : `${fallbackValue ?? ""}`;
+          const parsed = parsePmTextValue(rawValue);
+
+          if (parsed.empty) {
+            updatePm(wpIndex, subIndex, companyIndex, "");
+            setPmInputDrafts((prev) => {
+              const next = { ...prev };
+              delete next[key];
+              return next;
+            });
+            return;
+          }
+
+          if (!parsed.valid) {
+            setPmInputDrafts((prev) => {
+              const next = { ...prev };
+              next[key] = formatPmDisplay(fallbackValue);
+              return next;
+            });
+            return;
+          }
+
+          const clamped = Math.max(0, parsed.value);
+          const rounded = roundToTwo(roundPmToQuarterStep(clamped));
+          const wasRounded = Math.abs(clamped - rounded) > PM_EPSILON;
+
+          updatePm(wpIndex, subIndex, companyIndex, rounded);
+          setPmInputDrafts((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          if (wasRounded) {
+            setPmInputHint({ key, message: "auf 0,25 gerundet" });
+          }
         };
 
         const addWp = () => {
@@ -2023,8 +2133,6 @@
             .map((employee, employeeIndex) => ({
               employeeIndex,
               annualSalary: parseNumber(employee.annualSalary),
-              annualMaxPm:
-                YEAR_CAP_PM * (getEffectiveProjectPercent(employee.projectPercent) / 100),
             }))
             .sort((a, b) => b.annualSalary - a.annualSalary || a.employeeIndex - b.employeeIndex);
 
@@ -2044,11 +2152,11 @@
           const rowPlanningData = {};
 
           const isWithinCapacity = (employeeIndex, pmByYear, usageSnapshot = yearlyUsage) => {
-            const employee = employeeOrder.find((entry) => entry.employeeIndex === employeeIndex);
-            if (!employee) return false;
             return Object.entries(pmByYear).every(([year, pmValue]) => {
-              const alreadyUsed = usageSnapshot[employeeIndex]?.[year] || 0;
-              return alreadyUsed + pmValue <= employee.annualMaxPm + 1e-9;
+              const numericYear = Number.parseInt(year, 10);
+              const alreadyUsed = usageSnapshot[employeeIndex]?.[numericYear] || 0;
+              const allowedPM = getEmployeeYearCapacity(companyIndex, employeeIndex, numericYear);
+              return alreadyUsed + pmValue <= allowedPM + PM_EPSILON;
             });
           };
 
@@ -2584,6 +2692,70 @@
           employeesByCompany,
           filteredWorkPackageRowsByCompany,
           companyData,
+        ]);
+
+        const projectMonthsByYear = useMemo(() => {
+          const projectStart = parseDate(startDate);
+          const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
+          const projectEndIndex = projectStartIndex + durationMonths - 1;
+          if (projectEndIndex < projectStartIndex) return {};
+          return getMonthsByYearFromRange(projectStartIndex, projectEndIndex);
+        }, [startDate, durationMonths]);
+
+        const getEmployeeYearCapacity = useCallback((companyId, employeeId, year) => {
+          const employee = employeesByCompany?.[companyId]?.[employeeId];
+          if (!employee) return 0;
+          const projectPercent = getEffectiveProjectPercent(employee.projectPercent);
+          const annualCapacity = YEAR_CAP_PM * (projectPercent / 100);
+          const projectMonthsInYear = projectMonthsByYear?.[year] || 0;
+          return annualCapacity * (projectMonthsInYear / 12);
+        }, [employeesByCompany, projectMonthsByYear]);
+
+        const calcEmployeeYearPM = useCallback((companyId, employeeId, year) => {
+          const used = employeePmByCompany?.[companyId]?.byYear?.[employeeId]?.[year];
+          return Number.isFinite(used) ? used : 0;
+        }, [employeePmByCompany]);
+
+        const calcEmployeeYearUtilizationPct = useCallback((companyId, employeeId, year) => {
+          const allowedPM = getEmployeeYearCapacity(companyId, employeeId, year);
+          if (allowedPM <= 0) return 0;
+          return (calcEmployeeYearPM(companyId, employeeId, year) / allowedPM) * 100;
+        }, [getEmployeeYearCapacity, calcEmployeeYearPM]);
+
+        const employeeCapacityAudit = useMemo(() => {
+          const warnings = [];
+          activeCompanyIndexes.forEach((companyIndex) => {
+            const companyEmployees = employeesByCompany?.[companyIndex] || [];
+            companyEmployees.forEach((employee, employeeIndex) => {
+              projectYears.forEach((year) => {
+                const assignedPM = calcEmployeeYearPM(companyIndex, employeeIndex, year);
+                const allowedPM = getEmployeeYearCapacity(companyIndex, employeeIndex, year);
+                if (assignedPM > allowedPM + PM_EPSILON) {
+                  warnings.push({
+                    companyIndex,
+                    employeeIndex,
+                    year,
+                    assignedPM,
+                    allowedPM,
+                  });
+                }
+              });
+            });
+          });
+          if (warnings.length) {
+            warnings.forEach((warning) => {
+              console.warn(
+                `[Capacity warning] Unternehmen ${warning.companyIndex + 1}, MA ${warning.employeeIndex + 1}, Jahr ${warning.year}: ${warning.assignedPM.toFixed(2)} PM > ${warning.allowedPM.toFixed(2)} PM`
+              );
+            });
+          }
+          return warnings;
+        }, [
+          activeCompanyIndexes,
+          employeesByCompany,
+          projectYears,
+          calcEmployeeYearPM,
+          getEmployeeYearCapacity,
         ]);
 
         const fundingResultsByCompany = useMemo(() => {
@@ -3308,15 +3480,43 @@
                             </div>
                           );
 
-                          pmCells = activeCompanyIndexes.map((idx) => (
-                            <div key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`} className="px-2 py-2">
-                              {isWp ? (
-                                <div className="h-9 flex items-center justify-center text-xs text-slate-400">–</div>
-                              ) : (
-                                <input type="number" min="0" step="0.1" value={values[idx]} onChange={(event) => updatePm(wpIndex, subIndex, idx, event.target.value)} className="h-9 min-w-[60px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100" />
-                              )}
-                            </div>
-                          ));
+                          pmCells = activeCompanyIndexes.map((idx) => {
+                            const pmKey = buildPmDraftKey(wpIndex, subIndex ?? -1, idx);
+                            const hasDraft = Object.prototype.hasOwnProperty.call(pmInputDrafts, pmKey);
+                            const displayValue = hasDraft
+                              ? pmInputDrafts[pmKey]
+                              : formatPmDisplay(values[idx]);
+                            const showHint = pmInputHint.key === pmKey && Boolean(pmInputHint.message);
+                            return (
+                              <div key={`pm-${row.type}-${wpIndex}-${subIndex ?? "root"}-${idx}`} className="px-2 py-2">
+                                {isWp ? (
+                                  <div className="h-9 flex items-center justify-center text-xs text-slate-400">–</div>
+                                ) : (
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={displayValue}
+                                      onChange={(event) => handlePmDraftChange(wpIndex, subIndex, idx, event.target.value)}
+                                      onBlur={() => commitPmDraft(wpIndex, subIndex, idx)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                          event.preventDefault();
+                                          event.currentTarget.blur();
+                                        }
+                                      }}
+                                      className="pm-text-input h-9 min-w-[60px] w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
+                                    />
+                                    {showHint ? (
+                                      <span className="pointer-events-none absolute right-2 top-[-18px] rounded bg-slate-900/85 px-1.5 py-0.5 text-[10px] text-white">
+                                        {pmInputHint.message}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
                         }
 
                         return (
@@ -3369,7 +3569,6 @@
                           isPlaceholder: true,
                         },
                       ];
-                  const usedPmByEmployee = employeePmByCompany[companyIndex]?.byYear || [];
                   const totalPmByEmployee = employeePmByCompany[companyIndex]?.totals || [];
                   const fundingResults = fundingResultsByCompany[companyIndex] || {
                     personalkosten: 0,
@@ -3385,6 +3584,9 @@
                   const autoPlanningLocks = getAutoPlanningLocks(companyIndex);
                   const canUndo = companyHistory.historyIndex > 0;
                   const canRedo = companyHistory.historyIndex < companyHistory.history.length - 1;
+                  const companyCapacityWarnings = employeeCapacityAudit.filter(
+                    (warning) => warning.companyIndex === companyIndex
+                  );
                   return (
                     <section
                       key={`company-planning-${companyIndex}`}
@@ -3401,6 +3603,11 @@
                         <h3 className="mt-2 text-xl font-semibold text-slate-850">
                           Unternehmensplanung: {companyName}
                         </h3>
+                        {companyCapacityWarnings.length ? (
+                          <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
+                            ⚠️ {companyCapacityWarnings.length} Kapazitätsüberschreitung(en) erkannt
+                          </div>
+                        ) : null}
                         <div className="mt-4 flex flex-wrap gap-2">
                           <button
                             type="button"
@@ -3902,27 +4109,24 @@
                                     {employeeIndex + 1}
                                   </div>
                                   {projectYears.map((year, yearIndex) => {
-                                    const usedPMRaw =
-                                      usedPmByEmployee?.[employeeIndex]?.[year] ?? 0;
-                                    const usedPM = Number.isFinite(usedPMRaw)
-                                      ? usedPMRaw
-                                      : 0;
-                                    const projectPercent = getEffectiveProjectPercent(
-                                      employee?.projectPercent
+                                    const usedPM = calcEmployeeYearPM(companyIndex, employeeIndex, year);
+                                    const allowedPM = getEmployeeYearCapacity(companyIndex, employeeIndex, year);
+                                    const rawUtilization = calcEmployeeYearUtilizationPct(
+                                      companyIndex,
+                                      employeeIndex,
+                                      year
                                     );
-                                    const annualMaxPm = YEAR_CAP_PM * (projectPercent / 100);
-                                    const rawUtilization =
-                                      annualMaxPm > 0 ? (usedPM / annualMaxPm) * 100 : 0;
                                     const utilization = clampNumber(rawUtilization, 0, 999);
+                                    const isOverCapacity = usedPM > allowedPM + PM_EPSILON;
                                     return (
                                       <React.Fragment
                                         key={`util-${companyIndex}-${employeeIndex}-${year}`}
                                       >
-                                        <div className="px-4 py-3 text-sm font-semibold text-slate-700">
+                                        <div className={`px-4 py-3 text-sm font-semibold ${isOverCapacity ? "text-rose-700" : "text-slate-700"}`}>
                                           {formatNumberDe(usedPM, 2)}
                                         </div>
                                         <div
-                                          className={`px-4 py-3 text-sm text-slate-600 ${
+                                          className={`px-4 py-3 text-sm ${isOverCapacity ? "text-rose-700" : "text-slate-600"} ${
                                             yearIndex < projectYears.length - 1
                                               ? "border-r border-slate-200"
                                               : ""
