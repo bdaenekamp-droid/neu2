@@ -8,6 +8,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json({ limit: "30mb" }));
 
 const multipartParser = express.raw({ type: "multipart/form-data", limit: "30mb" });
 
@@ -113,6 +114,26 @@ const runPythonXfa = async ({ action, fileBuffer, payload, confirmMismatch = fal
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 };
+
+
+app.post("/api/project/save", async (req, res) => {
+  try {
+    const payload = req.body && typeof req.body === "object" ? req.body : {};
+    const projectId = `${payload.projectId || payload.name || ""}`.trim();
+    if (!projectId) {
+      return res.status(400).json({ error: "projectId fehlt." });
+    }
+
+    const dirPath = path.join(__dirname, ".data", "projects");
+    await fs.mkdir(dirPath, { recursive: true });
+    const filePath = path.join(dirPath, `${encodeURIComponent(projectId)}.json`);
+    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
+
+    return res.json({ ok: true, projectId });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || "Speichern fehlgeschlagen." });
+  }
+});
 
 app.post("/api/zim/fields", multipartParser, async (req, res) => {
   try {
