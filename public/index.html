@@ -2649,12 +2649,80 @@
           }, {});
         }, [activeCompanyIndexes, employeesByCompany, employeePmByCompany, companyData, projectYears]);
 
+        const formatDisplayDate = (value, type = "start") => {
+          if (!value || value === "–") return "–";
+          const input = `${value}`.trim();
+          const ddmmyyyy = input.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+          if (ddmmyyyy) {
+            const day = Number.parseInt(ddmmyyyy[1], 10);
+            const month = Number.parseInt(ddmmyyyy[2], 10);
+            const year = Number.parseInt(ddmmyyyy[3], 10);
+            const maxDay = new Date(year, month, 0).getDate();
+            if (month >= 1 && month <= 12 && day >= 1 && day <= maxDay) {
+              return `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`;
+            }
+          }
+          const monthYear = input.match(/^(\d{1,2})\.(\d{4})$/);
+          if (monthYear) {
+            const month = Number.parseInt(monthYear[1], 10);
+            const year = Number.parseInt(monthYear[2], 10);
+            if (month >= 1 && month <= 12) {
+              const day = type === "end" ? new Date(year, month, 0).getDate() : 1;
+              return `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`;
+            }
+          }
+          const iso = input.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
+          if (iso) {
+            const year = Number.parseInt(iso[1], 10);
+            const month = Number.parseInt(iso[2], 10);
+            const providedDay = iso[3] ? Number.parseInt(iso[3], 10) : null;
+            if (month >= 1 && month <= 12) {
+              const day = providedDay || (type === "end" ? new Date(year, month, 0).getDate() : 1);
+              return `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`;
+            }
+          }
+          const parsedDate = new Date(input);
+          if (!Number.isNaN(parsedDate.getTime())) {
+            const day = type === "end"
+              ? new Date(parsedDate.getFullYear(), parsedDate.getMonth() + 1, 0).getDate()
+              : parsedDate.getDate() || 1;
+            const month = parsedDate.getMonth() + 1;
+            const year = parsedDate.getFullYear();
+            return `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`;
+          }
+          return input;
+        };
+
+        const formatPmOneDecimal = (value) =>
+          new Intl.NumberFormat("de-DE", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          }).format(value || 0);
+
         const fullscreenCompanyData = useMemo(() => {
           if (fullscreenCompanyIndex === null || fullscreenCompanyIndex === undefined) return null;
           const companyIndex = fullscreenCompanyIndex;
           const companyName = companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
           const companyEmployees = employeesByCompany[companyIndex] || [];
-          const companyCosts = employeeCostsByCompany[companyIndex] || [];
+          const getSortIndex = (value) => {
+            const input = `${value || ""}`.trim();
+            const parsedMonth = parseMonthYear(input);
+            if (parsedMonth) return parsedMonth.year * 12 + parsedMonth.month;
+            const iso = input.match(/^(\d{4})-(\d{1,2})/);
+            if (iso) {
+              const year = Number.parseInt(iso[1], 10);
+              const month = Number.parseInt(iso[2], 10);
+              if (month >= 1 && month <= 12) return year * 12 + (month - 1);
+            }
+            const fullDe = input.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+            if (fullDe) {
+              const month = Number.parseInt(fullDe[2], 10);
+              const year = Number.parseInt(fullDe[3], 10);
+              if (month >= 1 && month <= 12) return year * 12 + (month - 1);
+            }
+            return Number.MAX_SAFE_INTEGER;
+          };
+
           const companyRows = (filteredWorkPackageRowsByCompany[companyIndex] || [])
             .filter((row) => normalizePmValue(row.pmByCompany?.[companyIndex]) > 0)
             .map((row) => {
@@ -2663,56 +2731,29 @@
                 id: row.id,
                 number: row.number,
                 title: row.title,
-                start: entry.start || "–",
-                end: entry.ende || "–",
+                start: formatDisplayDate(entry.start || "–", "start"),
+                end: formatDisplayDate(entry.ende || "–", "end"),
                 employeeNumber: entry.mitarbeiterNummer || "–",
                 pm: normalizePmValue(row.pmByCompany?.[companyIndex]),
+                sortIndex: getSortIndex(entry.start),
               };
             })
-            .sort((a, b) => {
-              const aParsed = parseMonthYear(a.start);
-              const bParsed = parseMonthYear(b.start);
-              const aIndex = aParsed ? aParsed.year * 12 + aParsed.month : Number.MAX_SAFE_INTEGER;
-              const bIndex = bParsed ? bParsed.year * 12 + bParsed.month : Number.MAX_SAFE_INTEGER;
-              return aIndex - bIndex;
-            });
+            .sort((a, b) => a.sortIndex - b.sortIndex)
+            .map(({ sortIndex, ...row }) => row);
 
+          const totalPm = companyRows.reduce((sum, row) => sum + (row.pm > 0 ? row.pm : 0), 0);
           const pmByYear = employeePmByCompany[companyIndex]?.byYear || [];
-          const personnelByYear = {};
-          projectYears.forEach((year) => {
-            personnelByYear[year] = companyEmployees.reduce((sum, employee, employeeIndex) => {
-              const annualSalary = parseNumber(employee.annualSalary);
-              const pm = pmByYear[employeeIndex]?.[year] || 0;
-              return sum + pm * (annualSalary / 12);
-            }, 0);
-          });
           const fundingTotals = fundingResultsByCompany[companyIndex] || {};
-          const personnelTotal = projectYears.reduce((sum, year) => sum + (personnelByYear[year] || 0), 0);
-          const projectSumTotal = fundingTotals.projektsumme || 0;
-          const fundingTotal = fundingTotals.foerdersumme || 0;
-          const yearlyFundingRows = projectYears.map((year) => {
-            const ratio = personnelTotal > 0 ? (personnelByYear[year] || 0) / personnelTotal : 0;
-            return {
-              year,
-              personalkosten: personnelByYear[year] || 0,
-              projektsumme: projectSumTotal * ratio,
-              foerderung: fundingTotal * ratio,
-            };
-          });
+          const annualFunding = fundingTotals.annualFunding || {};
+          const yearlyFundingRows = projectYears.map((year) => ({
+            year,
+            foerderung: annualFunding[year] || 0,
+          }));
           if (yearlyFundingRows.length) {
-            const sums = yearlyFundingRows.reduce(
-              (acc, row) => {
-                acc.personalkosten += row.personalkosten;
-                acc.projektsumme += row.projektsumme;
-                acc.foerderung += row.foerderung;
-                return acc;
-              },
-              { personalkosten: 0, projektsumme: 0, foerderung: 0 }
-            );
-            const last = yearlyFundingRows[yearlyFundingRows.length - 1];
-            last.personalkosten += (fundingTotals.personalkosten || 0) - sums.personalkosten;
-            last.projektsumme += (fundingTotals.projektsumme || 0) - sums.projektsumme;
-            last.foerderung += (fundingTotals.foerdersumme || 0) - sums.foerderung;
+            const sumFunding = yearlyFundingRows.reduce((sum, row) => sum + row.foerderung, 0);
+            const targetFunding = fundingTotals.foerdersumme || 0;
+            const diff = targetFunding - sumFunding;
+            yearlyFundingRows[yearlyFundingRows.length - 1].foerderung += diff;
           }
 
           return {
@@ -2720,25 +2761,22 @@
             companyName,
             color: getCompanyColorHex(companyIndex),
             workPackageRows: companyRows,
+            totalPm,
             employees: companyEmployees.map((employee, employeeIndex) => {
-              const pmTotal = (employeePmByCompany[companyIndex]?.totals || [])[employeeIndex] || 0;
-              const costPerPM = companyCosts[employeeIndex]?.costPerPM || 0;
+              const annualSalary = parseNumber(employee.annualSalary);
               return {
                 number: employee.number || employeeIndex + 1,
                 name: employee.name || `Mitarbeiter ${employeeIndex + 1}`,
                 years: projectYears.reduce((acc, year) => {
                   const pm = pmByYear[employeeIndex]?.[year] || 0;
-                  acc[year] = { pm, cost: pm * costPerPM };
+                  acc[year] = { pm, cost: pm * (annualSalary / 12) };
                   return acc;
                 }, {}),
-                pmTotal,
               };
             }),
             projectYears,
             yearlyFundingRows,
             totals: {
-              personalkosten: fundingTotals.personalkosten || 0,
-              projektsumme: fundingTotals.projektsumme || 0,
               foerderung: fundingTotals.foerdersumme || 0,
             },
           };
@@ -2746,14 +2784,12 @@
           fullscreenCompanyIndex,
           companyNames,
           employeesByCompany,
-          employeeCostsByCompany,
           filteredWorkPackageRowsByCompany,
           companyData,
           employeePmByCompany,
           projectYears,
           fundingResultsByCompany,
         ]);
-
 
         const closeZimModal = () => {
           setZimPdfModalState((prev) => {
@@ -4087,6 +4123,12 @@
                           </tbody>
                         </table>
                       </div>
+                      <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="inline-flex items-center gap-3 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+                          <span className="font-semibold text-slate-700">Summe Personenmonate</span>
+                          <span className="font-bold text-slate-900">{formatPmOneDecimal(fullscreenCompanyData.totalPm)}</span>
+                        </div>
+                      </div>
                     </section>
 
                     <section className="rounded-lg border border-slate-200">
@@ -4095,28 +4137,32 @@
                         <table className="min-w-full text-sm">
                           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
                             <tr>
-                              <th className="px-3 py-2">Mitarbeitenden-Nr.</th>
+                              <th className="px-3 py-2">MA-Nr.</th>
                               <th className="px-3 py-2">Name</th>
-                              {fullscreenCompanyData.projectYears.flatMap((year) => [
-                                <th key={`fs-head-${year}-pm`} className="px-3 py-2 text-right">{year} PM</th>,
-                                <th key={`fs-head-${year}-cost`} className="px-3 py-2 text-right">{year} Kosten</th>,
-                              ])}
+                              <th className="px-3 py-2">Jahresübersicht</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {fullscreenCompanyData.employees.map((employee, index) => (
                               <tr key={`fs-emp-${index}`}>
-                                <td className="px-3 py-2 font-semibold text-slate-700">{employee.number}</td>
-                                <td className="px-3 py-2 text-slate-700">{employee.name}</td>
-                                {fullscreenCompanyData.projectYears.flatMap((year) => [
-                                  <td key={`fs-emp-${index}-${year}-pm`} className="px-3 py-2 text-right text-slate-700">{formatNumberDe(employee.years?.[year]?.pm || 0, 2)}</td>,
-                                  <td key={`fs-emp-${index}-${year}-cost`} className="px-3 py-2 text-right font-semibold text-slate-800">{formatCurrency(employee.years?.[year]?.cost || 0)}</td>,
-                                ])}
+                                <td className="px-3 py-2 align-top font-semibold text-slate-700">{employee.number}</td>
+                                <td className="px-3 py-2 align-top text-slate-700">{employee.name}</td>
+                                <td className="px-3 py-2">
+                                  <div className="overflow-hidden rounded-md border border-slate-200">
+                                    {fullscreenCompanyData.projectYears.map((year, yearIndex) => (
+                                      <div key={`fs-emp-${index}-${year}`} className={`grid grid-cols-[100px_1fr_1fr] gap-2 px-3 py-2 text-xs sm:text-sm ${yearIndex > 0 ? "border-t border-slate-200" : ""}`}>
+                                        <span className="font-semibold text-slate-700">{year}</span>
+                                        <span className="text-slate-700">{formatPmOneDecimal(employee.years?.[year]?.pm || 0)} PM</span>
+                                        <span className="text-right font-semibold text-slate-800">{formatCurrency(employee.years?.[year]?.cost || 0)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
                               </tr>
                             ))}
                             {!fullscreenCompanyData.employees.length ? (
                               <tr>
-                                <td colSpan={2 + fullscreenCompanyData.projectYears.length * 2} className="px-3 py-3 text-center text-slate-500">Keine Mitarbeitenden vorhanden.</td>
+                                <td colSpan={3} className="px-3 py-3 text-center text-slate-500">Keine Mitarbeitenden vorhanden.</td>
                               </tr>
                             ) : null}
                           </tbody>
@@ -4125,14 +4171,12 @@
                     </section>
 
                     <section className="rounded-lg border border-slate-200">
-                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">Förderübersicht (pro Jahr)</div>
+                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">Beantragter Zuschuss pro Jahr</div>
                       <div className="overflow-auto">
                         <table className="min-w-full text-sm">
                           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
                             <tr>
                               <th className="px-3 py-2">Jahr</th>
-                              <th className="px-3 py-2 text-right">Personalkosten</th>
-                              <th className="px-3 py-2 text-right">Projektsumme</th>
                               <th className="px-3 py-2 text-right">Beantragter Zuschuss</th>
                             </tr>
                           </thead>
@@ -4140,15 +4184,11 @@
                             {fullscreenCompanyData.yearlyFundingRows.map((row) => (
                               <tr key={`fs-funding-${row.year}`}>
                                 <td className="px-3 py-2 font-semibold text-slate-700">{row.year}</td>
-                                <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(row.personalkosten)}</td>
-                                <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(row.projektsumme)}</td>
                                 <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatCurrency(row.foerderung)}</td>
                               </tr>
                             ))}
                             <tr className="bg-slate-50">
-                              <td className="px-3 py-2 font-semibold text-slate-800">Summe</td>
-                              <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatCurrency(fullscreenCompanyData.totals.personalkosten)}</td>
-                              <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatCurrency(fullscreenCompanyData.totals.projektsumme)}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-800">Summe beantragter Zuschuss</td>
                               <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(fullscreenCompanyData.totals.foerderung)}</td>
                             </tr>
                           </tbody>
