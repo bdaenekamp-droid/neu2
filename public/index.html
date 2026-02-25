@@ -2080,10 +2080,13 @@
           const plannedByRowId = {};
           if (shouldOptimizeDates) {
             const rowCount = rowsWithPm.length;
+            const timelineLength = projectEndIndex - projectStartIndex + 1;
+            let rollingStart = projectStartIndex;
             rowsWithPm.forEach((entry, index) => {
               const isFirst = index === 0;
               const isLast = index === rowCount - 1;
-              const duration = clampNumber(Math.ceil(entry.pmDemand), 1, 10);
+              const duration = clampNumber(Math.ceil(entry.pmDemand), 1, timelineLength);
+              const latestStart = Math.max(projectStartIndex, projectEndIndex - duration + 1);
               const baseStart =
                 rowCount === 1
                   ? projectStartIndex
@@ -2091,29 +2094,16 @@
                       projectStartIndex +
                         ((projectEndIndex - projectStartIndex) * index) / (rowCount - 1)
                     );
-              const previous = index > 0 ? plannedByRowId[rowsWithPm[index - 1].row.id] : null;
-              const minStart = isFirst
-                ? projectStartIndex
-                : previous
-                  ? parseMonthYear(previous.start).year * 12 + parseMonthYear(previous.start).month
-                  : projectStartIndex;
-              let start = clampNumber(
-                Math.max(baseStart, minStart),
-                projectStartIndex,
-                Math.max(projectStartIndex, projectEndIndex - duration + 1)
-              );
+              let start = clampNumber(Math.max(baseStart, rollingStart), projectStartIndex, latestStart);
               if (isFirst) {
                 start = projectStartIndex;
               }
               let end = clampNumber(start + duration - 1, start, projectEndIndex);
               if (isLast) {
                 end = projectEndIndex;
-                start = clampNumber(
-                  end - duration + 1,
-                  Math.max(projectStartIndex, minStart),
-                  end
-                );
+                start = clampNumber(end - duration + 1, projectStartIndex, end);
               }
+              rollingStart = Math.min(projectEndIndex, end + 1);
               plannedByRowId[entry.row.id] = {
                 start: formatMonthYearFromAbsoluteIndex(start),
                 ende: formatMonthYearFromAbsoluteIndex(end),
