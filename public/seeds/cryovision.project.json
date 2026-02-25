@@ -1,0 +1,1279 @@
+{
+  "schemaVersion": 1,
+  "workPackages": [
+    {
+      "id": "wp-preset-1772024477944-0",
+      "title": "Grundlegende Definition der Anforderungen an den Gärautomaten und das Arbeitsfluid inklusive der Auslegung geeigneter Kristallisationskeime.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477946-1",
+          "title": "Analyse des zeitabhängigen thermischen Lastprofils des Gärautomaten für die Betriebsmodi Heizen, Kühlen und Schnell- /Schockfrosten sowie Erstellung eines Lasten- und Pflichtenheftes auf Basis der resultierenden Kälte- und Wärmeanforderungen.",
+          "pm": [
+            0.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477946-2",
+          "title": "Grobe Dimensionierung der drei Speicherbehälter (zwei Eisbreispeicher und ein Warmsolespeicher) für die Temperaturniveaus −10 °C, −25 °C und 30 °C einschließlich der erforderlichen Wärmedämmung. Ableitung der benötigten Kälteleistung - aus dem zeitabhängigen Lastprofil unter Berücksichtigung der geometrischen Randbedingungen des Kühlraums (ca. 2 × 2 m) für die Versorgung von bis zu zwei Stikkenwagen mit typischen Endprodukten.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477946-3",
+          "title": "Auslegung des Arbeitsfluids durch Analyse geeigneter Fluidkombinationen (z. B. Wasser/Ethanol) hinsichtlich ihrer Phasendiagramme für den Temperaturbereich von −25 bis +30 °C sowie Bewertung rheologischer, thermophysikalischer und sicherheitsrelevanter Eigenschaften, einschließlich Lebensmittelverträglichkeit, Viskosität, Wärmeübertragungsvermögen und Entflammbarkeit.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477946-4",
+          "title": "Auslegung geeigneter Partikel als gezielte Kristallisationskeime im Arbeitsfluid unter Berücksichtigung ihrer Dichte, Oberflächenchemie zur Förderung heterogener Nukleation, chemischen Beständigkeit, Lebensmittelverträglichkeit sowie ihres Einflusses auf das viskose Strömungsverhalten.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477946-5",
+      "title": "Stationäre und dynamische Simulation der einzelnen Kältekreisläufe sowie des Gesamtsystems in Engineering Equation Solver oder Python einschließlich der Optimierung von Anlagen- und Betriebsparametern.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477946-6",
+          "title": "Festlegung der Betriebsfälle und Modellgrenzen in Engineering Equation Solver (EES) oder Python durch eindeutige Definition der drei Teilsysteme (Primärkältekreis, Unterkühlungs-/Kristallisationskreis, Speicher-/Verbraucherkreis) und deren Darstellung in einem Blockdiagramm sowie einer vollständigen Variablenliste.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477946-7",
+          "title": "Erstellung einer Stoffdatenbasis für Kältemittel, Sole und Eisbrei unter Nutzung von EES-Property-Funktionen oder validierten Literaturdaten sowie Definition eines Enthalpiemodells für Eisbrei mit expliziter Berücksichtigung der latenten Schmelzenthalpie.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477946-8",
+          "title": "Stationäre Modellierung des Primärkältekreises durch Formulierung der thermodynamischen Gleichungen für Verdichter, Verflüssiger, Expansionsorgan und Verdampfer sowie Berechnung der resultierenden Leistungs- und Exergiegrößen.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477946-9",
+          "title": "Stationäre Modellierung des Unterkühlungs- und Kristallisationskreises durch Abbildung der beiden Varianten (Kristallisationsverdampfer oder Verdampfer mit separatem Kristallisator), Entwicklung eines Kristallisationsmodells zur Berechnung von Unterkühlungsenthalpie, Eismassenanteil und Fluidtemperatur sowie thermische Kopplung an den Primärkältekreis.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-10",
+          "title": "Dynamische Simulation der Wärme- und Kältespeicher durch Formulierung einer zeitdiskreten Energiebilanz unter Berücksichtigung von Lade- und Entladeleistungen sowie Wärmeverlusten und Berechnung der zeitlichen Entwicklung von Temperatur und Eiskonzentration.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-11",
+          "title": "Stationäre Modellierung des Verbraucherkreislaufs durch Abbildung der Wärmeübertrager mittels UA-Ansätzen und Berechnung der momentanen Kälteleistung in Abhängigkeit der Zu- und Rücklauftemperaturen des Eisbreis.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-12",
+          "title": "Zusammenführung aller zuvor modellierten Teilsysteme zu einer zeitabhängigen Gesamtsimulation auf Basis eines numerischen Zeitschrittverfahrens; für jeden Zeitschritt Berechnung der thermischen Leistungsanforderung, des Speicherbetriebszustands, der erforderlichen Verdampfungs- und Kälteleistung, der Betriebsparameter von Supercooler, Kristallisationseinheit und Pumpensystem sowie der Einhaltung aller zulässigen Betriebsgrenzen.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-13",
+          "title": "Nutzung des Gesamtmodells zur Durchführung parametrischer Studien zur Anlagenoptimierung durch systematische Variation zentraler Auslegungsparameter (Speichergröße, maximal zulässige Eiskonzentration, Verdichterleistung, Wärmeübertrager-UA des Supercoolers, Unterkühlungsgrad) und Bewertung der resultierenden Energiebedarfe, COP-Werte, Temperatur- und Druckgrenzen sowie der Betriebsstabilität.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477947-14",
+      "title": "Thermodynamische und strömungsmechanische Untersuchung der Nukleation und Eisbildung im Arbeitsfluid.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477947-15",
+          "title": "Erstellung eines thermodynamisch-energetischen Basismodells für die Nukleation und Eisbildung durch Definition von Fluidtemperatur, Gefrierpunkt, Unterkühlungsgrad und Mischenthalpie aus Flüssig- und Eisphase sowie Berücksichtigung spezifischer Wärmekapazitäten und latenter Schmelzenthalpie.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-16",
+          "title": "Erweiterung des Basismodells um stoffliche, oberflächenbezogene und geometrische Einflussgrößen des realen Arbeitsfluids, einschließlich thermophysikalischer Stoffdaten, Oberflächeneigenschaften des Kristallisationsverdampfers bzw. Kristallisators und relevanter Geometrieparameter, sowie Entwicklung separater Modelle für heterogene Volumennukleation und Wandnukleation.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-17",
+          "title": "Kalibrierung und Validierung des Nukleationsmodells durch Abgleich von experimentell bestimmten Unterkühlungsgraden, Eismassenanteilen und Temperaturverläufen mit den Modellvorhersagen und anschließende Anpassung kritischer Modellparameter bis zur Konsistenz zwischen Experiment und Simulation.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-18",
+          "title": "Durchführung einer systematischen Parameterstudie, in der Geometrie- und Oberflächenparameter (Rohrdurchmesser, Krümmungsradien, Einbauten/Drallkörper, Rauigkeit, effektiver Kontaktwinkel, Beschichtungsvarianten) variiert werden, um die optimale Kombination zur Minimierung von Wandnukleation und Maximierung der Volumennukleation zu bestimmen.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-19",
+          "title": "Durchführung von CFD-Simulationen zur Optimierung der Verdampfergeometrie mit dem Ziel, wandnahe Strömungsgeschwindigkeiten und Wandschubspannungen zu maximieren, um Wandvereisung zu unterdrücken und die Ablösung entstehender Eiskristalle zu gewährleisten.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477947-20",
+      "title": "Experimentelle Charakterisierung, Validierung und prototypische Umsetzung des Kristallisationsverdampfers im Temperaturbereich von −10 bis −25 °C.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477947-21",
+          "title": "Charakterisierung des Arbeitsfluids (z. B. Wasser–Ethanol) durch Bestimmung von Viskosität (Kapillarrohr-Viskometer), Dichte, Wärmekapazität, Wärmeleitfähigkeit, Gefrierpunkt und Wärmeübergangskoeffizienten bei variierenden Temperaturen und Eismassenanteilen.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-22",
+          "title": "Experimentelle Untersuchung zuvor simulierter Oberflächenmaterialien hinsichtlich Unterkühlungsstabilität, Nukleationsneigung, Eisadhäsion und Abriebbeständigkeit; Herstellung definierter Platten oder Rohrsegmente mit simulierten Beschichtungen (z. B. PTFE-artige Schichten oder nickelhaltige Metalloberflächen).",
+          "pm": [
+            2,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-23",
+          "title": "Bestimmung des Nukleationszeitpunkts durch Eintauchen der Oberflächen in unterkühlte Fluide und Detektion mittels optischer bzw. akustischer Sensorik sowie Analyse der hydrodynamischen Ablösung und Ermittlung der Eisadhäsionsspannung.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-24",
+          "title": "Systematischer Vergleich der Oberflächenvarianten bezüglich Unterkühlungsstabilität, Nukleationsneigung, Adhäsionskraft und Versuchswiederholbarkeit sowie Ableitung von Designregeln zur Minimierung von Wandausfrierung.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-25",
+          "title": "Aufbau des zuvor simulierten Rohrleitungssystems des Kristallisationsverdampfers für experimentelle Untersuchungen zur Abspülbarkeit von Eiskristallen unter realitätsnahen Strömungsbedingungen.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-26",
+          "title": "Variation der Rohrgeometrie in vier definierten Varianten (Coiled Tubes, wellige Rohre, Rohre mit Helixstrukturen, Rohre mit flachen Noppen) zur Erzeugung lokaler Geschwindigkeitsmaxima sowie gezielter Sekundärströmungen und Wirbelstrukturen an der Wand.",
+          "pm": [
+            3,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-27",
+          "title": "Aufbau eines transparenten Teststands (Plexiglasrohrsystem) mit Pumpeneinheit, Kältekreislauf, Beleuchtung und Kamerasystem zur Visualisierung von Kristallisation, Wandbedeckung und Ablöseprozessen.",
+          "pm": [
+            3,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-28",
+          "title": "Durchführung systematischer Versuchsreihen unter Variation von Geometrie, Strömungsgeschwindigkeit, Temperatur und Keimpartikelkonzentration zur Quantifizierung und Optimierung der hydrodynamischen Kristallabspülung.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-29",
+          "title": "Optische Auswertung der zeitabhängigen Wandbedeckung durch regelmäßige Bildaufnahme, Bestimmung der Zeit bis zur Ausbildung einer geschlossenen Eisbrücke (Blockade) und Auswahl eines optimalen Rohrdesigns.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-30",
+          "title": "Fertigung eines Prototyps des Kristallisationsverdampfers mit der identifizierten optimalen Rohrgeometrie und Oberflächenbeschichtung sowie Wiederholung der Blockadetests zur quantitativen Bewertung der Betriebsstabilität.",
+          "pm": [
+            3,
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477947-31",
+      "title": "Experimentelle Entwicklung und Validierung eines Supercoolers und eines Kristallisators für den Temperaturbereich von −2 bis −5 °C.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477947-32",
+          "title": "Erneute experimentelle Untersuchung und Optimierung der Oberflächenbeschichtungen unter angepasster Fluidzusammensetzung durch Herstellung definierter Probekörper, Eintauchen in unterkühlte Fluide sowie Bestimmung von Nukleationszeitpunkt und Eisadhäsionsspannung, um die leistungsfähigsten Oberflächenvarianten zu identifizieren.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-33",
+          "title": "Aufbau eines Verdampfers (Supercoolers) mit nicht optimierter Rohrgeometrie, ausgestattet mit den zuvor identifizierten Beschichtungsvarianten, und experimentelle Bestimmung des maximal stabilen Unterkühlungsgrades bis zur Erstkristallisation zur Auswahl eines finalen, unterkühlungsstabilen Beschichtungssystems.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-34",
+          "title": "Entwicklung und Validierung eines Nukleators mit homogenisierter Strömungsführung und beschichteten Kontaktoberflächen sowie Implementierung aktiver Triggermechanismen (Ultraschall, Peltier-Element). Durchführung systematischer Vergleichsversuche zur Bestimmung der Kristallisationsauslösezeit, der Reproduzierbarkeit und der Robustheit gegenüber thermischen und hydraulischen Störgrößen zur Auswahl des optimalen Auslöseverfahrens.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-35",
+          "title": "Auslegung und experimentelle Prüfung eines thermischen Schutzsystems zur Verhinderung des Eindringens der Kristallisationsfront in den Supercooler durch Integration beheizbarer Rohrabschnitte, Nutzung des temperierten Kältemittels aus dem Verflüssiger sowie Entwicklung eines dazugehörigen Bypass- und Regelkonzeptes zur definierten thermischen Stabilisierung der Grenzbereiche.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-36",
+          "title": "Entwicklung eines präzisen Temperaturregelkonzepts für den Supercooler durch Aufbau einer kaskadierten Regelstruktur, bei der der innere Regler das elektronische Expansionsventil (EEV) steuert und der äußere Regler die Austrittstemperatur des Arbeitsfluids stabil im zulässigen Unterkühlungsbereich hält.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-37",
+          "title": "Experimentelle Untersuchung des Gesamtsystems aus Supercooler und Kristallisator durch Variation von Unterkühlungsgrad, Massenstrom und Triggermechanismus, Messung der stabil erreichbaren Unterkühlung im Supercooler, Erfassung der zeitlichen und mengenmäßigen Kristallbildung im Kristallisator sowie Bewertung der Betriebsstabilität hinsichtlich Temperaturführung, Eismassenanteil und Wiederholbarkeit.",
+          "pm": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477947-38",
+      "title": "Entwicklung eines Systems zur Steuerung der Eisbreikonzentration sowie Auslegung von Peripheriekomponenten.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477947-39",
+          "title": "Entwicklung eines variablen Rührwerks im Eisbreispeicher, bei dem Höhe und Betriebsparameter gezielt angepasst werden, um eine stabile Eiskonzentration von 20–25 % an den Verbrauchern bereitzustellen.",
+          "pm": [
+            2,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-40",
+          "title": "Entwicklung einer Methode zur Bestimmung des Eisanteils über Temperaturmessung oder dichtebasierte Sensorik (z. B. Coriolis), unter Berücksichtigung des Dichteunterschieds zwischen Flüssigphase und Eis.",
+          "pm": [
+            2,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-41",
+          "title": "Erarbeitung einer Steuer- und Regelstrategie für ein höhenverstellbares, drehzahlgeregeltes Rührwerk, einschließlich Definition geeigneter Betriebsmodi (z. B. Intervallbetrieb, partielles Rühren im unteren Tankbereich).",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-42",
+          "title": "Durchführung systematischer Versuchsreihen zur Untersuchung des Einflusses von Rührhöhe, Drehzahl und Einschaltdauer auf erreichbare Eiskonzentration und elektrischen Energiebedarf sowie Ableitung einer optimalen Regel- und Steuerstrategie.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-43",
+          "title": "Identifikation geeigneter Pumpentypen für hochviskose, kalte und partikelhaltige Fluide sowie Durchführung von Dauerversuchen zur Bewertung von Förderleistung, Druckverlust, Vereisungsanfälligkeit und Verschleißverhalten bei −25 °C und variierenden Eiskonzentrationen und Keimpartikelanteilen.",
+          "pm": [
+            1,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-44",
+          "title": "Entwicklung eines Wärmeübertragers auf der Verbraucherseite, der eine störungsfreie Durchströmung von Eispartikeln ermöglicht, durch Anpassung von Kanal- und Rohrdurchmessern, Minimierung enger Umlenkungen sowie Auswahl geeigneter, abrasionsbeständiger Materialien und Oberflächen.",
+          "pm": [
+            2,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-45",
+          "title": "Entwicklung eines Systems zur aktiven Anpassung der Fluidzusammensetzung (z. B. Wasser–Ethanol), um über die konzentrationsabhängige Gefrierpunktkurve unterschiedliche Eisbreitemperaturen gezielt einstellen zu können.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-46",
+          "title": "Aufbau der Hardware zur automatisierten Konzentrationsanpassung, bestehend aus Osmoseeinheit zur Wasserabtrennung, zwei Pufferbehältern (konzentrierte Lösung und Reinstwasser), Dosier- und Mischpumpe sowie Inline-Sensorik (Dichte bzw. Refraktometrie und Temperatur) zur kontinuierlichen Konzentrationsbestimmung.",
+          "pm": [
+            3,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-47",
+          "title": "Entwicklung einer Steuerlogik zur Einstellung des Soll-Gefrierpunkts bzw. der Soll-Konzentration (Modus −10 °C oder −25 °C) mittels Rückführung der Inline-Sensorik und Erprobung des Gesamtsystems im Betrieb.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477947-48",
+      "title": "Prototypischer Aufbau des Gärautomaten und Entwicklung einer Smart-Grid-gestützten Fahrplanlogik.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477947-49",
+          "title": "Aufbau der Primärkältemaschine bestehend aus Verdichter, Verflüssiger, Expansionsventil und der thermischen Kopplung des Verdampfers an den Sekundärkreislauf sowie Integration des Verdampfers in den Prozessfluss des Arbeitsfluids.",
+          "pm": [
+            2,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-50",
+          "title": "Einbindung des Verdampfers als Kristallisationsmodul im Sekundärkreislauf, sodass Unterkühlung und Kristallisation im selben Bauteil stattfinden, sowie Montage der Eisbreispeicher mit höhenverstellbarem Rührwerk und Sensorik zur Temperatur- und Konzentrationsmessung.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-51",
+          "title": "Installation des Verbraucherkreises mit Sole-Luft-Wärmeübertragern für den Gärautomaten, wobei Kanalgeometrien und Materialauswahl auf die strömungsmechanischen Anforderungen von Eisbrei und Keimpartikeln ausgelegt werden.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-52",
+          "title": "Aufbau des Rohrnetzes und der Pumpentechnik unter Berücksichtigung der hohen Viskosität, der abrasiven Partikelanteile und der niedrigen Betriebstemperaturen (−25 °C) sowie Integration erforderlicher Absperr-, Umschalt- und Regelventile für den systemweiten Betrieb.",
+          "pm": [
+            1,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-53",
+          "title": "Installation der Sensor- und Regelungstechnik durch Positionierung von Temperatur-, Druck- und Konzentrationssensoren an Ein- und Austritt des Verdampfers, in kritischen Rohrabschnitten sowie im Eisbreispeicher zur kontinuierlichen Prozessüberwachung.",
+          "pm": [
+            1,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-54",
+          "title": "Entwicklung einer prädiktiven Steuerungslogik zur modellbasierten Ableitung optimaler Lade- und Befüllstrategien für zwei sequentiell zu ladende Eisbreispeicher unter Einbezug externer Prognosesignale (Energiepreise, PV-Ertrag) sowie Formulierung von Entscheidungsregeln zu Füllreihenfolge, Sollfüllständen und teil- bzw. vollbefüllten Betriebsweisen.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-55",
+          "title": "Entwicklung selbstlernender Algorithmen zur automatisierten Analyse historischer Lastprofile der Bäckerei und deren Abgleich mit Erzeugungsprognosen, um zeitoptimal gesteuerte Ladezeitpunkte sowie energieeffiziente Betriebsstrategien für die Speicher abzuleiten.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wp-preset-1772024477947-56",
+      "title": "Experimentelle Gesamtvalidierung, Leistungsbewertung und Langzeiterprobung des Systems.",
+      "pm": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "sub": [
+        {
+          "id": "sub-preset-1772024477947-57",
+          "title": "Inbetriebnahme und Funktionsprüfung durch Erstbefüllung des Systems mit reiner Sole ohne Eisanteil sowie Durchführung von Dichtheits-, Druck- und Durchflusstests und anschließender Kalibrierung aller Messketten für Temperatur, Druck, Volumenstrom und Dichte.",
+          "pm": [
+            0.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-58",
+          "title": "Parametrierung des Kristallisationsverdampfers durch schrittweise Absenkung der Verdampfungstemperatur zur Identifikation eines stabilen Unterkühlungsfensters ohne Festfrieren und Verifizierung des Selbstreinigungseffekts (Eisablösung) durch Analyse lokaler Druckverluste und Temperaturprofile.",
+          "pm": [
+            1,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-59",
+          "title": "Test der Eisbreibereitstellung unter realen Betriebsbedingungen durch Durchführung definierter Gärautomat-Zyklen (Gären, Kühlen, Frosten) und Messung der resultierenden Kälteleistung, Eiskonzentration, Produkt-Temperaturverläufe sowie der Strömungsstabilität im Sekundärkältekreislauf.",
+          "pm": [
+            1,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-60",
+          "title": "Energetische und hydraulische Bewertung durch Messung der elektrischen Leistungsaufnahme von Verdichter, Pumpen und Rührwerken in verschiedenen Betriebsmodi sowie quantitativer Erfassung der Druckverluste, Identifikation von Bereichen mit erhöhtem Clogging-Risiko und Bestimmung des COP.",
+          "pm": [
+            1,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-61",
+          "title": "Langzeittest über mehrere Wochen zur Untersuchung der Stabilität von Eiskonzentration und Fluidzusammensetzung, der Abrasion und des Verschleißverhaltens von Pumpen und Verdampfer sowie des Auftretens möglicher Clogging-Ereignisse und Ableitung geeigneter Reinigungs- und Wartungsintervalle.",
+          "pm": [
+            1.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        {
+          "id": "sub-preset-1772024477947-62",
+          "title": "Validierung des Gesamtsystems durch Vergleich der experimentell ermittelten Eismassenanteile, Temperaturprofile und Druckverluste mit den Simulationsergebnissen, Anpassung wesentlicher Modellparameter wie Wärmeübergangs- und rheologischer Kennwerte und Ableitung finaler Auslegungsrichtlinien für die Serienentwicklung.",
+          "pm": [
+            2.5,
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    }
+  ],
+  "companyCount": 5,
+  "companyNames": [
+    "Ungermann GmbH",
+    "Unternehmen 2",
+    "Unternehmen 3",
+    "Unternehmen 4",
+    "Unternehmen 5"
+  ],
+  "startDate": "2026-06-01",
+  "durationMonths": 30,
+  "employeesByCompany": [
+    [
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 75,
+        "name": "Jörg Ungermann",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 84000
+      },
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 75,
+        "name": "Kai Ungermann",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 62101.12
+      },
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "Mohammed Ahmed Turki Al-",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 54000
+      },
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "Maxim Derr",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 51700
+      },
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "Thomas Schotte",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 46384
+      }
+    ],
+    [
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 0
+      }
+    ],
+    [
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 0
+      }
+    ],
+    [
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 0
+      }
+    ],
+    [
+      {
+        "partTimeFactor": 1,
+        "projectPercent": 100,
+        "name": "",
+        "weeklyHours": 40,
+        "actualHours": 40,
+        "annualSalary": 0
+      }
+    ]
+  ],
+  "companyData": [
+    {
+      "zuschlagsfaktorPercent": 100,
+      "foerderquotePercent": 45,
+      "maximalbetrag": 560000,
+      "autoPlanningLocks": {
+        "employeeAssignment": false,
+        "workPackageDates": false,
+        "personMonths": true
+      },
+      "ergebnisse": {
+        "personalkosten": 0,
+        "gemeinkostenzuschlag": 0,
+        "projektsumme": 0,
+        "foerdersumme": 0,
+        "verschenkterGesamtbetrag": 0
+      },
+      "tabellenEintraege": {
+        "sub-preset-1772024477946-1": {
+          "start": "06.2026",
+          "ende": "12.2026",
+          "mitarbeiterNummer": "1"
+        },
+        "sub-preset-1772024477947-22": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "1"
+        },
+        "sub-preset-1772024477947-23": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "1"
+        },
+        "sub-preset-1772024477947-24": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "1"
+        },
+        "sub-preset-1772024477947-25": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "2"
+        },
+        "sub-preset-1772024477947-26": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "2"
+        },
+        "sub-preset-1772024477947-27": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-28": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-29": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-30": {
+          "start": "01.2027",
+          "ende": "07.2027",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-36": {
+          "start": "07.2027",
+          "ende": "12.2027",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-39": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-40": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-41": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-42": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-43": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-44": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-45": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-46": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-47": {
+          "start": "07.2027",
+          "ende": "02.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-49": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-50": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-51": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "5"
+        },
+        "sub-preset-1772024477947-52": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-53": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-54": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-55": {
+          "start": "02.2028",
+          "ende": "08.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-57": {
+          "start": "07.2028",
+          "ende": "11.2028",
+          "mitarbeiterNummer": "4"
+        },
+        "sub-preset-1772024477947-58": {
+          "start": "07.2028",
+          "ende": "11.2028",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-59": {
+          "start": "07.2028",
+          "ende": "11.2028",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-60": {
+          "start": "07.2028",
+          "ende": "11.2028",
+          "mitarbeiterNummer": "3"
+        },
+        "sub-preset-1772024477947-61": {
+          "start": "07.2028",
+          "ende": "11.2028",
+          "mitarbeiterNummer": "2"
+        },
+        "sub-preset-1772024477947-62": {
+          "start": "07.2028",
+          "ende": "11.2028",
+          "mitarbeiterNummer": "2"
+        }
+      }
+    },
+    {
+      "zuschlagsfaktorPercent": 100,
+      "foerderquotePercent": 45,
+      "maximalbetrag": 560000,
+      "autoPlanningLocks": {
+        "employeeAssignment": false,
+        "workPackageDates": false,
+        "personMonths": true
+      },
+      "ergebnisse": {
+        "personalkosten": 0,
+        "gemeinkostenzuschlag": 0,
+        "projektsumme": 0,
+        "foerdersumme": 0,
+        "verschenkterGesamtbetrag": 0
+      },
+      "tabellenEintraege": {}
+    },
+    {
+      "zuschlagsfaktorPercent": 100,
+      "foerderquotePercent": 45,
+      "maximalbetrag": 560000,
+      "autoPlanningLocks": {
+        "employeeAssignment": false,
+        "workPackageDates": false,
+        "personMonths": true
+      },
+      "ergebnisse": {
+        "personalkosten": 0,
+        "gemeinkostenzuschlag": 0,
+        "projektsumme": 0,
+        "foerdersumme": 0,
+        "verschenkterGesamtbetrag": 0
+      },
+      "tabellenEintraege": {}
+    },
+    {
+      "zuschlagsfaktorPercent": 100,
+      "foerderquotePercent": 45,
+      "maximalbetrag": 560000,
+      "autoPlanningLocks": {
+        "employeeAssignment": false,
+        "workPackageDates": false,
+        "personMonths": true
+      },
+      "ergebnisse": {
+        "personalkosten": 0,
+        "gemeinkostenzuschlag": 0,
+        "projektsumme": 0,
+        "foerdersumme": 0,
+        "verschenkterGesamtbetrag": 0
+      },
+      "tabellenEintraege": {}
+    },
+    {
+      "zuschlagsfaktorPercent": 100,
+      "foerderquotePercent": 45,
+      "maximalbetrag": 560000,
+      "autoPlanningLocks": {
+        "employeeAssignment": false,
+        "workPackageDates": false,
+        "personMonths": true
+      },
+      "ergebnisse": {
+        "personalkosten": 0,
+        "gemeinkostenzuschlag": 0,
+        "projektsumme": 0,
+        "foerdersumme": 0,
+        "verschenkterGesamtbetrag": 0
+      },
+      "tabellenEintraege": {}
+    }
+  ],
+  "companyHistoryByCompany": [
+    {
+      "history": [
+        {
+          "tabellenEintraege": {
+            "sub-preset-1772024477946-1": {
+              "start": "06.2026",
+              "ende": "12.2026",
+              "mitarbeiterNummer": "1"
+            },
+            "sub-preset-1772024477947-22": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "1"
+            },
+            "sub-preset-1772024477947-23": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "1"
+            },
+            "sub-preset-1772024477947-24": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "1"
+            },
+            "sub-preset-1772024477947-25": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "2"
+            },
+            "sub-preset-1772024477947-26": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "2"
+            },
+            "sub-preset-1772024477947-27": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-28": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-29": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-30": {
+              "start": "01.2027",
+              "ende": "07.2027",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-36": {
+              "start": "07.2027",
+              "ende": "12.2027",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-39": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-40": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-41": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-42": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-43": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-44": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-45": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-46": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-47": {
+              "start": "07.2027",
+              "ende": "02.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-49": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-50": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-51": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "5"
+            },
+            "sub-preset-1772024477947-52": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-53": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-54": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-55": {
+              "start": "02.2028",
+              "ende": "08.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-57": {
+              "start": "07.2028",
+              "ende": "11.2028",
+              "mitarbeiterNummer": "4"
+            },
+            "sub-preset-1772024477947-58": {
+              "start": "07.2028",
+              "ende": "11.2028",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-59": {
+              "start": "07.2028",
+              "ende": "11.2028",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-60": {
+              "start": "07.2028",
+              "ende": "11.2028",
+              "mitarbeiterNummer": "3"
+            },
+            "sub-preset-1772024477947-61": {
+              "start": "07.2028",
+              "ende": "11.2028",
+              "mitarbeiterNummer": "2"
+            },
+            "sub-preset-1772024477947-62": {
+              "start": "07.2028",
+              "ende": "11.2028",
+              "mitarbeiterNummer": "2"
+            }
+          },
+          "pmSnapshot": null
+        }
+      ],
+      "historyIndex": 0
+    },
+    {
+      "history": [
+        {
+          "tabellenEintraege": {},
+          "pmSnapshot": null
+        }
+      ],
+      "historyIndex": 0
+    },
+    {
+      "history": [
+        {
+          "tabellenEintraege": {},
+          "pmSnapshot": null
+        }
+      ],
+      "historyIndex": 0
+    },
+    {
+      "history": [
+        {
+          "tabellenEintraege": {},
+          "pmSnapshot": null
+        }
+      ],
+      "historyIndex": 0
+    },
+    {
+      "history": [
+        {
+          "tabellenEintraege": {},
+          "pmSnapshot": null
+        }
+      ],
+      "historyIndex": 0
+    }
+  ]
+}

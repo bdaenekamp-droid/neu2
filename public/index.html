@@ -121,9 +121,9 @@
       const CURRENT_PROJECT_KEY = "ca_projectplanning_current_project";
       const PROJECT_KEY_PREFIX = "project:";
       const SEED_PROJECT_NAME = "CryoVision";
-      const AUTO_SAVE_DEBOUNCE_MS = 300;
+      const AUTO_SAVE_DEBOUNCE_MS = 650;
       const PROJECT_SCHEMA_VERSION = 1;
-      const CRYOVISION_SEED_PATH = "/seeds/cryovision.json";
+      const CRYOVISION_SEED_PATH = "/seeds/cryovision.project.json";
       const DEFAULT_AUTO_LOCKS = {
         employeeAssignment: false,
         workPackageDates: false,
@@ -1028,7 +1028,6 @@
             createdAt: nowIso,
             lastModified: nowIso,
             state: null,
-            loadable: false,
             error: "parse_error",
           };
         }
@@ -1039,9 +1038,29 @@
           createdAt: payload?.createdAt || nowIso,
           lastModified: payload?.lastModified || payload?.createdAt || nowIso,
           state: parseStoredProject(stateSource),
-          loadable: true,
           error: null,
         };
+      };
+
+      const isLikelyMinimalDefaultState = (state) => {
+        if (!state || !Array.isArray(state.workPackages)) return true;
+        if (!state.workPackages.length) return true;
+        if (state.workPackages.length > 1) return false;
+        const [first] = state.workPackages;
+        const firstSub = Array.isArray(first?.sub) ? first.sub[0] : null;
+        return !first?.title && (!firstSub || !firstSub.title);
+      };
+
+      const isCryoVisionStateValid = (state) => {
+        if (!state || !Array.isArray(state.workPackages) || !state.workPackages.length) return false;
+        if (isLikelyMinimalDefaultState(state)) return false;
+        const hasLabeledWorkPackage = state.workPackages.some(
+          (wp) => typeof wp?.title === "string" && wp.title.trim().length > 0
+        );
+        const companyEmployees = Array.isArray(state.employeesByCompany) ? state.employeesByCompany[0] : null;
+        const hasNamedEmployee = Array.isArray(companyEmployees)
+          && companyEmployees.some((employee) => typeof employee?.name === "string" && employee.name.trim().length > 0);
+        return hasLabeledWorkPackage && hasNamedEmployee;
       };
 
       const formatMonthYearFromAbsoluteIndex = (absoluteMonthIndex) => {
@@ -1122,7 +1141,7 @@
         const [projectSearchTerm, setProjectSearchTerm] = useState("");
         const [projectError, setProjectError] = useState("");
         const [storageError, setStorageError] = useState("");
-        const [saveState, setSaveState] = useState("gespeichert");
+        const [deleteProjectConfirmName, setDeleteProjectConfirmName] = useState("");
         const [fullscreenCompanyIndex, setFullscreenCompanyIndex] = useState(null);
         const [zimPdfModalState, setZimPdfModalState] = useState({
           open: false,
@@ -1143,6 +1162,7 @@
         });
         const hasInitializedRef = useRef(false);
         const debounceSaveRef = useRef(null);
+        const lastSavedSnapshotRef = useRef("");
 
         useEffect(() => {
           return () => {
@@ -1218,7 +1238,7 @@
           localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
           setProjectRecords((prev) => {
             const withoutCurrent = prev.filter((entry) => entry.name !== projectName);
-            const next = [...withoutCurrent, { name: projectName, createdAt, lastModified, loadable: true, error: null }]
+            const next = [...withoutCurrent, { name: projectName, createdAt, lastModified }]
               .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
             localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(next.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified }))));
             return next;
@@ -1232,54 +1252,36 @@
           }).catch(() => {});
         }, []);
 
-        const saveNow = useCallback((overrideState = null) => {
+        const saveNow = useCallback((overrideState = null, knownSnapshotString = "") => {
           if (!hasInitializedRef.current || !currentProjectName) return;
           try {
             const snapshot = overrideState || collectProjectState();
+            const serializedSnapshot = knownSnapshotString || JSON.stringify(snapshot);
             persistProject(currentProjectName, snapshot);
-            setSaveState("gespeichert");
+            lastSavedSnapshotRef.current = serializedSnapshot;
           } catch (error) {
             console.warn("Projekt konnte nicht gespeichert werden", error);
             setStorageError("Projekt konnte nicht gespeichert werden.");
           }
         }, [collectProjectState, currentProjectName, persistProject]);
 
-        useEffect(() => {
-          const ensureCryoVision = async (records) => {
-            const cryoRecord = records.find((entry) => entry.name === SEED_PROJECT_NAME);
-            if (cryoRecord && cryoRecord.loadable) return records;
-            let seedState = null;
-            try {
-              const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
-              if (response.ok) {
-                const seedJson = await response.json();
-                if (seedJson?.template === "cryoVisionBuiltIn") {
-                  seedState = buildSeedCryoVisionState();
-                } else if (Array.isArray(seedJson?.workPackages) && seedJson.workPackages.length) {
-                  seedState = parseStoredProject(seedJson);
-                }
+        const loadCryoVisionSeedState = useCallback(async () => {
+          try {
+            const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
+            if (response.ok) {
+              const seedJson = await response.json();
+              const parsedSeed = parseStoredProject(seedJson);
+              if (isCryoVisionStateValid(parsedSeed)) {
+                return parsedSeed;
               }
-            } catch (error) {
-              seedState = null;
             }
-            const fallbackSeed = seedState || buildSeedCryoVisionState();
-            const timestamp = new Date().toISOString();
-            persistProject(SEED_PROJECT_NAME, fallbackSeed, {
-              createdAt: cryoRecord?.createdAt || timestamp,
-              lastModified: timestamp,
-            });
-            return [
-              ...records.filter((entry) => entry.name !== SEED_PROJECT_NAME),
-              {
-                name: SEED_PROJECT_NAME,
-                createdAt: cryoRecord?.createdAt || timestamp,
-                lastModified: timestamp,
-                loadable: true,
-                error: null,
-              },
-            ];
-          };
+          } catch (error) {
+            // Fallback auf eingebauten Seed
+          }
+          return buildSeedCryoVisionState();
+        }, []);
 
+        useEffect(() => {
           (async () => {
             try {
               const rawIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
@@ -1303,15 +1305,15 @@
                     .filter((entry) => entry && entry.name)
                 : [];
 
-              const recordsWithStatus = indexRecords.map((record) => {
+              let records = indexRecords.filter((record) => {
                 const key = getProjectStorageKey(record.name);
                 const raw = localStorage.getItem(key);
                 if (!raw) {
-                  return { ...record, loadable: false, error: "missing" };
+                  return false;
                 }
                 const payload = parseStoredProjectPayload(raw, record.name);
-                if (!payload.loadable) {
-                  return { ...record, loadable: false, error: payload.error };
+                if (!payload.state) {
+                  return false;
                 }
                 localStorage.setItem(
                   key,
@@ -1323,18 +1325,37 @@
                     state: payload.state,
                   })
                 );
-                return { ...record, loadable: true, error: null };
+                return true;
               });
 
-              const withCryo = await ensureCryoVision(recordsWithStatus);
-              const nextRecords = withCryo
+              const cryoRecord = records.find((entry) => entry.name === SEED_PROJECT_NAME);
+              let cryoNeedsRestore = true;
+              if (cryoRecord) {
+                const cryoRaw = localStorage.getItem(getProjectStorageKey(SEED_PROJECT_NAME));
+                if (cryoRaw) {
+                  const parsedCryo = parseStoredProjectPayload(cryoRaw, SEED_PROJECT_NAME);
+                  cryoNeedsRestore = !parsedCryo.state || !isCryoVisionStateValid(parsedCryo.state);
+                }
+              }
+              if (cryoNeedsRestore) {
+                const timestamp = new Date().toISOString();
+                const restoredSeed = await loadCryoVisionSeedState();
+                persistProject(SEED_PROJECT_NAME, restoredSeed, {
+                  createdAt: cryoRecord?.createdAt || timestamp,
+                  lastModified: timestamp,
+                });
+              }
+
+              const refreshedIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
+              records = (refreshedIndex ? JSON.parse(refreshedIndex) : [])
+                .filter((entry) => entry && entry.name)
                 .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
 
               localStorage.setItem(
                 PROJECTS_INDEX_KEY,
-                JSON.stringify(nextRecords.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
+                JSON.stringify(records.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
               );
-              setProjectRecords(nextRecords);
+              setProjectRecords(records);
               setCurrentProjectName("");
               localStorage.removeItem(CURRENT_PROJECT_KEY);
               setStorageError("");
@@ -1345,18 +1366,19 @@
               hasInitializedRef.current = true;
             }
           })();
-        }, [persistProject]);
+        }, [loadCryoVisionSeedState, persistProject]);
 
         const projectStateSnapshot = collectProjectState();
+        const projectSnapshotString = useMemo(() => JSON.stringify(projectStateSnapshot), [projectStateSnapshot]);
 
         useEffect(() => {
           if (!hasInitializedRef.current || !currentProjectName) return;
-          setSaveState("speichert...");
+          if (projectSnapshotString === lastSavedSnapshotRef.current) return;
           if (debounceSaveRef.current) {
             clearTimeout(debounceSaveRef.current);
           }
           debounceSaveRef.current = setTimeout(() => {
-            saveNow(projectStateSnapshot);
+            saveNow(projectStateSnapshot, projectSnapshotString);
           }, AUTO_SAVE_DEBOUNCE_MS);
 
           return () => {
@@ -1364,13 +1386,16 @@
               clearTimeout(debounceSaveRef.current);
             }
           };
-        }, [currentProjectName, projectStateSnapshot, saveNow]);
+        }, [currentProjectName, projectSnapshotString, projectStateSnapshot, saveNow]);
 
         useEffect(() => {
           const handleBeforeUnload = () => {
             if (!hasInitializedRef.current || !currentProjectName) return;
             const snapshot = collectProjectState();
-            saveNow(snapshot);
+            const serializedSnapshot = JSON.stringify(snapshot);
+            if (serializedSnapshot !== lastSavedSnapshotRef.current) {
+              saveNow(snapshot, serializedSnapshot);
+            }
           };
           window.addEventListener("beforeunload", handleBeforeUnload);
           return () => {
@@ -1393,10 +1418,10 @@
             persistProject(trimmedName, initialState);
             applyProjectState(initialState);
             setCurrentProjectName(trimmedName);
+            lastSavedSnapshotRef.current = JSON.stringify(parseStoredProject(initialState));
             setProjectError("");
             setNewProjectModalOpen(false);
             setNewProjectName("");
-            setSaveState("gespeichert");
           } catch (error) {
             console.warn("Neues Projekt konnte nicht erstellt werden", error);
             setProjectError("Projekt konnte nicht erstellt werden.");
@@ -1409,23 +1434,34 @@
             const raw = localStorage.getItem(getProjectStorageKey(projectName));
             if (!raw) throw new Error("Projekt fehlt");
             const parsedPayload = parseStoredProjectPayload(raw, projectName);
-            if (!parsedPayload.loadable || !parsedPayload.state) {
+            if (!parsedPayload.state) {
               throw new Error("Projekt konnte nicht geparst werden");
+            }
+            let nextState = parsedPayload.state;
+            if (projectName === SEED_PROJECT_NAME && !isCryoVisionStateValid(nextState)) {
+              throw new Error("CryoVision ist unvollständig");
             }
             setCurrentProjectName(projectName);
             localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
-            applyProjectState(parsedPayload.state);
+            applyProjectState(nextState);
+            lastSavedSnapshotRef.current = JSON.stringify(nextState);
             setLoadProjectModalOpen(false);
             setStorageError("");
-            setSaveState("gespeichert");
           } catch (error) {
             console.warn("Projekt konnte nicht geladen werden", error);
+            if (projectName === SEED_PROJECT_NAME) {
+              (async () => {
+                const recoveredState = await loadCryoVisionSeedState();
+                persistProject(SEED_PROJECT_NAME, recoveredState);
+                setCurrentProjectName(SEED_PROJECT_NAME);
+                applyProjectState(recoveredState);
+                lastSavedSnapshotRef.current = JSON.stringify(recoveredState);
+                setLoadProjectModalOpen(false);
+                setStorageError("");
+              })();
+              return;
+            }
             setStorageError("Projekt konnte nicht geladen werden.");
-            setProjectRecords((prev) =>
-              prev.map((entry) =>
-                entry.name === projectName ? { ...entry, loadable: false, error: "parse_error" } : entry
-              )
-            );
           }
         };
 
@@ -1437,23 +1473,38 @@
         }, [projectRecords, projectSearchTerm]);
 
         const restoreCryoVisionProject = async () => {
-          let seedState = null;
-          try {
-            const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
-            if (response.ok) {
-              const seedJson = await response.json();
-              seedState = parseStoredProject(seedJson);
-            }
-          } catch (error) {
-            seedState = null;
-          }
+          const seedState = await loadCryoVisionSeedState();
           const now = new Date().toISOString();
-          persistProject(SEED_PROJECT_NAME, seedState || buildSeedCryoVisionState(), {
+          persistProject(SEED_PROJECT_NAME, seedState, {
             createdAt: now,
             lastModified: now,
           });
           setStorageError("");
         };
+
+        const resetToNoProjectLoaded = useCallback(() => {
+          const emptyState = buildDefaultProjectState();
+          applyProjectState(emptyState);
+          setCurrentProjectName("");
+          localStorage.removeItem(CURRENT_PROJECT_KEY);
+          lastSavedSnapshotRef.current = "";
+        }, [applyProjectState]);
+
+        const deleteProjectByName = useCallback((projectName) => {
+          if (!projectName) return;
+          localStorage.removeItem(getProjectStorageKey(projectName));
+          setProjectRecords((prev) => {
+            const next = prev.filter((entry) => entry.name !== projectName);
+            localStorage.setItem(
+              PROJECTS_INDEX_KEY,
+              JSON.stringify(next.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
+            );
+            return next;
+          });
+          if (currentProjectName === projectName) {
+            resetToNoProjectLoaded();
+          }
+        }, [currentProjectName, resetToNoProjectLoaded]);
 
         const activeCompanyIndexes = useMemo(
           () => Array.from({ length: companyCount }, (_, index) => index),
@@ -2873,7 +2924,14 @@
         };
 
         return (
-          <div className="min-h-screen bg-slate-50 text-slate-900" onBlurCapture={saveNow}>
+          <div
+            className="min-h-screen bg-slate-50 text-slate-900"
+            onBlurCapture={() => {
+              if (currentProjectName && projectSnapshotString !== lastSavedSnapshotRef.current) {
+                saveNow(projectStateSnapshot, projectSnapshotString);
+              }
+            }}
+          >
             <header className="ca-topbar border-b border-black/10 shadow-subtle">
               <div className="mx-auto flex h-[96px] max-w-[1700px] items-center justify-between px-6">
                 <div className="flex items-center gap-4">
@@ -2910,7 +2968,14 @@
                   >
                     Projekt laden
                   </button>
-                  <div className="text-xs text-white/90">{saveState === "speichert..." ? "Speichern..." : "Gespeichert"}</div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteProjectConfirmName(currentProjectName)}
+                    disabled={!currentProjectName}
+                    className="rounded-md border border-rose-200/70 bg-rose-500/20 px-3 py-2 text-sm font-semibold text-white transition hover:bg-rose-500/30 disabled:cursor-not-allowed disabled:border-white/30 disabled:bg-white/10 disabled:text-white/50"
+                  >
+                    Projekt löschen
+                  </button>
                 </div>
               </div>
             </header>
@@ -4233,6 +4298,36 @@
               </div>
             ) : null}
 
+            {deleteProjectConfirmName ? (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Projekt löschen</h3>
+                  <p className="mt-2 text-sm text-slate-700">
+                    Möchtest du das Projekt wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.
+                  </p>
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteProjectConfirmName("")}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteProjectByName(deleteProjectConfirmName);
+                        setDeleteProjectConfirmName("");
+                      }}
+                      className="rounded-md border border-rose-700 bg-rose-700 px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      Löschen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {loadProjectModalOpen ? (
               <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4">
                 <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
@@ -4251,19 +4346,32 @@
                           <tr>
                             <th className="px-3 py-2">Projektname</th>
                             <th className="px-3 py-2">Zuletzt bearbeitet</th>
-                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Aktionen</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredProjectRecords.map((project) => (
-                            <tr
-                              key={project.name}
-                              className={`border-t border-slate-100 ${project.loadable === false ? "bg-rose-50" : "cursor-pointer hover:bg-slate-50"}`}
-                              onClick={() => project.loadable === false ? null : handleProjectLoad(project.name)}
-                            >
+                            <tr key={project.name} className="border-t border-slate-100">
                               <td className="px-3 py-2 font-medium text-slate-800">{project.name}</td>
                               <td className="px-3 py-2 text-slate-600">{formatDateTimeDe(project.lastModified)}</td>
-                              <td className="px-3 py-2 text-slate-600">{project.loadable === false ? "Nicht ladbar" : "Ladbar"}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleProjectLoad(project.name)}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700"
+                                  >
+                                    Laden
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteProjectConfirmName(project.name)}
+                                    className="rounded border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700"
+                                  >
+                                    Löschen
+                                  </button>
+                                </div>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
