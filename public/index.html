@@ -761,6 +761,7 @@
         partTimeFactor: 1,
         projectPercent: 100,
         name: "",
+        projectEntryDate: "",
         weeklyHours: 40,
         actualHours: 40,
         annualSalary: 0,
@@ -854,6 +855,91 @@
         if (!Number.isFinite(month) || !Number.isFinite(year)) return null;
         if (month < 1 || month > 12) return null;
         return { year, month: month - 1 };
+      };
+
+      const parseDisplayDateToDate = (value) => {
+        if (!value) return null;
+        const input = `${value}`.trim();
+        if (!input) return null;
+        const deDate = input.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (deDate) {
+          const day = Number.parseInt(deDate[1], 10);
+          const month = Number.parseInt(deDate[2], 10);
+          const year = Number.parseInt(deDate[3], 10);
+          const parsed = new Date(year, month - 1, day);
+          if (
+            parsed.getFullYear() === year
+            && parsed.getMonth() === month - 1
+            && parsed.getDate() === day
+          ) {
+            return parsed;
+          }
+          return null;
+        }
+        const iso = input.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (iso) {
+          const year = Number.parseInt(iso[1], 10);
+          const month = Number.parseInt(iso[2], 10);
+          const day = Number.parseInt(iso[3], 10);
+          const parsed = new Date(year, month - 1, day);
+          if (
+            parsed.getFullYear() === year
+            && parsed.getMonth() === month - 1
+            && parsed.getDate() === day
+          ) {
+            return parsed;
+          }
+          return null;
+        }
+        return null;
+      };
+
+      const formatDateToDisplayDe = (value) => {
+        const parsed = parseDisplayDateToDate(value);
+        if (!parsed) return "";
+        return `${String(parsed.getDate()).padStart(2, "0")}.${String(parsed.getMonth() + 1).padStart(2, "0")}.${parsed.getFullYear()}`;
+      };
+
+      const getMinimumValidEndDate = (startDate, assignedPM) => {
+        const base = startDate instanceof Date ? startDate : parseDate(startDate);
+        const requiredMonths = Math.max(1, Math.ceil(normalizePmValue(assignedPM)));
+        const endYear = base.getFullYear();
+        const endMonthIndex = base.getMonth() + requiredMonths;
+        return new Date(endYear, endMonthIndex, 0);
+      };
+
+      const getEmployeeAvailableFrom = (projectStart, employeeEntryDate) => {
+        const parsedProjectStart = projectStart instanceof Date ? projectStart : parseDate(projectStart);
+        const parsedEntry = parseDisplayDateToDate(employeeEntryDate);
+        if (!parsedEntry) return new Date(parsedProjectStart.getFullYear(), parsedProjectStart.getMonth(), 1);
+        const entryMonthStart = new Date(parsedEntry.getFullYear(), parsedEntry.getMonth(), 1);
+        const projectMonthStart = new Date(parsedProjectStart.getFullYear(), parsedProjectStart.getMonth(), 1);
+        return entryMonthStart > projectMonthStart ? entryMonthStart : projectMonthStart;
+      };
+
+      const getEmployeeAvailableMonthsInYear = (
+        projectStart,
+        projectEnd,
+        employeeEntryDate,
+        year
+      ) => {
+        const projectStartIndex = toAbsoluteMonthIndex(projectStart);
+        const projectEndIndex = toAbsoluteMonthIndex(projectEnd);
+        if (!Number.isFinite(projectStartIndex) || !Number.isFinite(projectEndIndex) || projectEndIndex < projectStartIndex) {
+          return 0;
+        }
+        const employeeAvailableFrom = getEmployeeAvailableFrom(
+          new Date(Math.floor(projectStartIndex / 12), projectStartIndex % 12, 1),
+          employeeEntryDate
+        );
+        const employeeStartIndex = employeeAvailableFrom.getFullYear() * 12 + employeeAvailableFrom.getMonth();
+        const effectiveStart = Math.max(projectStartIndex, employeeStartIndex);
+        const yearStart = year * 12;
+        const yearEnd = yearStart + 11;
+        const overlapStart = Math.max(effectiveStart, yearStart);
+        const overlapEnd = Math.min(projectEndIndex, yearEnd);
+        if (overlapEnd < overlapStart) return 0;
+        return overlapEnd - overlapStart + 1;
       };
 
       const getMonthSpan = (startValue, endValue) => {
@@ -1036,6 +1122,7 @@
                       weeklyHours: clampNumber(parseNumber(employee?.weeklyHours), 0, 999),
                       actualHours: clampNumber(parseNumber(employee?.actualHours), 0, 999),
                       annualSalary: clampNumber(parseNumber(employee?.annualSalary), 0, 999999999),
+                      projectEntryDate: formatDateToDisplayDe(employee?.projectEntryDate || ""),
                     }))
                   : fallback;
               })
@@ -1145,12 +1232,17 @@
         return overlapEnd - overlapStart + 1;
       };
 
-      const getEmployeeAllowedPMInYear = (employee, projectStart, projectEnd, year) => {
+      const getEmployeeAllowedPMInYear = (employee, projectRange, employeeEntryDate, year) => {
         if (!employee) return 0;
         const projectPercent = getEffectiveProjectPercent(employee.projectPercent);
         const allowedPMFullYear = YEAR_CAP_PM * (projectPercent / 100);
-        const projectMonthsInYear = getProjectMonthsInYear(projectStart, projectEnd, year);
-        return allowedPMFullYear * (projectMonthsInYear / 12);
+        const availableMonthsInYear = getEmployeeAvailableMonthsInYear(
+          projectRange?.start,
+          projectRange?.end,
+          employeeEntryDate || employee.projectEntryDate,
+          year
+        );
+        return allowedPMFullYear * (availableMonthsInYear / 12);
       };
 
       const getAssignedPMInYear = (companyId, employeeId, year, assignments) => {
@@ -1173,6 +1265,12 @@
       ) => {
         if (!workPackage || !employees?.[employeeId]) return false;
         if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return false;
+        const employeeAvailableFrom = getEmployeeAvailableFrom(
+          new Date(Math.floor(projectRange.start / 12), projectRange.start % 12, 1),
+          employees[employeeId]?.projectEntryDate
+        );
+        const employeeStartIndex = employeeAvailableFrom.getFullYear() * 12 + employeeAvailableFrom.getMonth();
+        if (start < employeeStartIndex) return false;
         const durationMonths = end - start + 1;
         if (durationMonths <= 0) return false;
         const pmPerMonth = workPackage.pmDemand / durationMonths;
@@ -1189,8 +1287,8 @@
             getAssignedPMInYear(companyId, employeeId, year, assignments) - alreadyReservedForRow;
           const allowedPMInYear = getEmployeeAllowedPMInYear(
             employees[employeeId],
-            projectRange.start,
-            projectRange.end,
+            projectRange,
+            employees[employeeId]?.projectEntryDate,
             year
           );
           return assignedPMSoFar + pmInYear <= allowedPMInYear + PM_EPSILON;
@@ -1249,6 +1347,8 @@
         const [focusedCurrencyField, setFocusedCurrencyField] = useState(null);
         const [pmInputDrafts, setPmInputDrafts] = useState({});
         const [pmInputHint, setPmInputHint] = useState({ key: "", message: "" });
+        const [assignmentWarningsByCompany, setAssignmentWarningsByCompany] = useState({});
+        const [invalidAssignmentRowsByCompany, setInvalidAssignmentRowsByCompany] = useState({});
         const [rowHeights, setRowHeights] = useState({});
         const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
         const [ganttViewportWidth, setGanttViewportWidth] = useState(0);
@@ -1972,35 +2072,98 @@
           updateEmployeeField(companyIndex, employeeIndex, field, clamped);
         };
 
-        const updateCompanyTableEntry = (companyIndex, rowId, field, value) => {
+        const getPmDemandForCompanyRow = (companyIndex, rowId) => {
+          const rowsForCompany = filteredWorkPackageRowsByCompany[companyIndex] || [];
+          const row = rowsForCompany.find((item) => item.id === rowId);
+          return normalizePmValue(row?.pmByCompany?.[companyIndex]);
+        };
+
+        const setCompanyInlineWarning = (companyIndex, message) => {
+          if (!message) return;
+          setAssignmentWarningsByCompany((prev) => ({
+            ...prev,
+            [companyIndex]: message,
+          }));
+          window.setTimeout(() => {
+            setAssignmentWarningsByCompany((prev) => {
+              if (prev[companyIndex] !== message) return prev;
+              const next = { ...prev };
+              delete next[companyIndex];
+              return next;
+            });
+          }, 4000);
+        };
+
+        const updateCompanyTableEntry = (companyIndex, rowId, field, value, options = {}) => {
+          const commitHistory = options.commitHistory !== false;
+          let beforeSnapshot = null;
+          let afterSnapshot = null;
+          let hasChanged = false;
+
           setCompanyData((prev) => {
             const next = [...prev];
-            const entry = { ...next[companyIndex] };
-            const tabellenEintraege = { ...entry.tabellenEintraege };
-            const rowEntry = { ...(tabellenEintraege[rowId] || {}) };
-            if ((rowEntry[field] || "") === (value || "")) return prev;
-            rowEntry[field] = value;
-            tabellenEintraege[rowId] = rowEntry;
-            entry.tabellenEintraege = tabellenEintraege;
-            next[companyIndex] = entry;
-            const snapshot = createCompanyHistorySnapshot(tabellenEintraege);
-            setCompanyHistoryByCompany((prevHistory) => {
-              const nextHistory = [...prevHistory];
-              const current = nextHistory[companyIndex] || createHistoryState({});
-              const trimmedHistory = current.history.slice(0, current.historyIndex + 1);
-              trimmedHistory.push(snapshot);
-              let history = trimmedHistory;
-              if (history.length > MAX_HISTORY_STEPS) {
-                history = history.slice(history.length - MAX_HISTORY_STEPS);
+            const companyEntry = { ...next[companyIndex] };
+            const tabellenEintraege = { ...companyEntry.tabellenEintraege };
+            const currentRowEntry = { ...(tabellenEintraege[rowId] || {}) };
+            const nextRowEntry = { ...currentRowEntry };
+            const pmDemand = getPmDemandForCompanyRow(companyIndex, rowId);
+
+            if (field === "start") {
+              nextRowEntry.start = value;
+              const startMonth = parseMonthYear(value);
+              if (startMonth) {
+                const startDateValue = new Date(startMonth.year, startMonth.month, 1);
+                const currentEndMonth = parseMonthYear(currentRowEntry.ende);
+                const minimumEndDate = getMinimumValidEndDate(startDateValue, pmDemand || 0);
+                const minimumEndIndex = minimumEndDate.getFullYear() * 12 + minimumEndDate.getMonth();
+                const currentEndIndex = currentEndMonth ? currentEndMonth.year * 12 + currentEndMonth.month : null;
+                const existingDurationMonths =
+                  currentEndIndex !== null
+                    ? currentEndIndex - (startMonth.year * 12 + startMonth.month) + 1
+                    : null;
+                if (existingDurationMonths && existingDurationMonths >= Math.max(1, Math.ceil(pmDemand || 0))) {
+                  const adjustedEnd = new Date(startDateValue.getFullYear(), startDateValue.getMonth() + existingDurationMonths, 0);
+                  nextRowEntry.ende = formatMonthYearFromAbsoluteIndex(
+                    adjustedEnd.getFullYear() * 12 + adjustedEnd.getMonth()
+                  );
+                } else {
+                  nextRowEntry.ende = formatMonthYearFromAbsoluteIndex(minimumEndIndex);
+                }
               }
-              nextHistory[companyIndex] = {
-                history,
-                historyIndex: history.length - 1,
-              };
-              return nextHistory;
-            });
+            } else if (field === "ende") {
+              nextRowEntry.ende = value;
+              const startMonth = parseMonthYear(currentRowEntry.start);
+              const endMonth = parseMonthYear(value);
+              if (startMonth && endMonth) {
+                const startDateValue = new Date(startMonth.year, startMonth.month, 1);
+                const minimumEndDate = getMinimumValidEndDate(startDateValue, pmDemand || 0);
+                const minimumEndIndex = minimumEndDate.getFullYear() * 12 + minimumEndDate.getMonth();
+                const enteredEndIndex = endMonth.year * 12 + endMonth.month;
+                if (enteredEndIndex < minimumEndIndex) {
+                  nextRowEntry.ende = formatMonthYearFromAbsoluteIndex(minimumEndIndex);
+                  setCompanyInlineWarning(
+                    companyIndex,
+                    "Der Zeitraum ist zu kurz für die zugeordneten Personenmonate. Das Enddatum wurde automatisch angepasst."
+                  );
+                }
+              }
+            } else {
+              nextRowEntry[field] = value;
+            }
+
+            if (JSON.stringify(currentRowEntry) === JSON.stringify(nextRowEntry)) return prev;
+            beforeSnapshot = createCompanyHistorySnapshot(tabellenEintraege);
+            tabellenEintraege[rowId] = nextRowEntry;
+            companyEntry.tabellenEintraege = tabellenEintraege;
+            next[companyIndex] = companyEntry;
+            afterSnapshot = createCompanyHistorySnapshot(tabellenEintraege);
+            hasChanged = true;
             return next;
           });
+
+          if (commitHistory && hasChanged && beforeSnapshot && afterSnapshot) {
+            commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
+          }
         };
 
         const getCompanyPmSnapshot = (companyIndex, sourceWorkPackages = workPackages) => {
@@ -2604,7 +2767,7 @@
         const COMPANY_COLUMN_PX = 130;
 
         const employeeGridTemplate =
-          "minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(220px, 1.6fr) minmax(170px, 1.1fr) minmax(170px, 1.1fr) minmax(190px, 1.2fr)";
+          "minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(220px, 1.4fr) minmax(160px, 1fr) minmax(170px, 1.1fr) minmax(170px, 1.1fr) minmax(190px, 1.2fr)";
 
         const ganttMonthWidth = 36;
         const monthGridStyle = useMemo(
@@ -2801,7 +2964,7 @@
         const getEmployeeYearCapacity = useCallback((companyId, employeeId, year) => {
           const employee = employeesByCompany?.[companyId]?.[employeeId];
           if (!employee) return 0;
-          return getEmployeeAllowedPMInYear(employee, projectRange.start, projectRange.end, year);
+          return getEmployeeAllowedPMInYear(employee, projectRange, employee.projectEntryDate, year);
         }, [employeesByCompany, projectRange]);
 
         const calcEmployeeYearPM = useCallback((companyId, employeeId, year) => {
@@ -2850,6 +3013,50 @@
           calcEmployeeYearPM,
           getEmployeeYearCapacity,
         ]);
+
+        useEffect(() => {
+          const projectStartValue = parseDate(startDate);
+          const nextInvalidRows = {};
+          activeCompanyIndexes.forEach((companyIndex) => {
+            const rows = filteredWorkPackageRowsByCompany[companyIndex] || [];
+            const invalidRowIds = new Set();
+            rows.forEach((row) => {
+              const entry = companyData[companyIndex]?.tabellenEintraege?.[row.id] || {};
+              const employeeNumber = parseInt(entry.mitarbeiterNummer, 10);
+              if (!employeeNumber || employeeNumber < 1) return;
+              const employee = employeesByCompany?.[companyIndex]?.[employeeNumber - 1];
+              if (!employee) return;
+              const availableFrom = getEmployeeAvailableFrom(projectStartValue, employee.projectEntryDate);
+              const startMonth = parseMonthYear(entry.start);
+              if (!startMonth) return;
+              const assignmentStart = new Date(startMonth.year, startMonth.month, 1);
+              if (assignmentStart < availableFrom) {
+                invalidRowIds.add(row.id);
+              }
+            });
+            nextInvalidRows[companyIndex] = [...invalidRowIds];
+          });
+          setInvalidAssignmentRowsByCompany(nextInvalidRows);
+
+          activeCompanyIndexes.forEach((companyIndex) => {
+            const hasInvalid = (nextInvalidRows[companyIndex] || []).length > 0;
+            if (hasInvalid) {
+              console.warn(`[Availability warning] Unternehmen ${companyIndex + 1}: Zuordnung vor Projekteintritt erkannt.`);
+            }
+          });
+
+          const headerPmViolations = [];
+          workPackages.forEach((wp, wpIndex) => {
+            activeCompanyIndexes.forEach((companyIndex) => {
+              if (normalizePmValue(wp.pm?.[companyIndex]) > 0) {
+                headerPmViolations.push(`${wpIndex + 1} / Unternehmen ${companyIndex + 1}`);
+              }
+            });
+          });
+          if (headerPmViolations.length) {
+            console.warn(`[Validation warning] PM auf Überschriften-Arbeitspaketen erkannt: ${headerPmViolations.join(", ")}`);
+          }
+        }, [activeCompanyIndexes, companyData, employeesByCompany, filteredWorkPackageRowsByCompany, startDate, workPackages]);
 
         const fundingResultsByCompany = useMemo(() => {
           return activeCompanyIndexes.reduce((acc, companyIndex) => {
@@ -3882,6 +4089,7 @@
                                 <div className="px-4 py-3">Teilzeitfaktor</div>
                                 <div className="px-4 py-3">Projekteinsatz %</div>
                                 <div className="px-4 py-3">Name</div>
+                                <div className="px-4 py-3">Projekteintritt ab</div>
                                 <div className="px-4 py-3">Typische Wochenstunden</div>
                                 <div className="px-4 py-3">
                                   Tatsächliche Wochenstunden
@@ -3953,6 +4161,21 @@
                                       }
                                       placeholder={`Mitarbeiter ${index + 1}`}
                                       className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                                    />
+                                  </div>
+                                  <div className="px-4">
+                                    <input
+                                      type="date"
+                                      value={parseDisplayDateToDate(employee.projectEntryDate) ? toIsoDate(parseDisplayDateToDate(employee.projectEntryDate)) : ""}
+                                      onChange={(event) =>
+                                        updateEmployeeField(
+                                          companyIndex,
+                                          index,
+                                          "projectEntryDate",
+                                          formatDateToDisplayDe(event.target.value)
+                                        )
+                                      }
+                                      className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                                     />
                                   </div>
                                   <div className="px-4">
@@ -4029,6 +4252,11 @@
                             <p className="mt-1 text-sm text-slate-600">
                               Zeigt nur Arbeitspakete mit PM &gt; 0 aus der Projektplanung.
                             </p>
+                            {assignmentWarningsByCompany[companyIndex] ? (
+                              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                                {assignmentWarningsByCompany[companyIndex]}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="max-h-[320px] overflow-auto">
                             <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -4055,7 +4283,8 @@
                                 const isNotPlannable = Boolean(entry.notPlannable);
                                 const isEmployeeOverloaded =
                                   employeeIndex !== null && overloadedEmployeeIndexes.has(employeeIndex);
-                                const isCapacityIssue = isNotPlannable || isEmployeeOverloaded;
+                                const isAvailabilityIssue = (invalidAssignmentRowsByCompany[companyIndex] || []).includes(row.id);
+                                const isCapacityIssue = isNotPlannable || isEmployeeOverloaded || isAvailabilityIssue;
                                 const costPerPM =
                                   employeeIndex !== null
                                     ? companyCosts[employeeIndex]?.costPerPM || 0
@@ -4099,9 +4328,28 @@
                                             companyIndex,
                                             row.id,
                                             "start",
+                                            event.target.value,
+                                            { commitHistory: false }
+                                          )
+                                        }
+                                        onBlur={(event) =>
+                                          updateCompanyTableEntry(
+                                            companyIndex,
+                                            row.id,
+                                            "start",
                                             event.target.value
                                           )
                                         }
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            updateCompanyTableEntry(
+                                              companyIndex,
+                                              row.id,
+                                              "start",
+                                              event.currentTarget.value
+                                            );
+                                          }
+                                        }}
                                         disabled={isPlaceholder}
                                         placeholder="MM.YYYY"
                                         className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -4116,9 +4364,28 @@
                                             companyIndex,
                                             row.id,
                                             "ende",
+                                            event.target.value,
+                                            { commitHistory: false }
+                                          )
+                                        }
+                                        onBlur={(event) =>
+                                          updateCompanyTableEntry(
+                                            companyIndex,
+                                            row.id,
+                                            "ende",
                                             event.target.value
                                           )
                                         }
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            updateCompanyTableEntry(
+                                              companyIndex,
+                                              row.id,
+                                              "ende",
+                                              event.currentTarget.value
+                                            );
+                                          }
+                                        }}
                                         disabled={isPlaceholder}
                                         placeholder="MM.YYYY"
                                         className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -4131,14 +4398,26 @@
                                         max={companyEmployees.length || 1}
                                         step="1"
                                         value={isPlaceholder ? "" : entry.mitarbeiterNummer || ""}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
                                           updateCompanyTableEntry(
                                             companyIndex,
                                             row.id,
                                             "mitarbeiterNummer",
                                             event.target.value
-                                          )
-                                        }
+                                          );
+                                          const nextEmployee = companyEmployees[parseInt(event.target.value, 10) - 1];
+                                          const parsedStartMonth = parseMonthYear(entry.start);
+                                          if (nextEmployee && parsedStartMonth) {
+                                            const availableFrom = getEmployeeAvailableFrom(parseDate(startDate), nextEmployee.projectEntryDate);
+                                            const rowStart = new Date(parsedStartMonth.year, parsedStartMonth.month, 1);
+                                            if (rowStart < availableFrom) {
+                                              setCompanyInlineWarning(
+                                                companyIndex,
+                                                "Dieser Mitarbeitende ist vor dem angegebenen Projekteintritt nicht verfügbar."
+                                              );
+                                            }
+                                          }
+                                        }}
                                         disabled={isPlaceholder}
                                         placeholder="MA-Nr."
                                         className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
