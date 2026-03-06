@@ -1123,6 +1123,80 @@
         return monthsByYear;
       };
 
+      const toAbsoluteMonthIndex = (value) => {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          return Math.floor(value);
+        }
+        if (value instanceof Date) {
+          return value.getFullYear() * 12 + value.getMonth();
+        }
+        return null;
+      };
+
+      const getProjectMonthsInYear = (projectStart, projectEnd, year) => {
+        const startIndex = toAbsoluteMonthIndex(projectStart);
+        const endIndex = toAbsoluteMonthIndex(projectEnd);
+        if (!Number.isFinite(startIndex) || !Number.isFinite(endIndex) || endIndex < startIndex) return 0;
+        const yearStart = year * 12;
+        const yearEnd = yearStart + 11;
+        const overlapStart = Math.max(startIndex, yearStart);
+        const overlapEnd = Math.min(endIndex, yearEnd);
+        if (overlapEnd < overlapStart) return 0;
+        return overlapEnd - overlapStart + 1;
+      };
+
+      const getEmployeeAllowedPMInYear = (employee, projectStart, projectEnd, year) => {
+        if (!employee) return 0;
+        const projectPercent = getEffectiveProjectPercent(employee.projectPercent);
+        const allowedPMFullYear = YEAR_CAP_PM * (projectPercent / 100);
+        const projectMonthsInYear = getProjectMonthsInYear(projectStart, projectEnd, year);
+        return allowedPMFullYear * (projectMonthsInYear / 12);
+      };
+
+      const getAssignedPMInYear = (companyId, employeeId, year, assignments) => {
+        if (!assignments || !Number.isFinite(employeeId)) return 0;
+        return Object.values(assignments).reduce((sum, assignment) => {
+          if (!assignment || assignment.employeeIndex !== employeeId) return sum;
+          return sum + (assignment.pmByYear?.[year] || 0);
+        }, 0);
+      };
+
+      const canAssignWorkPackageToEmployee = (
+        companyId,
+        employeeId,
+        workPackage,
+        start,
+        end,
+        assignments,
+        employees,
+        projectRange
+      ) => {
+        if (!workPackage || !employees?.[employeeId]) return false;
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return false;
+        const durationMonths = end - start + 1;
+        if (durationMonths <= 0) return false;
+        const pmPerMonth = workPackage.pmDemand / durationMonths;
+        const monthsByYear = getMonthsByYearFromRange(start, end);
+        return Object.entries(monthsByYear).every(([yearKey, months]) => {
+          const year = Number.parseInt(yearKey, 10);
+          const pmInYear = pmPerMonth * months;
+          const existingRowAssignment = assignments?.[workPackage.id];
+          const alreadyReservedForRow =
+            existingRowAssignment && existingRowAssignment.employeeIndex === employeeId
+              ? existingRowAssignment.pmByYear?.[year] || 0
+              : 0;
+          const assignedPMSoFar =
+            getAssignedPMInYear(companyId, employeeId, year, assignments) - alreadyReservedForRow;
+          const allowedPMInYear = getEmployeeAllowedPMInYear(
+            employees[employeeId],
+            projectRange.start,
+            projectRange.end,
+            year
+          );
+          return assignedPMSoFar + pmInYear <= allowedPMInYear + PM_EPSILON;
+        });
+      };
+
       const areTableEntriesEqual = (current, next) => {
         const currentKeys = Object.keys(current || {});
         const nextKeys = Object.keys(next || {});
@@ -2103,7 +2177,11 @@
                         ((lastRowStart - projectStartIndex) * index) / (rowCount - 1)
                     );
 
-              let start = clampNumber(Math.max(baseStart, previousStart), projectStartIndex, latestStart);
+              let start = clampNumber(
+                Math.max(baseStart, previousStart),
+                projectStartIndex,
+                latestStart
+              );
               if (index === 0) {
                 start = projectStartIndex;
               }
@@ -2139,36 +2217,10 @@
               ? maximalbetrag / (1 + zuschlagInput / 100)
               : Number.POSITIVE_INFINITY;
 
-          const buildYearlyUsage = () =>
-            employeeOrder.reduce((acc, employee) => {
-              acc[employee.employeeIndex] = {};
-              return acc;
-            }, {});
-          const yearlyUsage = buildYearlyUsage();
-          const rowPlanningData = {};
-
-          const isWithinCapacity = (employeeIndex, pmByYear, usageSnapshot = yearlyUsage) => {
-            return Object.entries(pmByYear).every(([year, pmValue]) => {
-              const numericYear = Number.parseInt(year, 10);
-              const alreadyUsed = usageSnapshot[employeeIndex]?.[numericYear] || 0;
-              const allowedPM = getEmployeeYearCapacity(companyIndex, employeeIndex, numericYear);
-              return alreadyUsed + pmValue <= allowedPM + PM_EPSILON;
-            });
-          };
-
-          const applyUsage = (
-            employeeIndex,
-            pmByYear,
-            multiplier = 1,
-            usageSnapshot = yearlyUsage
-          ) => {
-            Object.entries(pmByYear).forEach(([year, pmValue]) => {
-              usageSnapshot[employeeIndex][year] =
-                (usageSnapshot[employeeIndex][year] || 0) + pmValue * multiplier;
-            });
-          };
-
+          const projectRange = { start: projectStartIndex, end: projectEndIndex };
           const assignments = {};
+          const rowPlanningData = {};
+          const unplannableRowIds = [];
           let plannedPersonnelCosts = 0;
 
           const getStartEndMonthIndex = (assignment) => {
@@ -2184,25 +2236,22 @@
           rowsWithPm.forEach(({ row, pmDemand }) => {
             const dateAssignment = plannedByRowId[row.id] || {};
             const existingRowEntry = existingEntries[row.id] || {};
-
-            if (!shouldOptimizeEmployees) {
-              assignments[row.id] = {
-                ...dateAssignment,
-                mitarbeiterNummer: existingRowEntry.mitarbeiterNummer || "",
-              };
-              return;
-            }
-
             assignments[row.id] = {
               ...dateAssignment,
-              mitarbeiterNummer: "",
+              mitarbeiterNummer: shouldOptimizeEmployees
+                ? ""
+                : existingRowEntry.mitarbeiterNummer || "",
             };
 
             const span = getStartEndMonthIndex(dateAssignment);
-            if (!span) return;
+            if (!span) {
+              unplannableRowIds.push(row.id);
+              return;
+            }
+
+            const durationMonths = Math.max(1, span.end - span.start + 1);
+            const pmPerMonth = pmDemand / durationMonths;
             const monthsByYear = getMonthsByYearFromRange(span.start, span.end);
-            const totalMonths = Math.max(1, span.end - span.start + 1);
-            const pmPerMonth = pmDemand / totalMonths;
             const pmByYear = Object.entries(monthsByYear).reduce((acc, [year, months]) => {
               acc[year] = pmPerMonth * months;
               return acc;
@@ -2211,21 +2260,39 @@
             rowPlanningData[row.id] = {
               pmDemand,
               pmByYear,
+              start: span.start,
+              end: span.end,
             };
 
-            const candidates = [...employeeOrder]
-              .filter((employee) => isWithinCapacity(employee.employeeIndex, pmByYear))
-              .sort((a, b) => a.annualSalary - b.annualSalary || a.employeeIndex - b.employeeIndex);
-            if (!candidates.length) return;
+            if (!shouldOptimizeEmployees) return;
 
-            const selectedEmployee = candidates[0];
-            applyUsage(selectedEmployee.employeeIndex, pmByYear);
-            plannedPersonnelCosts += pmDemand * (selectedEmployee.annualSalary / 12);
+            const selectedCandidate = [...employeeOrder]
+              .sort((a, b) => a.annualSalary - b.annualSalary || a.employeeIndex - b.employeeIndex)
+              .find((candidate) =>
+                canAssignWorkPackageToEmployee(
+                  companyIndex,
+                  candidate.employeeIndex,
+                  { id: row.id, pmDemand },
+                  span.start,
+                  span.end,
+                  assignments,
+                  companyEmployees,
+                  projectRange
+                )
+              );
+
+            if (!selectedCandidate) {
+              unplannableRowIds.push(row.id);
+              return;
+            }
 
             assignments[row.id] = {
-              ...dateAssignment,
-              mitarbeiterNummer: `${selectedEmployee.employeeIndex + 1}`,
+              ...assignments[row.id],
+              mitarbeiterNummer: `${selectedCandidate.employeeIndex + 1}`,
             };
+            assignments[row.id].employeeIndex = selectedCandidate.employeeIndex;
+            assignments[row.id].pmByYear = pmByYear;
+            plannedPersonnelCosts += pmDemand * (selectedCandidate.annualSalary / 12);
           });
 
           if (shouldOptimizeEmployees) {
@@ -2247,9 +2314,25 @@
                 employeeOrder
                   .filter((candidate) => candidate.annualSalary > currentEmployee.annualSalary)
                   .forEach((candidate) => {
-                    applyUsage(currentEmployeeIndex, rowData.pmByYear, -1);
-                    const canUseCandidate = isWithinCapacity(candidate.employeeIndex, rowData.pmByYear);
-                    applyUsage(currentEmployeeIndex, rowData.pmByYear, 1);
+                    const candidateAssignments = Object.fromEntries(
+                      Object.entries(assignments).map(([id, value]) => [id, { ...value }])
+                    );
+                    candidateAssignments[rowId] = {
+                      ...candidateAssignments[rowId],
+                      mitarbeiterNummer: `${candidate.employeeIndex + 1}`,
+                      employeeIndex: candidate.employeeIndex,
+                      pmByYear: rowData.pmByYear,
+                    };
+                    const canUseCandidate = canAssignWorkPackageToEmployee(
+                      companyIndex,
+                      candidate.employeeIndex,
+                      { id: rowId, pmDemand: rowData.pmDemand },
+                      rowData.start,
+                      rowData.end,
+                      candidateAssignments,
+                      companyEmployees,
+                      projectRange
+                    );
                     if (!canUseCandidate) return;
 
                     const oldCost = rowData.pmDemand * (currentEmployee.annualSalary / 12);
@@ -2302,11 +2385,12 @@
 
               if (bestUpgrade) {
                 const rowData = rowPlanningData[bestUpgrade.rowId];
-                applyUsage(bestUpgrade.currentEmployeeIndex, rowData.pmByYear, -1);
-                applyUsage(bestUpgrade.targetEmployeeIndex, rowData.pmByYear, 1);
-                assignments[bestUpgrade.rowId].mitarbeiterNummer = `${
-                  bestUpgrade.targetEmployeeIndex + 1
-                }`;
+                assignments[bestUpgrade.rowId] = {
+                  ...assignments[bestUpgrade.rowId],
+                  mitarbeiterNummer: `${bestUpgrade.targetEmployeeIndex + 1}`,
+                  employeeIndex: bestUpgrade.targetEmployeeIndex,
+                  pmByYear: rowData.pmByYear,
+                };
                 plannedPersonnelCosts = bestUpgrade.nextCost;
                 improved = true;
               }
@@ -2315,9 +2399,12 @@
 
           const nextEntries = cloneTableEntries(existingEntries);
           Object.entries(assignments).forEach(([rowId, assignment]) => {
+            const { employeeIndex, pmByYear, ...entryFields } = assignment;
+            const hasEmployee = parseInt(entryFields.mitarbeiterNummer, 10) > 0;
             nextEntries[rowId] = {
               ...(nextEntries[rowId] || {}),
-              ...assignment,
+              ...entryFields,
+              notPlannable: !hasEmployee,
             };
           });
 
@@ -2333,6 +2420,12 @@
             JSON.stringify(getCompanyPmSnapshot(companyIndex, workPackages)) !==
             JSON.stringify(getCompanyPmSnapshot(companyIndex, optimizedWorkPackages));
           if (!hasEntriesChanged && !hasPmChanged) return;
+
+          if (unplannableRowIds.length) {
+            console.warn(
+              `[Auto Planung] Unternehmen ${companyIndex + 1}: ${unplannableRowIds.length} Arbeitspaket(e) nicht planbar ohne Überkapazität.`
+            );
+          }
 
           const afterSnapshot = createCompanyHistorySnapshot(
             nextEntries,
@@ -2695,22 +2788,21 @@
           companyData,
         ]);
 
-        const projectMonthsByYear = useMemo(() => {
+        const projectRange = useMemo(() => {
           const projectStart = parseDate(startDate);
           const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
           const projectEndIndex = projectStartIndex + durationMonths - 1;
-          if (projectEndIndex < projectStartIndex) return {};
-          return getMonthsByYearFromRange(projectStartIndex, projectEndIndex);
+          return {
+            start: projectStartIndex,
+            end: projectEndIndex,
+          };
         }, [startDate, durationMonths]);
 
         const getEmployeeYearCapacity = useCallback((companyId, employeeId, year) => {
           const employee = employeesByCompany?.[companyId]?.[employeeId];
           if (!employee) return 0;
-          const projectPercent = getEffectiveProjectPercent(employee.projectPercent);
-          const annualCapacity = YEAR_CAP_PM * (projectPercent / 100);
-          const projectMonthsInYear = projectMonthsByYear?.[year] || 0;
-          return annualCapacity * (projectMonthsInYear / 12);
-        }, [employeesByCompany, projectMonthsByYear]);
+          return getEmployeeAllowedPMInYear(employee, projectRange.start, projectRange.end, year);
+        }, [employeesByCompany, projectRange]);
 
         const calcEmployeeYearPM = useCallback((companyId, employeeId, year) => {
           const used = employeePmByCompany?.[companyId]?.byYear?.[employeeId]?.[year];
@@ -3588,6 +3680,9 @@
                   const companyCapacityWarnings = employeeCapacityAudit.filter(
                     (warning) => warning.companyIndex === companyIndex
                   );
+                  const overloadedEmployeeIndexes = new Set(
+                    companyCapacityWarnings.map((warning) => warning.employeeIndex)
+                  );
                   return (
                     <section
                       key={`company-planning-${companyIndex}`}
@@ -3609,6 +3704,7 @@
                             ⚠️ {companyCapacityWarnings.length} Kapazitätsüberschreitung(en) erkannt
                           </div>
                         ) : null}
+                        <p className="mt-2 text-xs text-slate-500">Auto-Projektplanung berücksichtigt Kapazitätsgrenzen (10,5 PM/Jahr, Projekteinsatz, Projektmonate im Jahr).</p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <button
                             type="button"
@@ -3936,12 +4032,13 @@
                           </div>
                           <div className="max-h-[320px] overflow-auto">
                             <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-                              <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(140px,0.7fr)_minmax(140px,0.7fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
+                              <div className="grid grid-cols-[110px_minmax(240px,1.6fr)_120px_minmax(140px,0.7fr)_minmax(140px,0.7fr)_130px_minmax(150px,0.9fr)] text-xs font-semibold uppercase text-slate-500">
                                 <div className="px-4 py-3">WP-Nr.</div>
                                 <div className="px-4 py-3">Arbeitspaket</div>
-                                <div className="px-4 py-3">Start</div>
-                                <div className="px-4 py-3">Ende</div>
-                                <div className="px-4 py-3">MA-Nr.</div>
+                                <div className="px-4 py-3 text-right">Zugeordnete PM</div>
+                                <div className="px-4 py-3">Startdatum</div>
+                                <div className="px-4 py-3">Enddatum</div>
+                                <div className="px-4 py-3">Mitarbeiternummer</div>
                                 <div className="px-4 py-3 text-right">Kosten</div>
                               </div>
                             </div>
@@ -3955,6 +4052,10 @@
                                 const pmDemand = isPlaceholder
                                   ? 0
                                   : row.pmByCompany?.[companyIndex] || 0;
+                                const isNotPlannable = Boolean(entry.notPlannable);
+                                const isEmployeeOverloaded =
+                                  employeeIndex !== null && overloadedEmployeeIndexes.has(employeeIndex);
+                                const isCapacityIssue = isNotPlannable || isEmployeeOverloaded;
                                 const costPerPM =
                                   employeeIndex !== null
                                     ? companyCosts[employeeIndex]?.costPerPM || 0
@@ -3966,8 +4067,12 @@
                                 return (
                                   <div
                                     key={`company-${companyIndex}-row-${row.id}`}
-                                    className={`grid grid-cols-[110px_minmax(240px,1.6fr)_minmax(140px,0.7fr)_minmax(140px,0.7fr)_130px_minmax(150px,0.9fr)] items-center ${
-                                      index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                                    className={`grid grid-cols-[110px_minmax(240px,1.6fr)_120px_minmax(140px,0.7fr)_minmax(140px,0.7fr)_130px_minmax(150px,0.9fr)] items-center ${
+                                      isCapacityIssue
+                                        ? "bg-rose-50"
+                                        : index % 2 === 0
+                                          ? "bg-white"
+                                          : "bg-slate-50/60"
                                     }`}
                                   >
                                     <div className="px-4 py-2 text-sm font-semibold text-slate-700">
@@ -3981,6 +4086,9 @@
                                         placeholder="Arbeitspaket-Titel"
                                         className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
                                       />
+                                    </div>
+                                    <div className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                                      {isPlaceholder ? "" : formatNumberDe(pmDemand, 2)}
                                     </div>
                                     <div className="px-4 py-2">
                                       <input
