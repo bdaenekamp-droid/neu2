@@ -117,9 +117,12 @@
 
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-        <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="text/babel" data-presets="typescript,react">
       const { useMemo, useState, useEffect, useRef, useCallback } = React;
+      const { jsPDF } = window.jspdf || {};
 
       const MAX_WP = 20;
       const MAX_SUB = 20;
@@ -900,6 +903,36 @@
         return `${String(parsed.getDate()).padStart(2, "0")}.${String(parsed.getMonth() + 1).padStart(2, "0")}.${parsed.getFullYear()}`;
       };
 
+      const sanitizeFileSegment = (value, fallback = "Export") => {
+        const normalized = `${value || ""}`
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/\s+/g, "_")
+          .replace(/[^a-zA-Z0-9_-]/g, "")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "");
+        return normalized || fallback;
+      };
+
+      const escapeCsvCell = (value) => {
+        const input = `${value ?? ""}`;
+        if (/[";\n\r]/.test(input)) {
+          return `"${input.replace(/"/g, '""')}"`;
+        }
+        return input;
+      };
+
+      const downloadBlob = (blob, filename) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      };
+
       const getMinimumValidEndDate = (startDate, assignedPM) => {
         const base = startDate instanceof Date ? startDate : parseDate(startDate);
         const requiredMonths = Math.max(1, Math.ceil(normalizePmValue(assignedPM)));
@@ -1364,6 +1397,7 @@
         const [storageError, setStorageError] = useState("");
         const [deleteProjectConfirmName, setDeleteProjectConfirmName] = useState("");
         const [fullscreenCompanyIndex, setFullscreenCompanyIndex] = useState(null);
+        const [exportWarning, setExportWarning] = useState("");
         const [zimPdfModalState, setZimPdfModalState] = useState({
           open: false,
           companyIndex: null,
@@ -1400,6 +1434,14 @@
           }, 1800);
           return () => window.clearTimeout(timeout);
         }, [pmInputHint]);
+
+        useEffect(() => {
+          if (!exportWarning) return undefined;
+          const timeout = window.setTimeout(() => {
+            setExportWarning("");
+          }, 2500);
+          return () => window.clearTimeout(timeout);
+        }, [exportWarning]);
 
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
@@ -3171,11 +3213,10 @@
             maximumFractionDigits: 1,
           }).format(value || 0);
 
-        const fullscreenCompanyData = useMemo(() => {
-          if (fullscreenCompanyIndex === null || fullscreenCompanyIndex === undefined) return null;
-          const companyIndex = fullscreenCompanyIndex;
-          const companyName = companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
-          const companyEmployees = employeesByCompany[companyIndex] || [];
+        const buildCompanyPlanningExportData = useCallback((projectState, companyIndex) => {
+          if (companyIndex === null || companyIndex === undefined) return null;
+          const companyName = projectState.companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
+          const companyEmployees = projectState.employeesByCompany[companyIndex] || [];
           const getSortIndex = (value) => {
             const input = `${value || ""}`.trim();
             const parsedMonth = parseMonthYear(input);
@@ -3195,10 +3236,10 @@
             return Number.MAX_SAFE_INTEGER;
           };
 
-          const companyRows = (filteredWorkPackageRowsByCompany[companyIndex] || [])
+          const workPackageRows = (projectState.filteredWorkPackageRowsByCompany[companyIndex] || [])
             .filter((row) => normalizePmValue(row.pmByCompany?.[companyIndex]) > 0)
             .map((row) => {
-              const entry = companyData[companyIndex]?.tabellenEintraege?.[row.id] || {};
+              const entry = projectState.companyData[companyIndex]?.tabellenEintraege?.[row.id] || {};
               return {
                 id: row.id,
                 number: row.number,
@@ -3210,14 +3251,14 @@
                 sortIndex: getSortIndex(entry.start),
               };
             })
-            .sort((a, b) => a.sortIndex - b.sortIndex)
+            .sort((a, b) => (a.sortIndex - b.sortIndex) || `${a.number}`.localeCompare(`${b.number}`, "de"))
             .map(({ sortIndex, ...row }) => row);
 
-          const totalPm = companyRows.reduce((sum, row) => sum + (row.pm > 0 ? row.pm : 0), 0);
-          const pmByYear = employeePmByCompany[companyIndex]?.byYear || [];
-          const fundingTotals = fundingResultsByCompany[companyIndex] || {};
+          const totalPm = workPackageRows.reduce((sum, row) => sum + (row.pm > 0 ? row.pm : 0), 0);
+          const pmByYear = projectState.employeePmByCompany[companyIndex]?.byYear || [];
+          const fundingTotals = projectState.fundingResultsByCompany[companyIndex] || {};
           const annualFunding = fundingTotals.annualFunding || {};
-          const yearlyFundingRows = projectYears.map((year) => ({
+          const yearlyFundingRows = projectState.projectYears.map((year) => ({
             year,
             foerderung: annualFunding[year] || 0,
           }));
@@ -3228,32 +3269,60 @@
             yearlyFundingRows[yearlyFundingRows.length - 1].foerderung += diff;
           }
 
+          const employeeYearRows = companyEmployees.flatMap((employee, employeeIndex) => {
+            const annualSalary = parseNumber(employee.annualSalary);
+            return projectState.projectYears.map((year) => {
+              const pm = pmByYear[employeeIndex]?.[year] || 0;
+              return {
+                employeeNumber: employee.number || employeeIndex + 1,
+                name: employee.name || `Mitarbeiter ${employeeIndex + 1}`,
+                year,
+                pm,
+                cost: pm * (annualSalary / 12),
+              };
+            });
+          });
+
           return {
             companyIndex,
+            projectName: projectState.currentProjectName || "Projekt",
             companyName,
+            generatedAt: new Date(),
             color: getCompanyColorHex(companyIndex),
-            workPackageRows: companyRows,
-            totalPm,
-            employees: companyEmployees.map((employee, employeeIndex) => {
-              const annualSalary = parseNumber(employee.annualSalary);
-              return {
-                number: employee.number || employeeIndex + 1,
-                name: employee.name || `Mitarbeiter ${employeeIndex + 1}`,
-                years: projectYears.reduce((acc, year) => {
-                  const pm = pmByYear[employeeIndex]?.[year] || 0;
-                  acc[year] = { pm, cost: pm * (annualSalary / 12) };
-                  return acc;
-                }, {}),
-              };
-            }),
-            projectYears,
+            workPackages: workPackageRows,
+            totalPM: totalPm,
+            employees: companyEmployees.map((employee, employeeIndex) => ({
+              number: employee.number || employeeIndex + 1,
+              name: employee.name || `Mitarbeiter ${employeeIndex + 1}`,
+              years: projectState.projectYears.reduce((acc, year) => {
+                const pm = pmByYear[employeeIndex]?.[year] || 0;
+                const annualSalary = parseNumber(employee.annualSalary);
+                acc[year] = { pm, cost: pm * (annualSalary / 12) };
+                return acc;
+              }, {}),
+            })),
+            projectYears: projectState.projectYears,
+            employeeYearRows,
             yearlyFundingRows,
-            totals: {
-              foerderung: fundingTotals.foerdersumme || 0,
-            },
+            totalFunding: fundingTotals.foerdersumme || 0,
           };
+        }, []);
+
+        const fullscreenCompanyData = useMemo(() => {
+          return buildCompanyPlanningExportData({
+            currentProjectName,
+            companyNames,
+            employeesByCompany,
+            filteredWorkPackageRowsByCompany,
+            companyData,
+            employeePmByCompany,
+            projectYears,
+            fundingResultsByCompany,
+          }, fullscreenCompanyIndex);
         }, [
+          buildCompanyPlanningExportData,
           fullscreenCompanyIndex,
+          currentProjectName,
           companyNames,
           employeesByCompany,
           filteredWorkPackageRowsByCompany,
@@ -3262,6 +3331,131 @@
           projectYears,
           fundingResultsByCompany,
         ]);
+
+        const hasExportableData = !!fullscreenCompanyData && (
+          fullscreenCompanyData.workPackages.length
+          || fullscreenCompanyData.employeeYearRows.some((row) => row.pm > 0 || row.cost > 0)
+          || fullscreenCompanyData.yearlyFundingRows.some((row) => row.foerderung > 0)
+        );
+
+        const buildPlanningExportFilename = (data, extension) => {
+          const projectName = sanitizeFileSegment(data.projectName, "Projekt");
+          const companyName = sanitizeFileSegment(data.companyName, "Unternehmen");
+          return `${projectName}_${companyName}_Projektplanung.${extension}`;
+        };
+
+        const exportCompanyPlanningCsv = () => {
+          if (!fullscreenCompanyData || !hasExportableData) {
+            setExportWarning("Für dieses Unternehmen sind aktuell keine exportierbaren Daten vorhanden.");
+            return;
+          }
+
+          const rows = [];
+          rows.push(["Projekt", fullscreenCompanyData.projectName]);
+          rows.push(["Unternehmen", fullscreenCompanyData.companyName]);
+          rows.push(["Erstellt am", formatDateTimeDe(fullscreenCompanyData.generatedAt)]);
+          rows.push([]);
+
+          rows.push(["ABSCHNITT 1 — Arbeitspakete"]);
+          rows.push(["Arbeitspaketnummer", "Bezeichnung des Arbeitspakets", "Startdatum", "Enddatum", "Mitarbeitendennummer", "Personenmonate"]);
+          fullscreenCompanyData.workPackages.forEach((row) => {
+            rows.push([row.number, row.title, row.start, row.end, row.employeeNumber, formatNumberDe(row.pm, 2)]);
+          });
+          rows.push([]);
+
+          rows.push(["ABSCHNITT 2 — Mitarbeiterauswertung"]);
+          rows.push(["Mitarbeitenden-Nr.", "Name", "Jahr", "Personenmonate", "Kosten"]);
+          fullscreenCompanyData.employeeYearRows.forEach((row) => {
+            rows.push([row.employeeNumber, row.name, row.year, formatNumberDe(row.pm, 2), formatCurrency(row.cost)]);
+          });
+          rows.push([]);
+
+          rows.push(["ABSCHNITT 3 — Beantragter Zuschuss pro Jahr"]);
+          rows.push(["Jahr", "Beantragter Zuschuss"]);
+          fullscreenCompanyData.yearlyFundingRows.forEach((row) => {
+            rows.push([row.year, formatCurrency(row.foerderung)]);
+          });
+          rows.push([]);
+
+          rows.push(["ABSCHNITT 4 — Summen"]);
+          rows.push(["Summe Personenmonate", formatNumberDe(fullscreenCompanyData.totalPM, 2)]);
+          rows.push(["Summe beantragter Zuschuss", formatCurrency(fullscreenCompanyData.totalFunding)]);
+
+          const csv = rows
+            .map((row) => row.map((cell) => escapeCsvCell(cell)).join(";"))
+            .join("\n");
+          downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), buildPlanningExportFilename(fullscreenCompanyData, "csv"));
+          setExportWarning("");
+        };
+
+        const exportCompanyPlanningPdf = () => {
+          if (!fullscreenCompanyData || !hasExportableData) {
+            setExportWarning("Für dieses Unternehmen sind aktuell keine exportierbaren Daten vorhanden.");
+            return;
+          }
+          if (!jsPDF) {
+            setExportWarning("PDF-Export ist aktuell nicht verfügbar.");
+            return;
+          }
+
+          const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+          const marginX = 40;
+          let y = 50;
+
+          doc.setFontSize(14);
+          doc.text("CampusAlliance Projektplanung", marginX, y);
+          y += 20;
+          doc.setFontSize(12);
+          doc.text(`Projektname: ${fullscreenCompanyData.projectName}`, marginX, y);
+          y += 16;
+          doc.text(`Unternehmensname: ${fullscreenCompanyData.companyName}`, marginX, y);
+          y += 16;
+          doc.text(`Erstellungsdatum: ${formatDateTimeDe(fullscreenCompanyData.generatedAt)}`, marginX, y);
+          y += 20;
+
+          doc.setFontSize(11);
+          doc.text("Arbeitspakete", marginX, y);
+          y += 8;
+          doc.autoTable({
+            startY: y,
+            head: [["Arbeitspaketnummer", "Bezeichnung des Arbeitspakets", "Startdatum", "Enddatum", "Mitarbeitendennummer", "Personenmonate"]],
+            body: fullscreenCompanyData.workPackages.map((row) => [row.number, row.title, row.start, row.end, `${row.employeeNumber}`, formatNumberDe(row.pm, 2)]),
+            theme: "grid",
+            styles: { fontSize: 9, cellPadding: 4 },
+            headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42] },
+          });
+          y = (doc.lastAutoTable?.finalY || y) + 16;
+          doc.text(`Summe Personenmonate: ${formatPmOneDecimal(fullscreenCompanyData.totalPM)}`, marginX, y);
+          y += 20;
+
+          doc.text("Mitarbeiterauswertung", marginX, y);
+          y += 8;
+          doc.autoTable({
+            startY: y,
+            head: [["Mitarbeitenden-Nr.", "Name", "Jahr", "Personenmonate", "Kosten"]],
+            body: fullscreenCompanyData.employeeYearRows.map((row) => [row.employeeNumber, row.name, row.year, formatNumberDe(row.pm, 2), formatCurrency(row.cost)]),
+            theme: "grid",
+            styles: { fontSize: 9, cellPadding: 4 },
+            headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42] },
+          });
+          y = (doc.lastAutoTable?.finalY || y) + 20;
+
+          doc.text("Beantragter Zuschuss pro Jahr", marginX, y);
+          y += 8;
+          doc.autoTable({
+            startY: y,
+            head: [["Jahr", "Beantragter Zuschuss"]],
+            body: fullscreenCompanyData.yearlyFundingRows.map((row) => [row.year, formatCurrency(row.foerderung)]),
+            theme: "grid",
+            styles: { fontSize: 9, cellPadding: 4 },
+            headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42] },
+          });
+          y = (doc.lastAutoTable?.finalY || y) + 16;
+          doc.text(`Summe beantragter Zuschuss: ${formatCurrency(fullscreenCompanyData.totalFunding)}`, marginX, y);
+
+          doc.save(buildPlanningExportFilename(fullscreenCompanyData, "pdf"));
+          setExportWarning("");
+        };
 
         const closeZimModal = () => {
           setZimPdfModalState((prev) => {
@@ -4673,15 +4867,36 @@
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/80">Projektplanung</p>
                       <h3 className="text-xl font-semibold">{fullscreenCompanyData.companyName}</h3>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setFullscreenCompanyIndex(null)}
-                      className="fullscreen-overlay-close rounded-md border border-white/60 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15"
-                    >
-                      Schließen
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={exportCompanyPlanningCsv}
+                        disabled={!hasExportableData}
+                        className="rounded-md border border-white/60 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Als CSV herunterladen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={exportCompanyPlanningPdf}
+                        disabled={!hasExportableData}
+                        className="rounded-md border border-white/60 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Als PDF herunterladen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFullscreenCompanyIndex(null)}
+                        className="fullscreen-overlay-close rounded-md border border-white/60 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15"
+                      >
+                        Schließen
+                      </button>
+                    </div>
                   </div>
                   <div className="flex-1 space-y-6 overflow-auto p-5">
+                    {exportWarning ? (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{exportWarning}</div>
+                    ) : null}
                     <section className="rounded-lg border border-slate-200">
                       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">Arbeitspaketübersicht</div>
                       <div className="overflow-auto">
@@ -4697,7 +4912,7 @@
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {fullscreenCompanyData.workPackageRows.map((row) => (
+                            {fullscreenCompanyData.workPackages.map((row) => (
                               <tr key={`fs-ap-${row.id}`}>
                                 <td className="px-3 py-2 font-semibold text-slate-700">{row.number}</td>
                                 <td className="px-3 py-2 text-slate-700">{row.title}</td>
@@ -4707,7 +4922,7 @@
                                 <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatNumberDe(row.pm, 2)}</td>
                               </tr>
                             ))}
-                            {!fullscreenCompanyData.workPackageRows.length ? (
+                            {!fullscreenCompanyData.workPackages.length ? (
                               <tr>
                                 <td colSpan={6} className="px-3 py-3 text-center text-slate-500">Keine Arbeitspakete mit PM &gt; 0 vorhanden.</td>
                               </tr>
@@ -4718,7 +4933,7 @@
                       <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
                         <div className="inline-flex items-center gap-3 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
                           <span className="font-semibold text-slate-700">Summe Personenmonate</span>
-                          <span className="font-bold text-slate-900">{formatPmOneDecimal(fullscreenCompanyData.totalPm)}</span>
+                          <span className="font-bold text-slate-900">{formatPmOneDecimal(fullscreenCompanyData.totalPM)}</span>
                         </div>
                       </div>
                     </section>
@@ -4781,7 +4996,7 @@
                             ))}
                             <tr className="bg-slate-50">
                               <td className="px-3 py-2 font-semibold text-slate-800">Summe beantragter Zuschuss</td>
-                              <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(fullscreenCompanyData.totals.foerderung)}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(fullscreenCompanyData.totalFunding)}</td>
                             </tr>
                           </tbody>
                         </table>
