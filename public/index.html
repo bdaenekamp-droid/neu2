@@ -141,9 +141,10 @@
       const PROJECT_SCHEMA_VERSION = 1;
       const PROJECT_DB_EXPORT_VERSION = 1;
       const CRYOVISION_SEED_PATH = "/seeds/cryovision.project.json";
-      const AUTH_STORAGE_KEY = "ca_projectplanning_is_authenticated";
-      const APP_LOGIN_USERNAME = "admin";
-      const APP_LOGIN_PASSWORD = "campusalliance";
+      const AUTH_STORAGE_KEY = "ca_tool_authenticated";
+      const LEGACY_AUTH_STORAGE_KEY = "ca_projectplanning_is_authenticated";
+      const APP_LOGIN_USERNAME = "b.daenekamp@campusalliance.de";
+      const APP_LOGIN_PASSWORD = "Valencia2026";
       const DEFAULT_AUTO_LOCKS = {
         employeeAssignment: false,
         workPackageDates: false,
@@ -1376,11 +1377,15 @@
 
         const handleSubmit = (event) => {
           event.preventDefault();
-          if (username.trim() === APP_LOGIN_USERNAME && password === APP_LOGIN_PASSWORD) {
+          const usernameNormalized = username.trim().toLowerCase();
+          console.log("login attempt", { usernameNormalized, passwordLength: password.length });
+
+          if (usernameNormalized === APP_LOGIN_USERNAME && password === APP_LOGIN_PASSWORD) {
+            console.log("login success");
             onLoginSuccess();
             return;
           }
-          setErrorMessage("Benutzername oder Passwort ist falsch.");
+          setErrorMessage("Anmeldung fehlgeschlagen");
         };
 
         return (
@@ -1431,19 +1436,37 @@
 
       const Root = () => {
         const [isAuthenticated, setIsAuthenticated] = useState(() => {
-          return window.localStorage.getItem(AUTH_STORAGE_KEY) === "true";
+          const stored = window.sessionStorage.getItem(AUTH_STORAGE_KEY) === "true";
+          return stored;
         });
 
         const handleLoginSuccess = () => {
-          window.localStorage.setItem(AUTH_STORAGE_KEY, "true");
+          window.sessionStorage.setItem(AUTH_STORAGE_KEY, "true");
+          window.localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
           setIsAuthenticated(true);
+        };
+
+        const handleLogout = () => {
+          window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+          setIsAuthenticated(false);
         };
 
         if (!isAuthenticated) {
           return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
         }
 
-        return <App />;
+        return (
+          <>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="fixed right-4 top-4 z-[90] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow"
+            >
+              Logout
+            </button>
+            <App />
+          </>
+        );
       };
 
 
