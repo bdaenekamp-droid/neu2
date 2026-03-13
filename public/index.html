@@ -141,6 +141,9 @@
       const PROJECT_SCHEMA_VERSION = 1;
       const PROJECT_DB_EXPORT_VERSION = 1;
       const CRYOVISION_SEED_PATH = "/seeds/cryovision.project.json";
+      const AUTH_STORAGE_KEY = "ca_projectplanning_is_authenticated";
+      const APP_LOGIN_USERNAME = "admin";
+      const APP_LOGIN_PASSWORD = "campusalliance";
       const DEFAULT_AUTO_LOCKS = {
         employeeAssignment: false,
         workPackageDates: false,
@@ -1364,6 +1367,83 @@
           }
           return acc;
         }, []);
+      };
+
+      const LoginScreen = ({ onLoginSuccess }) => {
+        const [username, setUsername] = useState("");
+        const [password, setPassword] = useState("");
+        const [errorMessage, setErrorMessage] = useState("");
+
+        const handleSubmit = (event) => {
+          event.preventDefault();
+          if (username.trim() === APP_LOGIN_USERNAME && password === APP_LOGIN_PASSWORD) {
+            onLoginSuccess();
+            return;
+          }
+          setErrorMessage("Benutzername oder Passwort ist falsch.");
+        };
+
+        return (
+          <div className="min-h-screen bg-slate-100 px-4 py-8">
+            <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center justify-center">
+              <form onSubmit={handleSubmit} className="w-full rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+                <h1 className="text-xl font-semibold text-slate-900">Login erforderlich</h1>
+                <p className="mt-2 text-sm text-slate-600">Bitte melden Sie sich an, um das Tool zu öffnen.</p>
+
+                <label className="mt-5 block text-sm font-medium text-slate-700">Benutzername</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(event) => {
+                    setUsername(event.target.value);
+                    setErrorMessage("");
+                  }}
+                  className="ca-focus mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none"
+                  autoComplete="username"
+                  required
+                />
+
+                <label className="mt-4 block text-sm font-medium text-slate-700">Passwort</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setErrorMessage("");
+                  }}
+                  className="ca-focus mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none"
+                  autoComplete="current-password"
+                  required
+                />
+
+                {errorMessage ? (
+                  <p className="mt-3 text-sm font-medium text-rose-600">{errorMessage}</p>
+                ) : null}
+
+                <button type="submit" className="ca-primary-btn mt-5 w-full rounded-md px-4 py-2 font-semibold">
+                  Anmelden
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      };
+
+      const Root = () => {
+        const [isAuthenticated, setIsAuthenticated] = useState(() => {
+          return window.localStorage.getItem(AUTH_STORAGE_KEY) === "true";
+        });
+
+        const handleLoginSuccess = () => {
+          window.localStorage.setItem(AUTH_STORAGE_KEY, "true");
+          setIsAuthenticated(true);
+        };
+
+        if (!isAuthenticated) {
+          return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+        }
+
+        return <App />;
       };
 
 
@@ -5519,7 +5599,7 @@
         );
       };
 
-      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+      ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
     </script>
   </body>
 </html>
