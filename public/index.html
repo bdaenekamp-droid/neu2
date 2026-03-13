@@ -139,6 +139,7 @@
       const SEED_PROJECT_NAME = "CryoVision";
       const AUTO_SAVE_DEBOUNCE_MS = 650;
       const PROJECT_SCHEMA_VERSION = 1;
+      const PROJECT_DB_EXPORT_VERSION = 1;
       const CRYOVISION_SEED_PATH = "/seeds/cryovision.project.json";
       const DEFAULT_AUTO_LOCKS = {
         employeeAssignment: false,
@@ -1179,7 +1180,11 @@
       };
 
       const parseStoredProject = (parsed) => {
-        return migrateProjectState(parsed);
+        return sanitizeProjectState(migrateProjectState(parsed));
+      };
+
+      const sanitizeProjectState = (state) => {
+        return migrateProjectState(state);
       };
 
       const parseStoredProjectPayload = (rawValue, fallbackProjectName = "") => {
@@ -1396,6 +1401,10 @@
         const [projectError, setProjectError] = useState("");
         const [storageError, setStorageError] = useState("");
         const [deleteProjectConfirmName, setDeleteProjectConfirmName] = useState("");
+        const [databaseManagementModalOpen, setDatabaseManagementModalOpen] = useState(false);
+        const [importModeDialogState, setImportModeDialogState] = useState({ open: false, backup: null });
+        const [databaseManagementMessage, setDatabaseManagementMessage] = useState({ type: "", text: "" });
+        const projectDbImportInputRef = useRef(null);
         const [fullscreenCompanyIndex, setFullscreenCompanyIndex] = useState(null);
         const [exportWarning, setExportWarning] = useState("");
         const [zimPdfModalState, setZimPdfModalState] = useState({
@@ -1442,6 +1451,14 @@
           }, 2500);
           return () => window.clearTimeout(timeout);
         }, [exportWarning]);
+
+        useEffect(() => {
+          if (!databaseManagementMessage.text) return undefined;
+          const timeout = window.setTimeout(() => {
+            setDatabaseManagementMessage({ type: "", text: "" });
+          }, 3500);
+          return () => window.clearTimeout(timeout);
+        }, [databaseManagementMessage]);
 
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
@@ -1736,6 +1753,168 @@
             setStorageError("Projekt konnte nicht geladen werden.");
           }
         };
+
+        const buildUniqueImportedProjectName = useCallback((baseName, usedNamesLowerCase) => {
+          const fallbackName = `${baseName || "Projekt"}`.trim() || "Projekt";
+          const firstCandidate = `${fallbackName}_importiert`;
+          if (!usedNamesLowerCase.has(firstCandidate.toLowerCase())) {
+            usedNamesLowerCase.add(firstCandidate.toLowerCase());
+            return firstCandidate;
+          }
+          let suffix = 2;
+          while (usedNamesLowerCase.has(`${firstCandidate}_${suffix}`.toLowerCase())) {
+            suffix += 1;
+          }
+          const uniqueName = `${firstCandidate}_${suffix}`;
+          usedNamesLowerCase.add(uniqueName.toLowerCase());
+          return uniqueName;
+        }, []);
+
+        const exportProjectDatabase = useCallback(() => {
+          const nowIso = new Date().toISOString();
+          const projects = [...projectRecords]
+            .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
+            .map((record) => {
+              const raw = localStorage.getItem(getProjectStorageKey(record.name));
+              const parsedPayload = raw ? parseStoredProjectPayload(raw, record.name) : null;
+              const state = sanitizeProjectState(parsedPayload?.state || buildDefaultProjectState());
+              return {
+                projectId: record.name,
+                projectName: record.name,
+                createdAt: record.createdAt || parsedPayload?.createdAt || nowIso,
+                lastModified: record.lastModified || parsedPayload?.lastModified || nowIso,
+                state,
+              };
+            });
+          return {
+            exportVersion: PROJECT_DB_EXPORT_VERSION,
+            exportedAt: nowIso,
+            projects,
+          };
+        }, [projectRecords]);
+
+        const validateProjectBackup = useCallback((json) => {
+          if (!json || typeof json !== "object") return false;
+          if (json.exportVersion !== PROJECT_DB_EXPORT_VERSION) return false;
+          if (!Array.isArray(json.projects)) return false;
+          return json.projects.every((project) => project && typeof project === "object" && project.state);
+        }, []);
+
+        const importProjectDatabase = useCallback((backupJson, mode) => {
+          if (!validateProjectBackup(backupJson)) {
+            throw new Error("invalid_backup");
+          }
+          const nowIso = new Date().toISOString();
+          const normalizedProjects = backupJson.projects.map((project, index) => {
+            const fallbackName = `${project.projectName || project.projectId || `Projekt_${index + 1}`}`.trim() || `Projekt_${index + 1}`;
+            const state = sanitizeProjectState(migrateProjectState(project.state));
+            return {
+              projectId: `${project.projectId || fallbackName}`.trim() || fallbackName,
+              projectName: fallbackName,
+              createdAt: project.createdAt || nowIso,
+              lastModified: project.lastModified || nowIso,
+              state,
+            };
+          });
+
+          if (mode === "replace") {
+            projectRecords.forEach((record) => {
+              localStorage.removeItem(getProjectStorageKey(record.name));
+            });
+          }
+
+          const existingNames = mode === "replace" ? [] : projectRecords.map((record) => record.name);
+          const usedNamesLowerCase = new Set(existingNames.map((name) => name.toLowerCase()));
+          const usedProjectIds = new Set(mode === "replace" ? [] : projectRecords.map((record) => record.name));
+
+          normalizedProjects.forEach((project) => {
+            let targetProjectId = project.projectId;
+            let targetProjectName = project.projectName;
+            const idConflict = usedProjectIds.has(targetProjectId);
+            const nameConflict = usedNamesLowerCase.has(targetProjectName.toLowerCase());
+            if (mode === "merge" && (idConflict || nameConflict)) {
+              targetProjectName = buildUniqueImportedProjectName(targetProjectName, usedNamesLowerCase);
+              targetProjectId = targetProjectName;
+            } else {
+              usedNamesLowerCase.add(targetProjectName.toLowerCase());
+            }
+            usedProjectIds.add(targetProjectId);
+            persistProject(targetProjectName, project.state, {
+              createdAt: project.createdAt,
+              lastModified: project.lastModified,
+            });
+          });
+
+          const refreshedRaw = localStorage.getItem(PROJECTS_INDEX_KEY);
+          const refreshedIndex = refreshedRaw ? JSON.parse(refreshedRaw) : [];
+          const cleanedIndex = Array.isArray(refreshedIndex)
+            ? refreshedIndex
+                .filter((entry) => entry && entry.name)
+                .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
+            : [];
+          localStorage.setItem(
+            PROJECTS_INDEX_KEY,
+            JSON.stringify(cleanedIndex.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
+          );
+          setProjectRecords(cleanedIndex);
+          setStorageError("");
+        }, [buildUniqueImportedProjectName, persistProject, projectRecords, validateProjectBackup]);
+
+        const downloadProjectDatabaseBackup = useCallback(() => {
+          try {
+            const backupJson = exportProjectDatabase();
+            const backupBlob = new Blob([JSON.stringify(backupJson, null, 2)], { type: "application/json" });
+            const now = new Date();
+            const fileTimestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+            const downloadName = `CampusAlliance_ProjektDB_Backup_${fileTimestamp}.json`;
+            const downloadUrl = URL.createObjectURL(backupBlob);
+            const link = document.createElement("a");
+            link.href = downloadUrl;
+            link.download = downloadName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(downloadUrl);
+            setDatabaseManagementMessage({ type: "success", text: "Projektdatenbank-Backup wurde heruntergeladen." });
+          } catch (error) {
+            setDatabaseManagementMessage({ type: "error", text: "Projektdatenbank-Backup konnte nicht erstellt werden." });
+          }
+        }, [exportProjectDatabase]);
+
+        const handleProjectDatabaseImportFile = useCallback(async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          try {
+            const rawText = await file.text();
+            const parsedJson = JSON.parse(rawText);
+            if (!validateProjectBackup(parsedJson)) {
+              setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
+              return;
+            }
+            setImportModeDialogState({ open: true, backup: parsedJson });
+            setDatabaseManagementMessage({ type: "", text: "" });
+          } catch (error) {
+            setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
+          }
+        }, [validateProjectBackup]);
+
+        const confirmProjectDatabaseImport = useCallback((mode) => {
+          const backup = importModeDialogState.backup;
+          if (!backup) return;
+          try {
+            importProjectDatabase(backup, mode);
+            setImportModeDialogState({ open: false, backup: null });
+            setDatabaseManagementMessage({
+              type: "success",
+              text: mode === "replace"
+                ? "Backup erfolgreich importiert. Bestehende Projekte wurden ersetzt."
+                : "Backup erfolgreich importiert und mit bestehenden Projekten zusammengeführt.",
+            });
+          } catch (error) {
+            setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
+          }
+        }, [importModeDialogState.backup, importProjectDatabase]);
 
         const filteredProjectRecords = useMemo(() => {
           const term = projectSearchTerm.trim().toLowerCase();
@@ -5230,10 +5409,10 @@
                   <div className="mt-5 flex justify-between gap-2">
                     <button
                       type="button"
-                      onClick={restoreCryoVisionProject}
+                      onClick={() => setDatabaseManagementModalOpen(true)}
                       className="rounded-md border border-[var(--ca-green-border)] px-3 py-2 text-sm font-semibold text-slate-700"
                     >
-                      CryoVision wiederherstellen
+                      Datenbankmanagement
                     </button>
                     <button
                       type="button"
@@ -5244,6 +5423,93 @@
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
                     >
                       Schließen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {databaseManagementModalOpen ? (
+              <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Datenbankmanagement</h3>
+                  <div className="mt-4 space-y-4">
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <h4 className="text-sm font-semibold text-slate-800">Backup</h4>
+                      <button
+                        type="button"
+                        onClick={downloadProjectDatabaseBackup}
+                        className="mt-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                      >
+                        Projektdatenbank herunterladen
+                      </button>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <h4 className="text-sm font-semibold text-slate-800">Import</h4>
+                      <input
+                        ref={projectDbImportInputRef}
+                        type="file"
+                        accept="application/json,.json"
+                        onChange={handleProjectDatabaseImportFile}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => projectDbImportInputRef.current?.click()}
+                        className="mt-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                      >
+                        Projektdatenbank importieren
+                      </button>
+                    </div>
+                  </div>
+                  {databaseManagementMessage.text ? (
+                    <div className={`mt-4 text-sm font-medium ${databaseManagementMessage.type === "error" ? "text-rose-600" : "text-emerald-700"}`}>
+                      {databaseManagementMessage.text}
+                    </div>
+                  ) : null}
+                  <div className="mt-5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setDatabaseManagementModalOpen(false)}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Schließen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {importModeDialogState.open ? (
+              <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Import bestätigen</h3>
+                  <p className="mt-2 text-sm text-slate-700">
+                    Bitte wählen Sie, wie die Projekte aus dem Backup importiert werden sollen.
+                  </p>
+                  <div className="mt-4 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => confirmProjectDatabaseImport("replace")}
+                      className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700"
+                    >
+                      Bestehende Projekte ersetzen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmProjectDatabaseImport("merge")}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Mit bestehenden Projekten zusammenführen
+                    </button>
+                  </div>
+                  <div className="mt-5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setImportModeDialogState({ open: false, backup: null })}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Abbrechen
                     </button>
                   </div>
                 </div>
