@@ -1,0 +1,32 @@
+{
+  "formatVersion": 1,
+  "schema": "campusalliance-arbeitsplan-import",
+  "projectParticipants": [
+    "Projektteilnehmer 1",
+    "Projektteilnehmer 2",
+    "Projektteilnehmer 3",
+    "Projektteilnehmer 4",
+    "Projektteilnehmer 5"
+  ],
+  "workPackages": [
+    {
+      "nr": "1",
+      "title": "Hauptarbeitspaket / Überschrift",
+      "type": "header",
+      "children": [
+        {
+          "nr": "1.1",
+          "title": "Unterarbeitspaket mit vollständiger Bezeichnung",
+          "type": "subtask",
+          "pm": {
+            "Projektteilnehmer 1": 1.5,
+            "Projektteilnehmer 2": null,
+            "Projektteilnehmer 3": null,
+            "Projektteilnehmer 4": null,
+            "Projektteilnehmer 5": null
+          }
+        }
+      ]
+    }
+  ]
+}
