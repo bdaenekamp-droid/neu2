@@ -146,7 +146,8 @@
       const LEGACY_AUTH_STORAGE_KEY = "ca_projectplanning_is_authenticated";
       const APP_LOGIN_USERNAME = "b.daenekamp@campusalliance.de";
       const APP_LOGIN_PASSWORD = "Valencia2026";
-      const IMPORT_GUIDE_STORAGE_KEY = "ca_projectplanning_import_guide_text";
+      const IMPORT_GUIDE_STORAGE_KEY = "ca_import_instruction_text";
+      const LEGACY_IMPORT_GUIDE_STORAGE_KEY = "ca_projectplanning_import_guide_text";
       const ARBEITSPLAN_TEMPLATE_PATH = "/arbeitsplan_import_vorlage_generisch.json";
       const ARBEITSPLAN_IMPORT_SCHEMA = "campusalliance-arbeitsplan-import";
       const DEFAULT_IMPORT_GUIDE_TEXT = `Anleitung
@@ -211,6 +212,13 @@ Regeln:
 5. Wenn in der Word-Datei Zuständigkeiten genannt sind, müssen die PMs dem passenden Projektteilnehmer zugeordnet werden.
 6. Wenn keine PM-Angabe vorhanden ist, bleibt das Feld null.
 7. Gib mir das Ergebnis ausschließlich als saubere JSON-Datei in genau diesem Schema zurück.`;
+      const loadImportInstructionText = () => {
+        const storedValue = localStorage.getItem(IMPORT_GUIDE_STORAGE_KEY);
+        if (storedValue !== null) return storedValue;
+        const legacyValue = localStorage.getItem(LEGACY_IMPORT_GUIDE_STORAGE_KEY);
+        if (legacyValue !== null) return legacyValue;
+        return DEFAULT_IMPORT_GUIDE_TEXT;
+      };
       const LAST_SOFTWARE_UPDATE =
         window.APP_VERSION_META?.LAST_SOFTWARE_UPDATE || "23.04.2026, 12:45";
       const DEFAULT_AUTO_LOCKS = {
@@ -1640,7 +1648,8 @@ Regeln:
         const [workplanInstructionModalOpen, setWorkplanInstructionModalOpen] = useState(false);
         const [workplanImportConfirmOpen, setWorkplanImportConfirmOpen] = useState(false);
         const [workplanImportError, setWorkplanImportError] = useState("");
-        const [workplanInstructionText, setWorkplanInstructionText] = useState(() => localStorage.getItem(IMPORT_GUIDE_STORAGE_KEY) || DEFAULT_IMPORT_GUIDE_TEXT);
+        const [importInstructionText, setImportInstructionText] = useState(() => loadImportInstructionText());
+        const [importInstructionDraft, setImportInstructionDraft] = useState(() => loadImportInstructionText());
         const [pendingImportedWorkplan, setPendingImportedWorkplan] = useState(null);
         const projectDbImportInputRef = useRef(null);
         const workplanImportInputRef = useRef(null);
@@ -1699,10 +1708,6 @@ Regeln:
           }, 3500);
           return () => window.clearTimeout(timeout);
         }, [databaseManagementMessage]);
-
-        useEffect(() => {
-          localStorage.setItem(IMPORT_GUIDE_STORAGE_KEY, workplanInstructionText);
-        }, [workplanInstructionText]);
 
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
@@ -4116,6 +4121,19 @@ Regeln:
           }
         };
 
+        const openInstructionModal = () => {
+          const persistedInstructionText = loadImportInstructionText();
+          setImportInstructionText(persistedInstructionText);
+          setImportInstructionDraft(persistedInstructionText);
+          setWorkplanInstructionModalOpen(true);
+        };
+
+        const saveInstructionText = () => {
+          setImportInstructionText(importInstructionDraft);
+          localStorage.setItem(IMPORT_GUIDE_STORAGE_KEY, importInstructionDraft);
+          setWorkplanInstructionModalOpen(false);
+        };
+
         return (
           <div
             className="min-h-screen bg-slate-50 text-slate-900"
@@ -4125,7 +4143,7 @@ Regeln:
               }
             }}
           >
-            <header className="ca-topbar sticky top-0 z-40 border-b border-black/10 shadow-subtle">
+            <header className="ca-topbar border-b border-black/10 shadow-subtle">
               <div className="mx-auto flex h-[96px] max-w-[1700px] items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                   <img
@@ -5804,7 +5822,7 @@ Regeln:
                     </button>
                     <button
                       type="button"
-                      onClick={() => setWorkplanInstructionModalOpen(true)}
+                      onClick={openInstructionModal}
                       className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm font-semibold text-slate-700"
                     >
                       Anleitung
@@ -5836,14 +5854,31 @@ Regeln:
                 <div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
                   <h3 className="text-lg font-semibold text-slate-900">Anleitung</h3>
                   <textarea
-                    value={workplanInstructionText}
-                    onChange={(event) => setWorkplanInstructionText(event.target.value)}
+                    value={importInstructionDraft}
+                    onChange={(event) => setImportInstructionDraft(event.target.value)}
                     className="mt-3 h-[520px] w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-relaxed focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   />
-                  <div className="mt-4 flex justify-end">
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setWorkplanInstructionModalOpen(false)}
+                      onClick={() => setImportInstructionDraft(DEFAULT_IMPORT_GUIDE_TEXT)}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Standard wiederherstellen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveInstructionText}
+                      className="rounded-md border border-[var(--ca-green-border)] bg-[var(--ca-green)] px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      Speichern
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportInstructionDraft(importInstructionText);
+                        setWorkplanInstructionModalOpen(false);
+                      }}
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
                     >
                       Schließen
