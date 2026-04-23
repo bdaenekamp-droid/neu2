@@ -889,6 +889,23 @@ Wichtig:
         };
       };
 
+      const compareWorkPackageNumber = (a, b) => {
+        const tokenize = (value) => `${value || ""}`.split(".").map((part) => {
+          const n = Number.parseInt(`${part}`.trim(), 10);
+          return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+        });
+        const aTokens = tokenize(a);
+        const bTokens = tokenize(b);
+        const maxLength = Math.max(aTokens.length, bTokens.length);
+        for (let index = 0; index < maxLength; index += 1) {
+          const aToken = aTokens[index] ?? -1;
+          const bToken = bTokens[index] ?? -1;
+          if (aToken === bToken) continue;
+          return aToken - bToken;
+        }
+        return `${a || ""}`.localeCompare(`${b || ""}`, "de", { numeric: true });
+      };
+
       const normalizeImportedWorkplanRoot = (input) => {
         if (!input || typeof input !== "object") return null;
         if (!Object.prototype.hasOwnProperty.call(input, "formatVersion")) return null;
@@ -910,7 +927,15 @@ Wichtig:
             nr: normalizedHeader.nr,
             title: normalizedHeader.title,
             type: normalizedHeader.type,
-            children: normalizedHeader.children.map((child) => normalizeImportedWorkPackage(child)),
+            parentNumber: `${entry?.parentNumber ?? ""}`.trim(),
+            children: normalizedHeader.children.map((child) => {
+              const normalizedChild = normalizeImportedWorkPackage(child);
+              return {
+                ...normalizedChild,
+                parentNumber: `${child?.parentNumber ?? ""}`.trim(),
+              };
+            }),
+            pm: normalizedHeader.pm,
           };
         });
 
@@ -924,33 +949,82 @@ Wichtig:
 
       const parseImportedWorkplanJson = (input) => {
         const normalizedRoot = normalizeImportedWorkplanRoot(input);
-        if (!normalizedRoot) return null;
+        if (!normalizedRoot) return { importedPlan: null, error: "Die JSON-Datei entspricht nicht dem erwarteten Importformat." };
 
         const participants = normalizedRoot.projectParticipants;
+        if (!participants.length) return { importedPlan: null, error: "Es wurden keine Projektteilnehmer erkannt." };
         const companyCount = clampNumber(participants.length, 1, 5);
-        const companyNamesNormalized = [...DEFAULT_COMPANY_NAMES];
-        participants.forEach((name, index) => {
+        const companyNamesNormalized = Array(5).fill("");
+        participants.slice(0, 5).forEach((name, index) => {
           companyNamesNormalized[index] = name;
         });
 
+        if (!normalizedRoot.workPackages.length) return { importedPlan: null, error: "Es wurden keine Arbeitspakete erkannt." };
+
+        const hasFlatEntries = normalizedRoot.workPackages.some((entry) => entry.type === "subtask" && entry.parentNumber);
+        const detectedFormat = hasFlatEntries ? "flat" : "nested";
+        console.log(`Detected ${detectedFormat} workPackage format`);
+        console.log("Participants:", participants);
+
+        let headers = [];
+        let subtasks = [];
+        if (hasFlatEntries) {
+          const headerMap = new Map();
+          normalizedRoot.workPackages.forEach((entry) => {
+            if (!entry || !entry.nr || !entry.title) return;
+            if (entry.type === "header") {
+              const header = { ...entry, children: [] };
+              headers.push(header);
+              headerMap.set(header.nr, header);
+              return;
+            }
+            if (entry.type === "subtask") {
+              subtasks.push(entry);
+            }
+          });
+          headers = [...headers].sort((a, b) => compareWorkPackageNumber(a.nr, b.nr));
+          subtasks = [...subtasks].sort((a, b) => compareWorkPackageNumber(a.nr, b.nr));
+
+          const hasInvalidParent = subtasks.some((subtask) => !headerMap.has(subtask.parentNumber));
+          if (hasInvalidParent) {
+            return { importedPlan: null, error: "Mindestens ein Unterarbeitspaket verweist auf kein gültiges Hauptarbeitspaket." };
+          }
+          subtasks.forEach((subtask) => {
+            const parent = headerMap.get(subtask.parentNumber);
+            parent.children.push(subtask);
+          });
+        } else {
+          headers = normalizedRoot.workPackages
+            .filter((entry) => entry?.type === "header" && entry.nr && entry.title)
+            .map((entry) => ({
+              ...entry,
+              children: (Array.isArray(entry.children) ? entry.children : [])
+                .filter((child) => child?.type === "subtask" && child.nr && child.title),
+            }));
+          subtasks = headers.flatMap((entry) => entry.children);
+        }
+
+        console.log("Headers:", headers.length);
+        console.log("Subtasks:", subtasks.length);
+
         const workPackages = [];
         let subtaskCount = 0;
-        normalizedRoot.workPackages.forEach((entry, wpIndex) => {
-          if (!entry || entry.type !== "header" || !entry.nr || !entry.title) return;
+        headers.forEach((entry, wpIndex) => {
           const wp = createWp(wpIndex);
           wp.title = entry.title;
           wp.pm = Array(5).fill("");
           wp.sub = [];
 
-          const children = Array.isArray(entry.children) ? entry.children : [];
+          const children = Array.isArray(entry.children)
+            ? [...entry.children].sort((a, b) => compareWorkPackageNumber(a.nr, b.nr))
+            : [];
           children.forEach((child, subIndex) => {
-            if (!child || child.type !== "subtask" || !child.nr || !child.title || !child.pm || typeof child.pm !== "object") return;
             const sub = createSub(wpIndex, subIndex);
             sub.title = child.title;
             sub.pm = Array.from({ length: 5 }, (_, companyIndex) => {
               if (companyIndex >= companyCount) return "";
               const participantName = participants[companyIndex];
-              const rawPm = child.pm[participantName];
+              const rawPm = child?.pm?.[participantName];
               if (rawPm === null || rawPm === undefined || rawPm === "") return "";
               const parsedPm = Number.parseFloat(`${rawPm}`.trim().replace(",", "."));
               if (!Number.isFinite(parsedPm)) return "";
@@ -964,7 +1038,7 @@ Wichtig:
           workPackages.push(wp);
         });
 
-        if (!workPackages.length || !subtaskCount) return null;
+        if (!workPackages.length || !subtaskCount) return { importedPlan: null, error: "Es wurden keine Arbeitspakete erkannt." };
 
         console.log("Import normalization successful");
         console.log("Normalized participants", participants);
@@ -972,10 +1046,13 @@ Wichtig:
         console.log("Normalized subtasks", subtaskCount);
 
         return {
-          normalizedRoot,
-          companyNames: companyNamesNormalized,
-          companyCount,
-          workPackages,
+          importedPlan: {
+            normalizedRoot,
+            companyNames: companyNamesNormalized,
+            companyCount,
+            workPackages,
+          },
+          error: "",
         };
       };
 
@@ -2220,9 +2297,9 @@ Wichtig:
             setWorkplanImportError("Der eingefügte Text ist kein gültiges JSON.");
             return;
           }
-          const importedPlan = parseImportedWorkplanJson(parsedJson);
+          const { importedPlan, error } = parseImportedWorkplanJson(parsedJson);
           if (!importedPlan) {
-            setWorkplanImportError("Die JSON-Datei entspricht nicht dem erwarteten Importformat.");
+            setWorkplanImportError(error || "Die JSON-Datei entspricht nicht dem erwarteten Importformat.");
             return;
           }
           setWorkplanImportError("");
