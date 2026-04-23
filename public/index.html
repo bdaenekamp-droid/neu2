@@ -149,22 +149,24 @@
       const IMPORT_GUIDE_STORAGE_KEY = "ca_import_instruction_text";
       const LEGACY_IMPORT_GUIDE_STORAGE_KEY = "ca_projectplanning_import_guide_text";
       const ARBEITSPLAN_IMPORT_SCHEMA = "campusalliance-arbeitsplan-import";
-      const DEFAULT_IMPORT_GUIDE_TEXT = `Verwenden Sie diese Funktion, um einen Arbeitsplan aus ChatGPT in das Tool zu importieren.
-
+      const DEFAULT_IMPORT_GUIDE_TEXT = `Verwende diese Funktion, um einen Arbeitsplan aus ChatGPT in das Tool zu importieren.
 Ablauf:
-1. Laden Sie Ihre Word-Datei mit dem Arbeitsplan in ChatGPT hoch.
-2. Lassen Sie sich daraus eine JSON-Struktur im vorgegebenen Format erzeugen.
-3. Kopieren Sie den JSON-Text.
-4. Fügen Sie ihn hier im Tool in das JSON-Feld ein.
-5. Klicken Sie auf „Import starten“.
+•	Lade deine Word-Datei mit dem Arbeitsplan in ChatGPT hoch 
+•	Kopiere den untenstehenden Prompt und füge ihn in ChatGPT ein 
+•	Lass dir daraus eine JSON-Struktur erzeugen 
+•	Wichtig: Verwende den Thinking-Modus 
+•	Kopiere den vollständigen JSON-Text aus ChatGPT 
+•	Füge den Text in das Eingabefeld im Tool ein 
+•	Klicke auf „Import starten“ 
+Wichtige Regeln:
+•	Jede Hauptüberschrift wird zu einem Hauptarbeitspaket 
+•	Jeder darunterstehende Punkt wird zu einem eigenen Unterarbeitspaket 
+•	Es darf nichts ausgelassen oder zusammengefasst werden 
+•	Es dürfen nur tatsächlich vorhandene Projektteilnehmer verwendet werden 
+•	Keine zusätzlichen Platzhalter verwenden 
+Verwende dafür in ChatGPT den folgenden Prompt:
 
-Wichtig:
-- Jede Überschrift eines Hauptabschnitts wird zu einem Hauptarbeitspaket.
-- Jeder einzelne darunterstehende Arbeitspunkt wird zu einem eigenen Unterarbeitspaket.
-- Es dürfen keine Unterarbeitspakete ausgelassen oder zusammengefasst werden.
-- Nur Unterarbeitspakete dürfen PMs enthalten.
-- Hauptarbeitspakete dürfen niemals PMs enthalten.
-- Die JSON-Datei muss exakt dem vorgegebenen Schema entsprechen.`;
+Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt strukturiert und erstelle daraus eine JSON-Datei. WICHTIG: Arbeite wie ein Parser, nicht wie ein Texter. ZIEL: Erstelle eine vollständige und verlustfreie Abbildung aller Arbeitspakete. ================================================== STRUKTUR DER JSON ================================================== { "formatVersion": 1, "schema": "campusalliance-arbeitsplan-import", "projectParticipants": [], "workPackages": [] } ================================================== REGELN FÜR PROJEKTTEILNEHMER ================================================== 1. Extrahiere alle tatsächlich im Dokument vorkommenden Projektpartner. 2. Verwende NUR diese realen Namen. 3. Erfinde KEINE zusätzlichen Teilnehmer. 4. Verwende KEINE Platzhalter wie "Projektteilnehmer 4" oder "Projektteilnehmer 5". 5. Die Liste darf nur so lang sein wie tatsächlich notwendig. Beispiel korrekt: ["Solidtec", "IKT", "VWH"] Beispiel falsch: ["Solidtec", "IKT", "VWH", "Projektteilnehmer 4", "Projektteilnehmer 5"] ================================================== REGELN FÜR ARBEITSPAKETE ================================================== 1. Jede Hauptüberschrift wird zu einem Hauptarbeitspaket: - "type": "header" 2. Jeder einzelne darunterstehende Punkt / Absatz / Bullet wird zu genau EINEM Unterarbeitspaket: - "type": "subtask" 3. EXTREM WICHTIG: - KEIN Punkt darf ausgelassen werden - KEIN Punkt darf zusammengefasst werden 4. Wenn unter einer Überschrift mehrere Punkte stehen, müssen exakt genauso viele Unterarbeitspakete erzeugt werden. 5. Nummerierung: - Hauptpakete: "1", "2", "3" - Unterpakete: "1.1", "1.2", "1.3" usw. ================================================== REGELN FÜR TEXTE ================================================== 1. Der Text jedes Arbeitspunkts muss vollständig übernommen werden. 2. KEINE Kürzungen. 3. KEINE Umformulierungen. 4. KEINE Zusammenfassungen. ================================================== REGELN FÜR PM-ZUORDNUNG ================================================== 1. PM-Werte müssen korrekt pro Unterarbeitspaket zugeordnet werden. 2. Für jeden vorhandenen Projektteilnehmer muss ein Feld existieren. 3. Wenn keine PM vorhanden ist → null. 4. Es dürfen KEINE zusätzlichen Teilnehmer im pm-Objekt auftauchen. ================================================== WICHTIGE KONTROLLREGEL ================================================== Bevor du die JSON ausgibst, überprüfe: - Wurden wirklich ALLE Unterpunkte aus dem Dokument übernommen? - Gibt es irgendwo nur ein Unterarbeitspaket, obwohl mehrere vorhanden sind? Wenn ja, korrigiere das vollständig. ================================================== OUTPUT-REGELN ================================================== 1. Gib ausschließlich gültiges JSON zurück. 2. Keine Erklärungen. 3. Kein Text vor oder nach dem JSON. 4. JSON vollständig ausgeben. 5. Nicht vorzeitig abbrechen.`;
       const loadImportInstructionText = () => {
         const storedValue = localStorage.getItem(IMPORT_GUIDE_STORAGE_KEY);
         if (storedValue !== null) return storedValue;
