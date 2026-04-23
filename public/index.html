@@ -877,9 +877,10 @@ Wichtig:
       const normalizeImportedWorkPackage = (rawWp) => {
         const raw = rawWp && typeof rawWp === "object" ? rawWp : {};
         return {
-          nr: `${raw.nr ?? raw.id ?? ""}`.trim(),
+          nr: `${raw.nr ?? raw.number ?? raw.id ?? ""}`.trim(),
           title: `${raw.title ?? raw.text ?? ""}`.trim(),
           type: `${raw.type || ""}`.trim(),
+          parentNumber: `${raw.parentNumber ?? ""}`.trim(),
           children: Array.isArray(raw.children)
             ? raw.children
             : Array.isArray(raw.subtasks)
@@ -906,7 +907,7 @@ Wichtig:
         return `${a || ""}`.localeCompare(`${b || ""}`, "de", { numeric: true });
       };
 
-      const normalizeImportedWorkplanRoot = (input) => {
+      const normalizeImportedJson = (input) => {
         if (!input || typeof input !== "object") return null;
         if (!Object.prototype.hasOwnProperty.call(input, "formatVersion")) return null;
         if (!Object.prototype.hasOwnProperty.call(input, "schema")) return null;
@@ -921,35 +922,101 @@ Wichtig:
           .slice(0, 5);
         if (!participants.length) return null;
 
-        const workPackages = input.workPackages.map((entry) => {
-          const normalizedHeader = normalizeImportedWorkPackage(entry);
-          return {
-            nr: normalizedHeader.nr,
-            title: normalizedHeader.title,
-            type: normalizedHeader.type,
-            parentNumber: `${entry?.parentNumber ?? ""}`.trim(),
-            children: normalizedHeader.children.map((child) => {
-              const normalizedChild = normalizeImportedWorkPackage(child);
-              return {
-                ...normalizedChild,
-                parentNumber: `${child?.parentNumber ?? ""}`.trim(),
-              };
-            }),
-            pm: normalizedHeader.pm,
-          };
-        });
+        if (!Array.isArray(input.workPackages)) return null;
+        console.log("Root validiert");
+
+        const normalizedEntries = input.workPackages.map((entry) => normalizeImportedWorkPackage(entry));
+        const rawHeaders = normalizedEntries.filter((entry) => entry?.type === "header" && entry.nr);
+        const rawSubtasks = normalizedEntries.filter((entry) => entry?.type === "subtask" && entry.nr && entry.parentNumber);
+        console.log("Raw headers:", rawHeaders.length);
+        console.log("Raw subtasks:", rawSubtasks.length);
+
+        const hasNestedChildren = normalizedEntries.some((entry) => Array.isArray(entry.children) && entry.children.length > 0);
+        const hasFlatSubtasks = rawSubtasks.length > 0;
+        const detectedFormat = hasFlatSubtasks ? "flat" : "nested";
+        console.log(`Detected ${detectedFormat} workPackages format`);
+
+        let headers = [];
+        if (hasFlatSubtasks) {
+          const headerMap = new Map();
+          rawHeaders.forEach((entry) => {
+            if (!entry.title) return;
+            const header = {
+              nr: entry.nr,
+              title: entry.title,
+              type: "header",
+              pm: entry.pm,
+              children: [],
+            };
+            headerMap.set(entry.nr, header);
+            headers.push(header);
+          });
+
+          const hasInvalidParent = rawSubtasks.some((subtask) => !headerMap.has(subtask.parentNumber));
+          if (hasInvalidParent) {
+            return {
+              error: "Mindestens ein Unterarbeitspaket verweist auf kein gültiges Hauptarbeitspaket.",
+            };
+          }
+
+          rawSubtasks.forEach((subtask) => {
+            if (!subtask.title) return;
+            const parent = headerMap.get(subtask.parentNumber);
+            if (!parent) return;
+            parent.children.push({
+              nr: subtask.nr,
+              title: subtask.title,
+              type: "subtask",
+              pm: subtask.pm,
+            });
+          });
+        } else if (hasNestedChildren || rawHeaders.length > 0) {
+          headers = normalizedEntries
+            .filter((entry) => entry?.type === "header" && entry.nr && entry.title)
+            .map((entry) => ({
+              nr: entry.nr,
+              title: entry.title,
+              type: "header",
+              pm: entry.pm,
+              children: (Array.isArray(entry.children) ? entry.children : [])
+                .map((child) => normalizeImportedWorkPackage(child))
+                .filter((child) => child?.type === "subtask" && child.nr && child.title)
+                .map((child) => ({
+                  nr: child.nr,
+                  title: child.title,
+                  type: "subtask",
+                  pm: child.pm,
+                })),
+            }));
+        }
+
+        headers = headers
+          .map((header) => ({
+            ...header,
+            children: [...header.children].sort((a, b) => compareWorkPackageNumber(a.nr, b.nr)),
+          }))
+          .sort((a, b) => compareWorkPackageNumber(a.nr, b.nr));
+
+        const normalizedSubtasks = headers.flatMap((header) => header.children);
+        console.log("Normalized headers:", headers.length);
+        console.log("Normalized subtasks:", normalizedSubtasks.length);
 
         return {
-          formatVersion: input.formatVersion,
-          schema: input.schema,
-          projectParticipants: participants,
-          workPackages,
+          normalizedRoot: {
+            formatVersion: input.formatVersion,
+            schema: input.schema,
+            projectParticipants: participants,
+            workPackages: headers,
+          },
+          error: "",
         };
       };
 
       const parseImportedWorkplanJson = (input) => {
-        const normalizedRoot = normalizeImportedWorkplanRoot(input);
-        if (!normalizedRoot) return { importedPlan: null, error: "Die JSON-Datei entspricht nicht dem erwarteten Importformat." };
+        const normalizedResult = normalizeImportedJson(input);
+        if (!normalizedResult) return { importedPlan: null, error: "Die JSON-Datei entspricht nicht dem erwarteten Importformat." };
+        if (normalizedResult.error) return { importedPlan: null, error: normalizedResult.error };
+        const normalizedRoot = normalizedResult.normalizedRoot;
 
         const participants = normalizedRoot.projectParticipants;
         if (!participants.length) return { importedPlan: null, error: "Es wurden keine Projektteilnehmer erkannt." };
@@ -960,50 +1027,10 @@ Wichtig:
         });
 
         if (!normalizedRoot.workPackages.length) return { importedPlan: null, error: "Es wurden keine Arbeitspakete erkannt." };
-
-        const hasFlatEntries = normalizedRoot.workPackages.some((entry) => entry.type === "subtask" && entry.parentNumber);
-        const detectedFormat = hasFlatEntries ? "flat" : "nested";
-        console.log(`Detected ${detectedFormat} workPackage format`);
         console.log("Participants:", participants);
 
-        let headers = [];
-        let subtasks = [];
-        if (hasFlatEntries) {
-          const headerMap = new Map();
-          normalizedRoot.workPackages.forEach((entry) => {
-            if (!entry || !entry.nr || !entry.title) return;
-            if (entry.type === "header") {
-              const header = { ...entry, children: [] };
-              headers.push(header);
-              headerMap.set(header.nr, header);
-              return;
-            }
-            if (entry.type === "subtask") {
-              subtasks.push(entry);
-            }
-          });
-          headers = [...headers].sort((a, b) => compareWorkPackageNumber(a.nr, b.nr));
-          subtasks = [...subtasks].sort((a, b) => compareWorkPackageNumber(a.nr, b.nr));
-
-          const hasInvalidParent = subtasks.some((subtask) => !headerMap.has(subtask.parentNumber));
-          if (hasInvalidParent) {
-            return { importedPlan: null, error: "Mindestens ein Unterarbeitspaket verweist auf kein gültiges Hauptarbeitspaket." };
-          }
-          subtasks.forEach((subtask) => {
-            const parent = headerMap.get(subtask.parentNumber);
-            parent.children.push(subtask);
-          });
-        } else {
-          headers = normalizedRoot.workPackages
-            .filter((entry) => entry?.type === "header" && entry.nr && entry.title)
-            .map((entry) => ({
-              ...entry,
-              children: (Array.isArray(entry.children) ? entry.children : [])
-                .filter((child) => child?.type === "subtask" && child.nr && child.title),
-            }));
-          subtasks = headers.flatMap((entry) => entry.children);
-        }
-
+        const headers = normalizedRoot.workPackages;
+        const subtasks = headers.flatMap((entry) => entry.children);
         console.log("Headers:", headers.length);
         console.log("Subtasks:", subtasks.length);
 
