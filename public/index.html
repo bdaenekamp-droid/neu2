@@ -146,6 +146,71 @@
       const LEGACY_AUTH_STORAGE_KEY = "ca_projectplanning_is_authenticated";
       const APP_LOGIN_USERNAME = "b.daenekamp@campusalliance.de";
       const APP_LOGIN_PASSWORD = "Valencia2026";
+      const IMPORT_GUIDE_STORAGE_KEY = "ca_projectplanning_import_guide_text";
+      const ARBEITSPLAN_TEMPLATE_PATH = "/arbeitsplan_import_vorlage_generisch.json";
+      const ARBEITSPLAN_IMPORT_SCHEMA = "campusalliance-arbeitsplan-import";
+      const DEFAULT_IMPORT_GUIDE_TEXT = `Anleitung
+
+Verwenden Sie diese Funktion, um eine JSON-Datei mit Arbeitsplanstruktur in das Tool zu importieren.
+
+Ablauf:
+1. Laden Sie Ihre Word-Datei mit dem Arbeitsplan in ChatGPT hoch.
+2. Lassen Sie sich daraus eine JSON-Datei im vorgegebenen Format erzeugen.
+3. Laden Sie diese JSON-Datei anschließend hier im Tool hoch.
+
+Wichtig:
+- Hauptarbeitspakete sind Überschriften und dürfen keine PMs enthalten.
+- Nur Unterarbeitspakete dürfen PM-Werte enthalten.
+- Die Unternehmensspalten werden über die Liste \`projectParticipants\` definiert.
+- Die JSON-Datei muss exakt dem vorgegebenen Schema entsprechen.
+
+Verwenden Sie dazu in ChatGPT folgenden Prompt:
+
+Ich habe eine Word-Datei mit einem Arbeitsplan.
+
+Bitte erstelle daraus eine JSON-Datei in exakt folgendem Schema:
+
+{
+  "formatVersion": 1,
+  "schema": "campusalliance-arbeitsplan-import",
+  "projectParticipants": [
+    "Projektteilnehmer 1",
+    "Projektteilnehmer 2",
+    "Projektteilnehmer 3",
+    "Projektteilnehmer 4",
+    "Projektteilnehmer 5"
+  ],
+  "workPackages": [
+    {
+      "nr": "1",
+      "title": "Hauptarbeitspaket / Überschrift",
+      "type": "header",
+      "children": [
+        {
+          "nr": "1.1",
+          "title": "Unterarbeitspaket mit vollständiger Bezeichnung",
+          "type": "subtask",
+          "pm": {
+            "Projektteilnehmer 1": 1.5,
+            "Projektteilnehmer 2": null,
+            "Projektteilnehmer 3": null,
+            "Projektteilnehmer 4": null,
+            "Projektteilnehmer 5": null
+          }
+        }
+      ]
+    }
+  ]
+}
+
+Regeln:
+1. Hauptarbeitspakete wie 1, 2, 3 sind Überschriften.
+2. Hauptarbeitspakete dürfen keine PMs enthalten.
+3. Nur Unterarbeitspakete wie 1.1, 2.3 oder 4.10 dürfen PMs erhalten.
+4. Die vollständigen Bezeichnungen der Arbeitspakete müssen übernommen werden.
+5. Wenn in der Word-Datei Zuständigkeiten genannt sind, müssen die PMs dem passenden Projektteilnehmer zugeordnet werden.
+6. Wenn keine PM-Angabe vorhanden ist, bleibt das Feld null.
+7. Gib mir das Ergebnis ausschließlich als saubere JSON-Datei in genau diesem Schema zurück.`;
       const LAST_SOFTWARE_UPDATE =
         window.APP_VERSION_META?.LAST_SOFTWARE_UPDATE || "23.04.2026, 12:45";
       const DEFAULT_AUTO_LOCKS = {
@@ -822,6 +887,74 @@
 
       const createEmployeesByCompany = () =>
         Array.from({ length: 5 }, () => [createEmployee()]);
+
+      const hasMeaningfulProjectPlanningData = (workPackages, companyNames, companyCount, companyData) => {
+        const hasCustomCompanies = Array.from({ length: companyCount }, (_, index) =>
+          (companyNames?.[index] || "").trim() !== (DEFAULT_COMPANY_NAMES[index] || "")
+        ).some(Boolean);
+        const hasAssignments = Array.isArray(companyData)
+          && companyData.some((entry) => Object.keys(entry?.tabellenEintraege || {}).length > 0);
+        const hasFilledPackages = Array.isArray(workPackages)
+          && workPackages.some((wp) => {
+            if ((wp?.title || "").trim()) return true;
+            return Array.isArray(wp?.sub) && wp.sub.some((sub) => {
+              if ((sub?.title || "").trim()) return true;
+              return Array.isArray(sub?.pm) && sub.pm.some((value) => value !== "" && value !== null && value !== undefined);
+            });
+          });
+        return hasCustomCompanies || hasAssignments || hasFilledPackages;
+      };
+
+      const parseImportedWorkplanJson = (input) => {
+        if (!input || typeof input !== "object") return null;
+        if (!Object.prototype.hasOwnProperty.call(input, "formatVersion")) return null;
+        if (input.schema !== ARBEITSPLAN_IMPORT_SCHEMA) return null;
+        if (!Array.isArray(input.projectParticipants) || !Array.isArray(input.workPackages)) return null;
+
+        const participantsRaw = input.projectParticipants
+          .map((name) => `${name || ""}`.trim())
+          .filter((name) => Boolean(name));
+        if (!participantsRaw.length) return null;
+        const participants = Array.from({ length: 5 }, (_, index) => participantsRaw[index] || `Projektteilnehmer ${index + 1}`);
+        const companyCount = clampNumber(participantsRaw.length, 1, 5);
+
+        const workPackages = [];
+        input.workPackages.forEach((entry, wpIndex) => {
+          if (!entry || entry.type !== "header") return;
+          const wp = createWp(wpIndex);
+          wp.title = `${entry.title || ""}`.trim();
+          wp.pm = Array(5).fill("");
+          wp.sub = [];
+
+          const children = Array.isArray(entry.children) ? entry.children : [];
+          children.forEach((child, subIndex) => {
+            if (!child || child.type !== "subtask") return;
+            const sub = createSub(wpIndex, subIndex);
+            sub.title = `${child.title || ""}`.trim();
+            sub.pm = Array.from({ length: 5 }, (_, companyIndex) => {
+              const participantName = participants[companyIndex] || `Projektteilnehmer ${companyIndex + 1}`;
+              const rawPm = child.pm && typeof child.pm === "object" ? child.pm[participantName] : null;
+              if (rawPm === null || rawPm === undefined || rawPm === "") return "";
+              const parsedPm = Number.parseFloat(`${rawPm}`.trim().replace(",", "."));
+              if (!Number.isFinite(parsedPm)) return "";
+              return parsedPm;
+            });
+            wp.sub.push(sub);
+          });
+
+          if (!wp.sub.length) {
+            wp.sub = [createSub(wpIndex, 0)];
+          }
+          workPackages.push(wp);
+        });
+
+        if (!workPackages.length) return null;
+        return {
+          companyNames: participants,
+          companyCount,
+          workPackages,
+        };
+      };
 
       const normalizeCompanyData = (data) => {
         const base = Array.from({ length: 5 }, () => createCompanyData());
@@ -1503,7 +1636,14 @@
         const [databaseManagementModalOpen, setDatabaseManagementModalOpen] = useState(false);
         const [importModeDialogState, setImportModeDialogState] = useState({ open: false, backup: null });
         const [databaseManagementMessage, setDatabaseManagementMessage] = useState({ type: "", text: "" });
+        const [workplanImportModalOpen, setWorkplanImportModalOpen] = useState(false);
+        const [workplanInstructionModalOpen, setWorkplanInstructionModalOpen] = useState(false);
+        const [workplanImportConfirmOpen, setWorkplanImportConfirmOpen] = useState(false);
+        const [workplanImportError, setWorkplanImportError] = useState("");
+        const [workplanInstructionText, setWorkplanInstructionText] = useState(() => localStorage.getItem(IMPORT_GUIDE_STORAGE_KEY) || DEFAULT_IMPORT_GUIDE_TEXT);
+        const [pendingImportedWorkplan, setPendingImportedWorkplan] = useState(null);
         const projectDbImportInputRef = useRef(null);
+        const workplanImportInputRef = useRef(null);
         const [fullscreenCompanyIndex, setFullscreenCompanyIndex] = useState(null);
         const [exportWarning, setExportWarning] = useState("");
         const [isUpdateInfoOpen, setIsUpdateInfoOpen] = useState(false);
@@ -1559,6 +1699,10 @@
           }, 3500);
           return () => window.clearTimeout(timeout);
         }, [databaseManagementMessage]);
+
+        useEffect(() => {
+          localStorage.setItem(IMPORT_GUIDE_STORAGE_KEY, workplanInstructionText);
+        }, [workplanInstructionText]);
 
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
@@ -2015,6 +2159,67 @@
             setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
           }
         }, [importModeDialogState.backup, importProjectDatabase]);
+
+        const applyImportedWorkplan = useCallback((importedPlan) => {
+          if (!importedPlan) return;
+          const clearedCompanyData = normalizeCompanyData(companyData).map((entry) => ({
+            ...entry,
+            tabellenEintraege: {},
+          }));
+          setCompanyCount(importedPlan.companyCount);
+          setCompanyNames(importedPlan.companyNames);
+          setWorkPackages(importedPlan.workPackages);
+          setCompanyData(clearedCompanyData);
+          setCompanyHistoryByCompany(createCompanyHistoryByCompany(clearedCompanyData));
+          setPmInputDrafts({});
+          setPendingDelete(null);
+          setPendingEmployeeDelete(null);
+          setAssignmentWarningsByCompany({});
+          setInvalidAssignmentRowsByCompany({});
+          setWorkplanImportError("");
+          setWorkplanImportConfirmOpen(false);
+          setPendingImportedWorkplan(null);
+          setWorkplanImportModalOpen(false);
+        }, [companyData]);
+
+        const handleWorkplanJsonFileUpload = useCallback(async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          try {
+            const rawText = await file.text();
+            const parsedJson = JSON.parse(rawText);
+            const importedPlan = parseImportedWorkplanJson(parsedJson);
+            if (!importedPlan) {
+              setWorkplanImportError("Die ausgewählte JSON-Datei entspricht nicht dem erwarteten Importformat.");
+              return;
+            }
+            const hasExistingData = hasMeaningfulProjectPlanningData(workPackages, companyNames, companyCount, companyData);
+            if (hasExistingData) {
+              setPendingImportedWorkplan(importedPlan);
+              setWorkplanImportConfirmOpen(true);
+              setWorkplanImportError("");
+              return;
+            }
+            applyImportedWorkplan(importedPlan);
+          } catch (error) {
+            setWorkplanImportError("Die ausgewählte JSON-Datei entspricht nicht dem erwarteten Importformat.");
+          }
+        }, [applyImportedWorkplan, companyCount, companyData, companyNames, workPackages]);
+
+        const confirmWorkplanImport = useCallback(() => {
+          if (!pendingImportedWorkplan) return;
+          applyImportedWorkplan(pendingImportedWorkplan);
+        }, [applyImportedWorkplan, pendingImportedWorkplan]);
+
+        const downloadWorkplanTemplate = useCallback(() => {
+          const link = document.createElement("a");
+          link.href = ARBEITSPLAN_TEMPLATE_PATH;
+          link.download = "arbeitsplan_import_vorlage_generisch.json";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }, []);
 
         const filteredProjectRecords = useMemo(() => {
           const term = projectSearchTerm.trim().toLowerCase();
@@ -4054,6 +4259,13 @@
                   </div>
 
                   <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <input
+                      ref={workplanImportInputRef}
+                      type="file"
+                      accept="application/json,.json"
+                      onChange={handleWorkplanJsonFileUpload}
+                      className="hidden"
+                    />
                     <button
                       type="button"
                       onClick={addWp}
@@ -4069,6 +4281,16 @@
                       className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-subtle transition hover:border-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
                     >
                       – Arbeitspaket
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWorkplanImportModalOpen(true);
+                        setWorkplanImportError("");
+                      }}
+                      className="inline-flex items-center gap-2 rounded-md border border-[var(--ca-green-border)] bg-[var(--ca-green-soft)] px-4 py-2 text-sm font-semibold text-slate-700 shadow-subtle transition hover:bg-[var(--ca-green-soft-strong)]"
+                    >
+                      Arbeitsplan importieren
                     </button>
                     {pendingDelete?.type === "wp" && (
                       <span className="inline-flex items-center gap-2 text-xs text-rose-600">
@@ -5552,6 +5774,109 @@
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
                     >
                       Schließen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {workplanImportModalOpen ? (
+              <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Arbeitsplan importieren</h3>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Laden Sie eine JSON-Datei im definierten Importformat hoch oder nutzen Sie die Vorlage.
+                  </p>
+                  <div className="mt-4 grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => workplanImportInputRef.current?.click()}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm font-semibold text-slate-700"
+                    >
+                      JSON-Datei hochladen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadWorkplanTemplate}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm font-semibold text-slate-700"
+                    >
+                      Vorlage herunterladen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkplanInstructionModalOpen(true)}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm font-semibold text-slate-700"
+                    >
+                      Anleitung
+                    </button>
+                  </div>
+                  {workplanImportError ? (
+                    <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {workplanImportError}
+                    </div>
+                  ) : null}
+                  <div className="mt-5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWorkplanImportModalOpen(false);
+                        setWorkplanImportError("");
+                      }}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Schließen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {workplanInstructionModalOpen ? (
+              <div className="fixed inset-0 z-[66] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Anleitung</h3>
+                  <textarea
+                    value={workplanInstructionText}
+                    onChange={(event) => setWorkplanInstructionText(event.target.value)}
+                    className="mt-3 h-[520px] w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-relaxed focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  />
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setWorkplanInstructionModalOpen(false)}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Schließen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {workplanImportConfirmOpen ? (
+              <div className="fixed inset-0 z-[67] flex items-center justify-center bg-slate-950/40 px-4">
+                <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-slate-900">Import bestätigen</h3>
+                  <p className="mt-2 text-sm text-slate-700">
+                    Der Import ersetzt die aktuelle Arbeitsplanstruktur und die PM-Zuordnungen. Möchten Sie fortfahren?
+                  </p>
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={confirmWorkplanImport}
+                      className="rounded-md border border-[var(--ca-green-border)] bg-[var(--ca-green)] px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      Importieren
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWorkplanImportConfirmOpen(false);
+                        setPendingImportedWorkplan(null);
+                      }}
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      Abbrechen
                     </button>
                   </div>
                 </div>
