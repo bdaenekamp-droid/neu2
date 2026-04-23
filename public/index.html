@@ -2615,6 +2615,7 @@
         });
 
         const runAutoProjectPlanning = (companyIndex) => {
+          console.log("Auto-Projektplanung gestartet");
           const companyRows = filteredWorkPackageRowsByCompany[companyIndex] || [];
           const companyEmployees = employeesByCompany[companyIndex] || [];
           const locks = getAutoPlanningLocks(companyIndex);
@@ -2642,6 +2643,17 @@
           if (!rowsWithPm.length) return;
 
           const existingEntries = companyData[companyIndex]?.tabellenEintraege || {};
+          const resetEntries = cloneTableEntries(existingEntries);
+          companyRows.forEach((row) => {
+            const currentEntry = resetEntries[row.id] || {};
+            resetEntries[row.id] = {
+              ...currentEntry,
+              start: shouldOptimizeDates ? "" : currentEntry.start || "",
+              ende: shouldOptimizeDates ? "" : currentEntry.ende || "",
+              mitarbeiterNummer: shouldOptimizeEmployees ? "" : currentEntry.mitarbeiterNummer || "",
+              notPlannable: shouldOptimizeEmployees ? false : !!currentEntry.notPlannable,
+            };
+          });
           const plannedByRowId = {};
           if (shouldOptimizeDates) {
             const rowCount = rowsWithPm.length;
@@ -2682,7 +2694,7 @@
             });
           } else {
             rowsWithPm.forEach((entry) => {
-              const current = existingEntries[entry.row.id] || {};
+              const current = resetEntries[entry.row.id] || {};
               plannedByRowId[entry.row.id] = {
                 start: current.start || "",
                 ende: current.ende || "",
@@ -2722,7 +2734,7 @@
 
           rowsWithPm.forEach(({ row, pmDemand }) => {
             const dateAssignment = plannedByRowId[row.id] || {};
-            const existingRowEntry = existingEntries[row.id] || {};
+            const existingRowEntry = resetEntries[row.id] || {};
             assignments[row.id] = {
               ...dateAssignment,
               mitarbeiterNummer: shouldOptimizeEmployees
@@ -2884,7 +2896,7 @@
             }
           }
 
-          const nextEntries = cloneTableEntries(existingEntries);
+          const nextEntries = cloneTableEntries(resetEntries);
           Object.entries(assignments).forEach(([rowId, assignment]) => {
             const { employeeIndex, pmByYear, ...entryFields } = assignment;
             const hasEmployee = parseInt(entryFields.mitarbeiterNummer, 10) > 0;
@@ -2902,12 +2914,6 @@
           const optimizedWorkPackages = shouldOptimizePm
             ? optimizePmWorkPackages(companyIndex, workPackages)
             : workPackages;
-          const hasEntriesChanged = !areTableEntriesEqual(existingEntries, nextEntries);
-          const hasPmChanged =
-            JSON.stringify(getCompanyPmSnapshot(companyIndex, workPackages)) !==
-            JSON.stringify(getCompanyPmSnapshot(companyIndex, optimizedWorkPackages));
-          if (!hasEntriesChanged && !hasPmChanged) return;
-
           if (unplannableRowIds.length) {
             console.warn(
               `[Auto Planung] Unternehmen ${companyIndex + 1}: ${unplannableRowIds.length} Arbeitspaket(e) nicht planbar ohne Überkapazität.`
@@ -2921,6 +2927,7 @@
 
           applyCompanySnapshot(companyIndex, afterSnapshot);
           commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
+          console.log("Auto-Projektplanung abgeschlossen");
         };
 
         const calculateCompanyFundingMetrics = (companyIndex, sourceWorkPackages) => {
