@@ -6,7 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "mkdir -p dist && cp -r public/. dist/"
+    "build": "mkdir -p dist && cp -r public/. dist/",
+    "generate:build-info": "node scripts/generate-build-info.js",
+    "prestart": "npm run generate:build-info",
+    "prebuild": "npm run generate:build-info"
   },
   "dependencies": {
     "express": "^4.19.2"
