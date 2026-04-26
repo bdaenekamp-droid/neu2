@@ -1754,6 +1754,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         const [ganttScrollWidth, setGanttScrollWidth] = useState(0);
         const ganttScrollContainerRef = useRef(null);
         const [currentProjectName, setCurrentProjectName] = useState("");
+        const activeProjectId = currentProjectName || null;
         const [projectRecords, setProjectRecords] = useState([]);
         const [newProjectModalOpen, setNewProjectModalOpen] = useState(false);
         const [loadProjectModalOpen, setLoadProjectModalOpen] = useState(false);
@@ -1766,7 +1767,8 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         const [importModeDialogState, setImportModeDialogState] = useState({ open: false, backup: null });
         const [databaseManagementMessage, setDatabaseManagementMessage] = useState({ type: "", text: "" });
         const [workplanImportModalOpen, setWorkplanImportModalOpen] = useState(false);
-        const [workplanImportProjectPromptOpen, setWorkplanImportProjectPromptOpen] = useState(false);
+        const [projectCreationPromptOpen, setProjectCreationPromptOpen] = useState(false);
+        const [hasDeclinedProjectCreationForCurrentSession, setHasDeclinedProjectCreationForCurrentSession] = useState(false);
         const [workplanInstructionModalOpen, setWorkplanInstructionModalOpen] = useState(false);
         const [workplanImportConfirmOpen, setWorkplanImportConfirmOpen] = useState(false);
         const [workplanImportError, setWorkplanImportError] = useState("");
@@ -1802,6 +1804,8 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         const hasInitializedRef = useRef(false);
         const debounceSaveRef = useRef(null);
         const lastSavedSnapshotRef = useRef("");
+        const noProjectBaselineSnapshotRef = useRef("");
+        const pendingActionAfterProjectCreationRef = useRef(null);
 
         useEffect(() => {
           return () => {
@@ -1917,17 +1921,17 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         }, []);
 
         const saveNow = useCallback((overrideState = null, knownSnapshotString = "") => {
-          if (!hasInitializedRef.current || !currentProjectName) return;
+          if (!hasInitializedRef.current || !activeProjectId) return;
           try {
             const snapshot = overrideState || collectProjectState();
             const serializedSnapshot = knownSnapshotString || JSON.stringify(snapshot);
-            persistProject(currentProjectName, snapshot);
+            persistProject(activeProjectId, snapshot);
             lastSavedSnapshotRef.current = serializedSnapshot;
           } catch (error) {
             console.warn("Projekt konnte nicht gespeichert werden", error);
             setStorageError("Projekt konnte nicht gespeichert werden.");
           }
-        }, [collectProjectState, currentProjectName, persistProject]);
+        }, [activeProjectId, collectProjectState, persistProject]);
 
         const loadCryoVisionSeedState = useCallback(async () => {
           try {
@@ -2035,8 +2039,44 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         const projectStateSnapshot = collectProjectState();
         const projectSnapshotString = useMemo(() => JSON.stringify(projectStateSnapshot), [projectStateSnapshot]);
 
+        const requestProjectCreationBeforeChange = useCallback((onProjectCreated = null) => {
+          if (activeProjectId) {
+            return true;
+          }
+          pendingActionAfterProjectCreationRef.current = typeof onProjectCreated === "function" ? onProjectCreated : null;
+          setProjectCreationPromptOpen(true);
+          return false;
+        }, [activeProjectId]);
+
         useEffect(() => {
-          if (!hasInitializedRef.current || !currentProjectName) return;
+          if (!hasInitializedRef.current) return;
+          if (activeProjectId) {
+            setProjectCreationPromptOpen(false);
+            setHasDeclinedProjectCreationForCurrentSession(false);
+            noProjectBaselineSnapshotRef.current = "";
+            return;
+          }
+          if (!noProjectBaselineSnapshotRef.current) {
+            noProjectBaselineSnapshotRef.current = projectSnapshotString;
+          }
+        }, [activeProjectId, projectSnapshotString]);
+
+        useEffect(() => {
+          if (!hasInitializedRef.current || activeProjectId) return;
+          if (projectCreationPromptOpen || hasDeclinedProjectCreationForCurrentSession) return;
+          if (!noProjectBaselineSnapshotRef.current) return;
+          if (projectSnapshotString === noProjectBaselineSnapshotRef.current) return;
+          requestProjectCreationBeforeChange();
+        }, [
+          activeProjectId,
+          hasDeclinedProjectCreationForCurrentSession,
+          projectCreationPromptOpen,
+          projectSnapshotString,
+          requestProjectCreationBeforeChange,
+        ]);
+
+        useEffect(() => {
+          if (!hasInitializedRef.current || !activeProjectId) return;
           if (projectSnapshotString === lastSavedSnapshotRef.current) return;
           if (debounceSaveRef.current) {
             clearTimeout(debounceSaveRef.current);
@@ -2050,11 +2090,11 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               clearTimeout(debounceSaveRef.current);
             }
           };
-        }, [currentProjectName, projectSnapshotString, projectStateSnapshot, saveNow]);
+        }, [activeProjectId, projectSnapshotString, projectStateSnapshot, saveNow]);
 
         useEffect(() => {
           const handleBeforeUnload = () => {
-            if (!hasInitializedRef.current || !currentProjectName) return;
+            if (!hasInitializedRef.current || !activeProjectId) return;
             const snapshot = collectProjectState();
             const serializedSnapshot = JSON.stringify(snapshot);
             if (serializedSnapshot !== lastSavedSnapshotRef.current) {
@@ -2065,7 +2105,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           return () => {
             window.removeEventListener("beforeunload", handleBeforeUnload);
           };
-        }, [collectProjectState, currentProjectName, saveNow]);
+        }, [activeProjectId, collectProjectState, saveNow]);
 
         const createNewProject = () => {
           const trimmedName = newProjectName.trim();
@@ -2086,6 +2126,11 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
             setProjectError("");
             setNewProjectModalOpen(false);
             setNewProjectName("");
+            const pendingAction = pendingActionAfterProjectCreationRef.current;
+            pendingActionAfterProjectCreationRef.current = null;
+            if (typeof pendingAction === "function") {
+              pendingAction();
+            }
           } catch (error) {
             console.warn("Neues Projekt konnte nicht erstellt werden", error);
             setProjectError("Projekt konnte nicht erstellt werden.");
@@ -2317,6 +2362,14 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
 
         const handleWorkplanTextImport = useCallback(() => {
           setWorkplanImportSuccess("");
+          if (!activeProjectId) {
+            requestProjectCreationBeforeChange(() => {
+              setTimeout(() => {
+                handleWorkplanTextImport();
+              }, 0);
+            });
+            return;
+          }
           const trimmedText = workplanImportText.trim();
           if (!trimmedText) return;
           console.log("Import raw text received", trimmedText);
@@ -2347,7 +2400,16 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
             return;
           }
           applyImportedWorkplan(importedPlan);
-        }, [applyImportedWorkplan, companyCount, companyData, companyNames, workPackages, workplanImportText]);
+        }, [
+          activeProjectId,
+          applyImportedWorkplan,
+          companyCount,
+          companyData,
+          companyNames,
+          requestProjectCreationBeforeChange,
+          workPackages,
+          workplanImportText,
+        ]);
 
         const confirmWorkplanImport = useCallback(() => {
           if (!pendingImportedWorkplan) return;
@@ -2355,14 +2417,10 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         }, [applyImportedWorkplan, pendingImportedWorkplan]);
 
         const openWorkplanImportFlow = useCallback(() => {
-          if (!currentProjectName) {
-            setWorkplanImportProjectPromptOpen(true);
-            return;
-          }
           setWorkplanImportModalOpen(true);
           setWorkplanImportError("");
           setWorkplanImportText("");
-        }, [currentProjectName]);
+        }, []);
 
         const filteredProjectRecords = useMemo(() => {
           const term = projectSearchTerm.trim().toLowerCase();
@@ -2387,6 +2445,10 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           setCurrentProjectName("");
           localStorage.removeItem(CURRENT_PROJECT_KEY);
           lastSavedSnapshotRef.current = "";
+          pendingActionAfterProjectCreationRef.current = null;
+          setProjectCreationPromptOpen(false);
+          setHasDeclinedProjectCreationForCurrentSession(false);
+          noProjectBaselineSnapshotRef.current = JSON.stringify(parseStoredProject(emptyState));
         }, [applyProjectState]);
 
         const deleteProjectByName = useCallback((projectName) => {
@@ -6037,32 +6099,36 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               </div>
             ) : null}
 
-            {workplanImportProjectPromptOpen ? (
+            {projectCreationPromptOpen ? (
               <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/40 px-4">
                 <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
                   <h3 className="text-lg font-semibold text-slate-900">Kein aktives Projekt</h3>
                   <p className="mt-2 text-sm text-slate-700">
-                    Es ist aktuell kein Projekt geöffnet. Möchten Sie zuerst ein neues Projekt anlegen?
+                    Es ist aktuell kein Projekt geöffnet. Möchten Sie ein neues Projekt anlegen?
                   </p>
                   <div className="mt-5 flex justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setWorkplanImportProjectPromptOpen(false)}
+                      onClick={() => {
+                        setProjectCreationPromptOpen(false);
+                        pendingActionAfterProjectCreationRef.current = null;
+                        setHasDeclinedProjectCreationForCurrentSession(true);
+                      }}
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
                     >
-                      Abbrechen
+                      Nein
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setWorkplanImportProjectPromptOpen(false);
+                        setProjectCreationPromptOpen(false);
                         setProjectError("");
                         setNewProjectName("");
                         setNewProjectModalOpen(true);
                       }}
                       className="ca-primary-btn rounded-md px-3 py-2 text-sm font-semibold"
                     >
-                      Neues Projekt anlegen
+                      Ja
                     </button>
                   </div>
                 </div>
