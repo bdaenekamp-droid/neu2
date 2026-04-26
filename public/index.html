@@ -2105,12 +2105,16 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               console.log("AcroForm field object keys:", fieldObjects ? Object.keys(fieldObjects).length : 0);
 
               let renderedPages = 0;
+              let successfulCanvasPages = 0;
               let skippedAnnotations = 0;
+              let failedCanvasPages = 0;
               for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
                 try {
                   console.log("Rendering page:", pageNumber);
+                  console.log("Page load start:", pageNumber);
                   const page = await pdfDocument.getPage(pageNumber);
                   const viewport = page.getViewport({ scale: 1.35 });
+                  console.log("Viewport:", pageNumber, viewport.width, viewport.height);
                   const pageWrapper = document.createElement("article");
                   pageWrapper.className = "mx-auto w-full rounded-sm border border-slate-300 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.20)]";
                   pageWrapper.style.maxWidth = `${Math.round(viewport.width + 36)}px`;
@@ -2124,12 +2128,19 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                   pageView.className = "relative";
                   pageView.style.width = `${viewport.width}px`;
                   pageView.style.height = `${viewport.height}px`;
+                  pageView.style.background = "#ffffff";
+                  pageView.style.overflow = "hidden";
 
                   const canvas = document.createElement("canvas");
-                  canvas.width = Math.floor(viewport.width);
-                  canvas.height = Math.floor(viewport.height);
+                  const outputScale = window.devicePixelRatio || 1;
+                  canvas.width = Math.max(1, Math.floor(viewport.width * outputScale));
+                  canvas.height = Math.max(1, Math.floor(viewport.height * outputScale));
                   canvas.style.width = `${viewport.width}px`;
                   canvas.style.height = `${viewport.height}px`;
+                  canvas.style.display = "block";
+                  canvas.style.background = "#ffffff";
+                  canvas.style.border = "1px solid rgba(148, 163, 184, 0.35)";
+                  canvas.dataset.page = `${pageNumber}`;
                   pageView.appendChild(canvas);
 
                   const textLayerDiv = document.createElement("div");
@@ -2142,25 +2153,39 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                   pageWrapper.appendChild(pageView);
                   container.appendChild(pageWrapper);
 
-                  await page.render({
-                    canvasContext: canvas.getContext("2d"),
+                  const canvasContext = canvas.getContext("2d", { alpha: false });
+                  if (!canvasContext) {
+                    throw new Error(`Canvas context konnte nicht erstellt werden (Seite ${pageNumber}).`);
+                  }
+                  canvasContext.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+                  console.log("Canvas size:", pageNumber, canvas.width, canvas.height);
+                  console.log("Page render start:", pageNumber);
+                  const renderTask = page.render({
+                    canvasContext,
                     viewport,
-                    annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
-                  }).promise;
+                    annotationMode: pdfjsLib.AnnotationMode.DISABLE,
+                  });
+                  await renderTask.promise;
+                  successfulCanvasPages += 1;
+                  console.log("Page render success:", pageNumber);
+                  const canvasRect = canvas.getBoundingClientRect();
+                  console.log("Canvas visible:", pageNumber, canvasRect.width, canvasRect.height, window.getComputedStyle(canvas).display, window.getComputedStyle(canvas).opacity);
 
                   try {
                     const textContent = await page.getTextContent();
                     const textItems = ensureArray(textContent?.items);
                     console.log(`Page ${pageNumber} text items:`, textItems.length);
-                    pdfjsLib.renderTextLayer({
-                      textContent: {
-                        ...textContent,
-                        items: textItems,
-                      },
-                      container: textLayerDiv,
-                      viewport,
-                      textDivs: [],
-                    });
+                    if (pdfjsLib.renderTextLayer) {
+                      pdfjsLib.renderTextLayer({
+                        textContent: {
+                          ...textContent,
+                          items: textItems,
+                        },
+                        container: textLayerDiv,
+                        viewport,
+                        textDivs: [],
+                      });
+                    }
                   } catch (textError) {
                     console.error(`Page ${pageNumber} text layer failed:`, textError);
                   }
@@ -2255,14 +2280,19 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
 
                   renderedPages += 1;
                 } catch (pageError) {
+                  failedCanvasPages += 1;
+                  console.error("Page render failed:", pageNumber, pageError);
                   console.error(`Page ${pageNumber} failed:`, pageError);
                 }
               }
 
               console.log("Rendered pages:", renderedPages);
+              console.log("Successful canvas pages:", successfulCanvasPages);
+              console.log("Failed canvas pages:", failedCanvasPages);
               console.log("Skipped problematic annotations/fields:", skippedAnnotations);
               if (isActive) {
-                const hasPartialIssues = renderedPages !== pageCount || skippedAnnotations > 0;
+                const hasCanvasIssues = successfulCanvasPages !== pageCount;
+                const hasPartialIssues = renderedPages !== pageCount || skippedAnnotations > 0 || hasCanvasIssues;
                 setRenderState({
                   loading: false,
                   loaded: true,
@@ -2270,7 +2300,9 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                   renderedPages,
                   hasAcroForm,
                   hasXfa,
-                  error: hasPartialIssues
+                  error: hasCanvasIssues
+                    ? "Die PDF wurde geladen und die Seiten wurden erkannt, aber der Seiteninhalt konnte nicht korrekt gerendert werden."
+                    : hasPartialIssues
                     ? "Die PDF wurde geladen, aber einzelne Formularfelder konnten nicht vollständig verarbeitet werden. Die übrigen Felder werden weiterhin angezeigt."
                     : null,
                 });
