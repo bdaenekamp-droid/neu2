@@ -2026,311 +2026,138 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         );
       };
 
-      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, pdfResolution }) => {
-        const viewerRef = useRef(null);
+      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, pdfResolution, detectedPdfAnalysis, prefillValues }) => {
         const [renderState, setRenderState] = useState({
           loading: false,
-          loaded: false,
-          pageCount: 0,
-          renderedPages: 0,
-          hasAcroForm: false,
-          hasXfa: false,
           error: null,
+          fields: [],
+          analysis: null,
+          unmappedFields: [],
         });
 
-        const fieldElementsRef = useRef({});
-
-        const getStorageKeyForPdfField = useCallback((fieldName = "") => {
-          const normalized = `${fieldName}`.trim().replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "");
-          return normalized ? `pdf::${normalized}` : "";
-        }, []);
-
-        const ensureArray = useCallback((candidate) => (Array.isArray(candidate) ? candidate : []), []);
-
-        const applyStoredValueToElement = useCallback((element, value) => {
-          if (!element) return;
-          if (element.type === "checkbox" || element.type === "radio") {
-            element.checked = Boolean(value);
-            return;
-          }
-          element.value = value === undefined || value === null ? "" : `${value}`;
-        }, []);
-
-        useEffect(() => {
-          Object.entries(fieldElementsRef.current).forEach(([storageKey, elements]) => {
-            const currentValue = values?.[storageKey];
-            elements.forEach((element) => applyStoredValueToElement(element, currentValue));
+        const setInitialValues = useCallback((fields) => {
+          fields.forEach((field) => {
+            const storageKey = field?.storageKey;
+            if (!storageKey) return;
+            if (values?.[storageKey] !== undefined) return;
+            const prefillValue = field?.name && prefillValues?.[field.name] !== undefined ? prefillValues[field.name] : field?.defaultValue;
+            if (prefillValue !== undefined && prefillValue !== null && `${prefillValue}`.trim() !== "") {
+              onFieldChange(storageKey, prefillValue);
+            }
           });
-        }, [values, applyStoredValueToElement]);
+        }, [onFieldChange, prefillValues, values]);
 
         useEffect(() => {
           let isActive = true;
-          const renderPdf = async () => {
-            const container = viewerRef.current;
-            if (!container) return;
-            container.innerHTML = "";
-            fieldElementsRef.current = {};
-            setRenderState((prev) => ({ ...prev, loading: true, loaded: false, error: null }));
-
+          const loadSchema = async () => {
+            if (!pdfResolution?.found) return;
+            setRenderState((prev) => ({ ...prev, loading: true, error: null }));
             try {
-              console.log("PDF fetch method:", "GET");
               console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
-              const response = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, { method: "GET", cache: "no-store" });
-              console.log("PDF fetch status:", response.status);
-              if (!response.ok) {
-                throw new Error(`Die PDF wurde nicht geladen (HTTP ${response.status}).`);
+              const pdfResponse = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, { method: "GET", cache: "no-store" });
+              if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
+              const pdfBlob = await pdfResponse.blob();
+
+              const formData = new FormData();
+              formData.append("file", pdfBlob, "ZIM-Antrag-A701590.pdf");
+              formData.append("payload", JSON.stringify({}));
+
+              let analysisResponse = await fetch("/api/zim/fields", { method: "POST", body: formData });
+              if (!analysisResponse.ok) {
+                analysisResponse = await fetch("/api/zim/analyze", { method: "POST", body: formData });
               }
+              if (!analysisResponse.ok) throw new Error(`Schema-Extraktion fehlgeschlagen (HTTP ${analysisResponse.status}).`);
+              const analysisResult = await analysisResponse.json();
+              const fields = Array.isArray(analysisResult?.fields) ? analysisResult.fields : [];
+              const analysis = analysisResult?.analysis || {};
 
-              const pdfArrayBuffer = await response.arrayBuffer();
-              const pdfjsLib = window.pdfjsLib;
-              if (!pdfjsLib?.getDocument) throw new Error("Die Rendering-Library pdf.js ist nicht verfügbar.");
-
-              const loadingTask = pdfjsLib.getDocument({
-                data: pdfArrayBuffer,
-                disableWorker: true,
-                enableXfa: true,
-                isEvalSupported: false,
-              });
-              const pdfDocument = await loadingTask.promise;
-              const pageCount = Number(pdfDocument?.numPages) || 0;
-              const fieldObjects = (await pdfDocument.getFieldObjects?.()) || null;
-              const hasAcroForm = Boolean(fieldObjects && Object.keys(fieldObjects).length);
-              const hasXfa = Boolean(pdfDocument?.allXfaHtml);
-              const xfaDatasets = ensureArray(pdfDocument?.allXfaHtml?.children);
               console.log("PDF loaded:", true);
-              console.log("PDF page count:", pageCount);
-              console.log("AcroForm detected:", hasAcroForm);
-              console.log("XFA detected:", hasXfa);
-              console.log("XFA root children:", xfaDatasets.length);
-              console.log("AcroForm field object keys:", fieldObjects ? Object.keys(fieldObjects).length : 0);
+              console.log("Page count:", analysis.pageCount || 0);
+              console.log("Has AcroForm:", Boolean(analysis.hasAcroForm));
+              console.log("Has XFA:", Boolean(analysis.hasXfa));
+              console.log("Has PDF JavaScript:", Boolean(analysis.hasJavaScript));
+              console.log("Extracted total fields:", fields.length);
+              console.log("Fields per page:", analysis.fieldsPerPage || {});
+              console.log("Fields per source:", analysis.fieldSources || {});
+              console.log("Unmapped fields:", analysis.unmappedFields || []);
+              console.log("Rendered form fields:", fields.length);
 
-              let renderedPages = 0;
-              let successfulCanvasPages = 0;
-              let skippedAnnotations = 0;
-              let failedCanvasPages = 0;
-              for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-                try {
-                  console.log("Rendering page:", pageNumber);
-                  console.log("Page load start:", pageNumber);
-                  const page = await pdfDocument.getPage(pageNumber);
-                  const viewport = page.getViewport({ scale: 1.35 });
-                  console.log("Viewport:", pageNumber, viewport.width, viewport.height);
-                  const pageWrapper = document.createElement("article");
-                  pageWrapper.className = "mx-auto w-full rounded-sm border border-slate-300 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.20)]";
-                  pageWrapper.style.maxWidth = `${Math.round(viewport.width + 36)}px`;
-
-                  const pageHeader = document.createElement("p");
-                  pageHeader.className = "mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500";
-                  pageHeader.textContent = `ZIM-Mantelbögen · Unternehmen 1 · Seite ${pageNumber} von ${pageCount}`;
-                  pageWrapper.appendChild(pageHeader);
-
-                  const pageView = document.createElement("div");
-                  pageView.className = "relative";
-                  pageView.style.width = `${viewport.width}px`;
-                  pageView.style.height = `${viewport.height}px`;
-                  pageView.style.background = "#ffffff";
-                  pageView.style.overflow = "hidden";
-
-                  const canvas = document.createElement("canvas");
-                  const outputScale = window.devicePixelRatio || 1;
-                  canvas.width = Math.max(1, Math.floor(viewport.width * outputScale));
-                  canvas.height = Math.max(1, Math.floor(viewport.height * outputScale));
-                  canvas.style.width = `${viewport.width}px`;
-                  canvas.style.height = `${viewport.height}px`;
-                  canvas.style.display = "block";
-                  canvas.style.background = "#ffffff";
-                  canvas.style.border = "1px solid rgba(148, 163, 184, 0.35)";
-                  canvas.dataset.page = `${pageNumber}`;
-                  pageView.appendChild(canvas);
-
-                  const textLayerDiv = document.createElement("div");
-                  textLayerDiv.className = "textLayer absolute inset-0";
-                  pageView.appendChild(textLayerDiv);
-
-                  const annotationLayerDiv = document.createElement("div");
-                  annotationLayerDiv.className = "annotationLayer absolute inset-0";
-                  pageView.appendChild(annotationLayerDiv);
-                  pageWrapper.appendChild(pageView);
-                  container.appendChild(pageWrapper);
-
-                  const canvasContext = canvas.getContext("2d", { alpha: false });
-                  if (!canvasContext) {
-                    throw new Error(`Canvas context konnte nicht erstellt werden (Seite ${pageNumber}).`);
-                  }
-                  canvasContext.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-                  console.log("Canvas size:", pageNumber, canvas.width, canvas.height);
-                  console.log("Page render start:", pageNumber);
-                  const renderTask = page.render({
-                    canvasContext,
-                    viewport,
-                    annotationMode: pdfjsLib.AnnotationMode.DISABLE,
-                  });
-                  await renderTask.promise;
-                  successfulCanvasPages += 1;
-                  console.log("Page render success:", pageNumber);
-                  const canvasRect = canvas.getBoundingClientRect();
-                  console.log("Canvas visible:", pageNumber, canvasRect.width, canvasRect.height, window.getComputedStyle(canvas).display, window.getComputedStyle(canvas).opacity);
-
-                  try {
-                    const textContent = await page.getTextContent();
-                    const textItems = ensureArray(textContent?.items);
-                    console.log(`Page ${pageNumber} text items:`, textItems.length);
-                    if (pdfjsLib.renderTextLayer) {
-                      pdfjsLib.renderTextLayer({
-                        textContent: {
-                          ...textContent,
-                          items: textItems,
-                        },
-                        container: textLayerDiv,
-                        viewport,
-                        textDivs: [],
-                      });
-                    }
-                  } catch (textError) {
-                    console.error(`Page ${pageNumber} text layer failed:`, textError);
-                  }
-
-                  let rawAnnotations = [];
-                  try {
-                    rawAnnotations = ensureArray(await page.getAnnotations({ intent: "display" }));
-                  } catch (annotationFetchError) {
-                    console.error(`Page ${pageNumber} annotation fetch failed:`, annotationFetchError);
-                  }
-                  const sanitizedAnnotations = rawAnnotations.reduce((acc, annotation, annotationIndex) => {
-                    if (!annotation || typeof annotation !== "object") {
-                      console.warn(`Page ${pageNumber} skipping invalid annotation at index`, annotationIndex, annotation);
-                      skippedAnnotations += 1;
-                      return acc;
-                    }
-                    const safeAnnotation = {
-                      ...annotation,
-                      rect: ensureArray(annotation?.rect),
-                      quadPoints: ensureArray(annotation?.quadPoints),
-                      option: ensureArray(annotation?.option),
-                      options: ensureArray(annotation?.options),
-                      exportValue: ensureArray(annotation?.exportValue),
-                      buttonValue: ensureArray(annotation?.buttonValue),
-                      fieldValue: annotation?.fieldValue ?? "",
-                      annotationFlags: annotation?.annotationFlags ?? 0,
-                    };
-                    acc.push(safeAnnotation);
-                    return acc;
-                  }, []);
-
-                  const widgetCount = sanitizedAnnotations.filter((annotation) => annotation?.subtype === "Widget").length;
-                  console.log(`Page ${pageNumber} annotation count:`, sanitizedAnnotations.length);
-                  console.log(`Page ${pageNumber} widget count:`, widgetCount);
-
-                  if (pdfjsLib.AnnotationLayer?.render) {
-                    try {
-                      await pdfjsLib.AnnotationLayer.render({
-                        viewport: viewport.clone({ dontFlip: true }),
-                        div: annotationLayerDiv,
-                        annotations: sanitizedAnnotations,
-                        page,
-                        annotationStorage: pdfDocument.annotationStorage,
-                        renderForms: true,
-                      });
-                    } catch (annotationRenderError) {
-                      console.error(`Page ${pageNumber} annotation layer failed; retrying with isolated annotations.`, annotationRenderError);
-                      for (let index = 0; index < sanitizedAnnotations.length; index += 1) {
-                        const singleAnnotation = sanitizedAnnotations[index];
-                        try {
-                          await pdfjsLib.AnnotationLayer.render({
-                            viewport: viewport.clone({ dontFlip: true }),
-                            div: annotationLayerDiv,
-                            annotations: [singleAnnotation],
-                            page,
-                            annotationStorage: pdfDocument.annotationStorage,
-                            renderForms: true,
-                          });
-                        } catch (singleAnnotationError) {
-                          skippedAnnotations += 1;
-                          console.error("Field render failed:", singleAnnotation?.id || singleAnnotation?.fieldName || `page-${pageNumber}-annotation-${index}`, singleAnnotationError, singleAnnotation);
-                        }
-                      }
-                    }
-                  }
-
-                  const inputs = annotationLayerDiv.querySelectorAll("input, textarea, select");
-                  console.log(`Rendered form elements page ${pageNumber}:`, inputs.length);
-                  inputs.forEach((element, elementIndex) => {
-                    try {
-                      const rawName = element?.name || element?.getAttribute?.("data-element-id") || "";
-                      const storageKey = getStorageKeyForPdfField(rawName);
-                      if (!storageKey) return;
-                      if (!fieldElementsRef.current[storageKey]) fieldElementsRef.current[storageKey] = [];
-                      fieldElementsRef.current[storageKey].push(element);
-                      applyStoredValueToElement(element, values?.[storageKey]);
-                      element.addEventListener("change", (event) => {
-                        const target = event?.target;
-                        const nextValue = target?.type === "checkbox" ? Boolean(target?.checked) : target?.value;
-                        onFieldChange(storageKey, nextValue ?? "");
-                      });
-                      element.addEventListener("input", (event) => {
-                        const target = event?.target;
-                        const nextValue = target?.type === "checkbox" ? Boolean(target?.checked) : target?.value;
-                        onFieldChange(storageKey, nextValue ?? "");
-                      });
-                    } catch (fieldBindingError) {
-                      skippedAnnotations += 1;
-                      console.error(`Field binding failed on page ${pageNumber} index ${elementIndex}:`, fieldBindingError, element);
-                    }
-                  });
-
-                  renderedPages += 1;
-                } catch (pageError) {
-                  failedCanvasPages += 1;
-                  console.error("Page render failed:", pageNumber, pageError);
-                  console.error(`Page ${pageNumber} failed:`, pageError);
-                }
-              }
-
-              console.log("Rendered pages:", renderedPages);
-              console.log("Successful canvas pages:", successfulCanvasPages);
-              console.log("Failed canvas pages:", failedCanvasPages);
-              console.log("Skipped problematic annotations/fields:", skippedAnnotations);
-              if (isActive) {
-                const hasCanvasIssues = successfulCanvasPages !== pageCount;
-                const hasPartialIssues = renderedPages !== pageCount || skippedAnnotations > 0 || hasCanvasIssues;
-                setRenderState({
-                  loading: false,
-                  loaded: true,
-                  pageCount,
-                  renderedPages,
-                  hasAcroForm,
-                  hasXfa,
-                  error: hasCanvasIssues
-                    ? "Die PDF wurde geladen und die Seiten wurden erkannt, aber der Seiteninhalt konnte nicht korrekt gerendert werden."
-                    : hasPartialIssues
-                    ? "Die PDF wurde geladen, aber einzelne Formularfelder konnten nicht vollständig verarbeitet werden. Die übrigen Felder werden weiterhin angezeigt."
-                    : null,
-                });
-              }
+              if (!isActive) return;
+              setInitialValues(fields);
+              setRenderState({
+                loading: false,
+                error: fields.length ? null : "Die PDF wurde geladen, aber es konnten keine Formularfelder extrahiert werden.",
+                fields,
+                analysis,
+                unmappedFields: analysis.unmappedFields || [],
+              });
             } catch (error) {
               console.log("PDF loaded:", false);
-              console.error("PDF render error:", error);
-              if (isActive) {
-                setRenderState({
-                  loading: false,
-                  loaded: false,
-                  pageCount: 0,
-                  renderedPages: 0,
-                  hasAcroForm: false,
-                  hasXfa: false,
-                  error: "Die PDF-Formularansicht konnte nicht vollständig geladen werden. Bitte prüfen Sie die Datei oder versuchen Sie es erneut.",
-                });
-              }
+              console.error("Schema extraction error:", error);
+              if (!isActive) return;
+              setRenderState((prev) => ({
+                ...prev,
+                loading: false,
+                error: error?.message || "Die PDF wurde geladen, konnte aber nicht als Formularschema extrahiert werden.",
+              }));
             }
           };
 
-          if (pdfResolution?.found) {
-            renderPdf();
-          }
+          loadSchema();
           return () => {
             isActive = false;
           };
-        }, [onFieldChange, pdfResolution?.found, getStorageKeyForPdfField, applyStoredValueToElement]);
+        }, [pdfResolution?.found, setInitialValues]);
+
+        const groupedFields = useMemo(() => {
+          const sourceFields = renderState.fields.length ? renderState.fields : (detectedPdfAnalysis?.fields || []);
+          return sourceFields.reduce((acc, field) => {
+            const group = field?.group || (field?.page ? `Seite ${field.page}` : "Sonstige");
+            if (!acc[group]) acc[group] = [];
+            acc[group].push(field);
+            return acc;
+          }, {});
+        }, [renderState.fields, detectedPdfAnalysis?.fields]);
+
+        const renderInput = (field) => {
+          const storageKey = field?.storageKey;
+          const currentValue = values?.[storageKey];
+          const commonProps = {
+            className: "ca-focus mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900",
+            value: currentValue ?? "",
+            onChange: (event) => onFieldChange(storageKey, event.target.value),
+          };
+          if (field?.type === "checkbox") {
+            return (
+              <input
+                type="checkbox"
+                checked={Boolean(currentValue)}
+                onChange={(event) => onFieldChange(storageKey, Boolean(event.target.checked))}
+                className="h-4 w-4 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
+              />
+            );
+          }
+          if (field?.type === "select" || field?.type === "radio") {
+            const options = Array.isArray(field?.options) && field.options.length ? field.options : ["Ja", "Nein"];
+            return (
+              <select {...commonProps}>
+                <option value="">Bitte wählen</option>
+                {options.map((option, idx) => (
+                  <option key={`${field.storageKey}-opt-${idx}`} value={option}>{option}</option>
+                ))}
+              </select>
+            );
+          }
+          if (field?.type === "textarea") return <textarea {...commonProps} rows={3} />;
+          if (field?.type === "date") return <input {...commonProps} type="date" />;
+          if (field?.type === "number") return <input {...commonProps} type="number" step="0.01" />;
+          return <input {...commonProps} type="text" />;
+        };
+
+        const statusAnalysis = renderState.analysis || {};
+        const sourceLabel = statusAnalysis.fieldSources
+          ? Object.entries(statusAnalysis.fieldSources).map(([key, count]) => `${key}: ${count}`).join(", ")
+          : "–";
 
         return (
           <div className="space-y-6">
@@ -2344,14 +2171,28 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               </div>
             ) : (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                Quelle erkannt: <strong>{pdfResolution?.fileName || "ZIM-Antrag-A701590.pdf"}</strong>
-                <span className="ml-2 text-emerald-700">(Seiten: {renderState.pageCount || "–"}, gerendert: {renderState.renderedPages || "–"}, AcroForm: {renderState.hasAcroForm ? "ja" : "nein"}, XFA: {renderState.hasXfa ? "ja" : "nein"})</span>
+                Die PDF wurde geladen. Es wurden {statusAnalysis.acroFieldCount || 0} AcroForm-Felder und {statusAnalysis.xfaFieldCount || 0} XFA-Felder erkannt.
+                <div className="mt-1 text-emerald-700">Seiten: {statusAnalysis.pageCount || "–"}, JavaScript: {statusAnalysis.hasJavaScript ? "ja" : "nein"}, Quellen: {sourceLabel}</div>
               </div>
             )}
 
-            <div className="max-h-[78vh] overflow-y-auto rounded-lg border border-slate-300/90 bg-slate-200/50 p-5">
-              {renderState.loading ? <p className="text-sm text-slate-600">PDF wird geladen und vollständig gerendert …</p> : null}
-              <div ref={viewerRef} className="mx-auto max-w-[1120px] space-y-8" />
+            <div className="space-y-4">
+              {renderState.loading ? <p className="text-sm text-slate-600">PDF wird analysiert und Formularschema wird extrahiert …</p> : null}
+              {Object.entries(groupedFields).map(([groupName, fields]) => (
+                <section key={groupName} className="rounded-lg border border-slate-200 bg-white p-4 shadow-subtle">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{groupName}</h3>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {fields.map((field, index) => (
+                      <label key={`${field.storageKey || field.fullName || field.name}-${index}`} className="block text-xs font-medium text-slate-700">
+                        {field.label || field.name || field.fullName || `Feld ${index + 1}`}
+                        {field.required ? <span className="ml-1 text-rose-600">*</span> : null}
+                        {renderInput(field)}
+                        <span className="mt-1 block text-[11px] text-slate-500">{field.fullName || field.name} · Typ: {field.type || "text"} · Quelle: {field.source || "Fallback"}</span>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
           </div>
         );
@@ -3155,7 +2996,24 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           resolveA701590PdfSource().then((result) => {
             if (!isMounted) return;
             setCompanyOneMantelbogenPdfResolution(result);
-            setCompanyOneDetectedPdfAnalysis({ pageCount: 0, totalLeafCount: 0, fields: [], error: null });
+            if (!result?.found) {
+              setCompanyOneDetectedPdfAnalysis({ pageCount: 0, totalLeafCount: 0, fields: [], error: null });
+              return;
+            }
+            detectA701590PdfFields()
+              .then((analysis) => {
+                if (!isMounted) return;
+                setCompanyOneDetectedPdfAnalysis(analysis);
+              })
+              .catch((error) => {
+                if (!isMounted) return;
+                setCompanyOneDetectedPdfAnalysis({
+                  pageCount: 0,
+                  totalLeafCount: 0,
+                  fields: [],
+                  error: error?.message || "PDF-Analyse fehlgeschlagen.",
+                });
+              });
           });
           return () => {
             isMounted = false;
