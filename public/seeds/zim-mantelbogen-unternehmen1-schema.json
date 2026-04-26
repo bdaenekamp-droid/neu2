@@ -1,83 +1,3319 @@
 [
   {
-    "id": "a701590-seite-1",
+    "id": "a701590-unternehmen-1",
     "title": "Antrag A701590 – Mantelbogen",
-    "subtitle": "Grunddaten zum Unternehmen und Vorhaben",
+    "subtitle": "Vollständiges statisches Formularschema aus XFA (Unternehmen 1)",
     "sections": [
       {
-        "title": "1. Allgemeine Unternehmensdaten",
+        "title": "daten",
         "columns": 2,
         "fields": [
-          { "key": "firma", "label": "Firma", "type": "text", "prefillKey": "companyName" },
-          { "key": "rechtsform", "label": "Rechtsform", "type": "select", "options": ["", "GmbH", "UG", "AG", "KG", "OHG", "Einzelunternehmen", "Sonstige"] },
-          { "key": "feTyp", "label": "Art des Antragstellers", "type": "radio", "options": ["Unternehmen", "Forschungseinrichtung"] },
-          { "key": "projektAcronym", "label": "Akronym", "type": "text" },
-          { "key": "thema", "label": "Thema / Titel des Vorhabens", "type": "textarea", "rows": 3, "span": 2 },
-          { "key": "kurzfass", "label": "Kurzfassung", "type": "textarea", "rows": 4, "span": 2 },
-          { "key": "projektstart", "label": "Laufzeit von", "type": "date" },
-          { "key": "projektende", "label": "Laufzeit bis", "type": "date" }
+          {
+            "key": "AnredeDropDownList",
+            "label": "Anrede",
+            "type": "select",
+            "fullName": "formular/Page13/a71/daten/AnredeDropDownList",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten",
+            "options": [
+              "...",
+              "Frau",
+              "Herr"
+            ]
+          },
+          {
+            "key": "als",
+            "label": "angestellt als (Funktion/Arbeitsgebiet)",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/als",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "ang_seit",
+            "label": "angestellt seit",
+            "type": "date",
+            "fullName": "formular/Page13/a71/daten/ang_seit",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "befr_bis",
+            "label": "befristet bis",
+            "type": "date",
+            "fullName": "formular/Page13/a71/daten/befr_bis",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "brutto",
+            "label": "Jahresbrutto, gesamt",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/brutto",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "brutto2",
+            "label": "Diese Felder werden berechnet und können nicht ausgefüllt werden.",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/brutto2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "brutto_12mon",
+            "label": "Jahresbrutto -> Sie können den Wert für Bruttolohn /-gehalt wahlweise als Monatsbrutto oder Jahresbrutto eintragen.",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/brutto_12mon",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "brutto_fix",
+            "label": "fixe Gehaltsbestandteile (s. Anlage 6.1a)",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/brutto_fix",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "brutto_mon",
+            "label": "Monatsbrutto zum Zeitpunkt der Antragstellung",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/brutto_mon",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "einr",
+            "label": "Name der Einrichtung",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/einr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "entgeltstufe",
+            "label": "Wochenarbeitszeit",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/entgeltstufe",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "geb",
+            "label": "Geb.-Datum",
+            "type": "date",
+            "fullName": "formular/Page13/a71/daten/geb",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "id",
+            "label": "id",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/id",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "jahr_std",
+            "label": "Diese Felder werden berechnet und können nicht ausgefüllt werden.",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/jahr_std",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "lfd_dup",
+            "label": "lfd_dup",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/lfd_dup",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "name",
+            "label": "Nachname",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/name",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "name_sende_fe",
+            "label": "Name der entsendenen Einrichtung",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/name_sende_fe",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "pk_mon",
+            "label": "Diese Felder werden berechnet und können nicht ausgefüllt werden.",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/pk_mon",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "quali",
+            "label": "Ausbildung",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/quali",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "std_satz",
+            "label": "Diese Felder werden berechnet und können nicht ausgefüllt werden.",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/std_satz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "tvod_gruppe",
+            "label": "Wochenarbeitszeit",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/tvod_gruppe",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "tz_faktor",
+            "label": "Teilzeitfaktor",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/tz_faktor",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "unbefr",
+            "label": "unbefristet",
+            "type": "checkbox",
+            "fullName": "formular/Page13/a71/daten/unbefr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "uschrift_datum",
+            "label": "Datum",
+            "type": "date",
+            "fullName": "formular/Page13/a71/daten/uschrift_datum",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "vname",
+            "label": "Vorname",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/vname",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "wo_std",
+            "label": "Wochenarbeitszeit",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/wo_std",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          },
+          {
+            "key": "wo_std_betrieb",
+            "label": "Wochenarbeitszeit",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/wo_std_betrieb",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / daten"
+          }
         ]
       },
       {
-        "title": "2. Adresse",
+        "title": "Page_bc_01",
         "columns": 2,
         "fields": [
-          { "key": "str", "label": "Straße / Hausnummer", "type": "text" },
-          { "key": "plz", "label": "PLZ", "type": "text" },
-          { "key": "ort", "label": "Ort", "type": "text" },
-          { "key": "land", "label": "Land", "type": "select", "options": ["", "Deutschland", "Österreich", "Schweiz", "Sonstiges"] },
-          { "key": "www", "label": "Website", "type": "url" },
-          { "key": "chk_post_adr", "label": "Postfachadresse statt Straßenadresse", "type": "checkbox" },
-          { "key": "pfach", "label": "Postfach", "type": "text" },
-          { "key": "pfach_plz", "label": "Postfach-PLZ", "type": "text" },
-          { "key": "pfach_ort", "label": "Postfach-Ort", "type": "text" }
+          {
+            "key": "FieldStatusAll",
+            "label": "FieldStatusAll",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/FieldStatusAll",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "FieldsAlreadyLocked",
+            "label": "FieldsAlreadyLocked",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/FieldsAlreadyLocked",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "client",
+            "label": "client",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/client",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "hashdata",
+            "label": "hashdata",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/hashdata",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "hashvalue",
+            "label": "hashvalue",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/hashvalue",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "pagecount",
+            "label": "client",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/pagecount",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "printdate",
+            "label": "printdate",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/printdate",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "tab_p11",
+            "label": "tabelle_page_11",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/tab_p11",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "tab_p11_count",
+            "label": "tabelle_page_11_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/tab_p11_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          },
+          {
+            "key": "version",
+            "label": "version",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/version",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01"
+          }
         ]
       },
       {
-        "title": "3. Geschäftsführung / Ansprechpartner",
+        "title": "werte",
         "columns": 2,
         "fields": [
-          { "key": "titel_gf", "label": "Titel (Geschäftsführung)", "type": "text" },
-          { "key": "vname_gf", "label": "Vorname (Geschäftsführung)", "type": "text" },
-          { "key": "name_gf", "label": "Nachname (Geschäftsführung)", "type": "text" },
-          { "key": "geb_gf", "label": "Geburtsdatum", "type": "date" },
-          { "key": "tel_gf", "label": "Telefon (Geschäftsführung)", "type": "text" },
-          { "key": "mail_gf", "label": "E-Mail (Geschäftsführung)", "type": "email" },
-          { "key": "vname_ap", "label": "Vorname Ansprechpartner/in", "type": "text", "prefillKey": "contactFirstName" },
-          { "key": "name_ap", "label": "Nachname Ansprechpartner/in", "type": "text", "prefillKey": "contactLastName" },
-          { "key": "fkt", "label": "Funktion", "type": "text" },
-          { "key": "tel_ap", "label": "Telefon Ansprechpartner/in", "type": "text" },
-          { "key": "mail_ap", "label": "E-Mail Ansprechpartner/in", "type": "email", "prefillKey": "contactEmail" }
+          {
+            "key": "a01",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/a01",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "a02",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/a02",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "a03",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/a03",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "a04",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/a04",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "a05",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/a05",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "b01",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/b01",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "b02",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/b02",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "b03",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/b03",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "b04",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/b04",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "b05",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/b05",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "g01",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/g01",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "g02",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/g02",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "g03",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/g03",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "g04",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/g04",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "g05",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/g05",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "lfd_71a",
+            "label": "lfd_71a",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/lfd_71a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "name_71a",
+            "label": "Nachname",
+            "type": "text",
+            "fullName": "formular/Page13/a71/a71a/werte/name_71a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "sum_g",
+            "label": "Jahresbrutto",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/werte/sum_g",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          },
+          {
+            "key": "vname_71a",
+            "label": "Vorname",
+            "type": "text",
+            "fullName": "formular/Page13/a71/a71a/werte/vname_71a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a / werte"
+          }
         ]
       },
       {
-        "title": "4. Register / Bank / Förderbezug",
+        "title": "teil_3",
         "columns": 2,
         "fields": [
-          { "key": "regist_ort", "label": "Registergericht / Ort", "type": "text" },
-          { "key": "regist_nr", "label": "Registernummer", "type": "text" },
-          { "key": "regist_dat", "label": "Eintragungsdatum", "type": "date" },
-          { "key": "gjahr", "label": "Geschäftsjahr", "type": "text" },
-          { "key": "bank", "label": "Kreditinstitut", "type": "text" },
-          { "key": "iban", "label": "IBAN", "type": "text" },
-          { "key": "bic", "label": "BIC", "type": "text" },
-          { "key": "verw_zweck", "label": "Verwendungszweck", "type": "text" },
-          { "key": "chk_andernorts", "label": "Antrag wurde auch an anderer Stelle gestellt", "type": "checkbox", "span": 2 }
+          {
+            "key": "a32_bem",
+            "label": "Bem:",
+            "type": "text",
+            "fullName": "formular/Page8/a32_multi/teil_3/a32_bem",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_3"
+          },
+          {
+            "key": "a32_lbis",
+            "label": "Laufzeit",
+            "type": "date",
+            "fullName": "formular/Page8/a32_multi/teil_3/a32_lbis",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_3"
+          },
+          {
+            "key": "a32_lvon",
+            "label": "Laufzeit",
+            "type": "date",
+            "fullName": "formular/Page8/a32_multi/teil_3/a32_lvon",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_3"
+          }
         ]
       },
       {
-        "title": "5. Unternehmenskennzahlen",
-        "columns": 3,
+        "title": "teil_1",
+        "columns": 2,
         "fields": [
-          { "key": "ums_jahr", "label": "Umsatz Jahr 1", "type": "number", "step": "0.01" },
-          { "key": "umsatz", "label": "Umsatz (EUR) Jahr 1", "type": "number", "step": "0.01" },
-          { "key": "besch_ges", "label": "Beschäftigte gesamt Jahr 1", "type": "number", "step": "1" },
-          { "key": "ums_jahr2", "label": "Umsatz Jahr 2", "type": "number", "step": "0.01" },
-          { "key": "umsatz_2", "label": "Umsatz (EUR) Jahr 2", "type": "number", "step": "0.01" },
-          { "key": "besch_ges_jae", "label": "Beschäftigte gesamt Jahr 2", "type": "number", "step": "1" },
-          { "key": "bil_jahr", "label": "Bilanzjahr", "type": "number", "step": "1" },
-          { "key": "bilanz", "label": "Bilanzsumme (EUR)", "type": "number", "step": "0.01" },
-          { "key": "besch_fue", "label": "Beschäftigte F&E", "type": "number", "step": "1" }
+          {
+            "key": "a32_lfd",
+            "label": "a32_lfd",
+            "type": "number",
+            "fullName": "formular/Page8/a32_multi/teil_1/a32_lfd",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_1"
+          },
+          {
+            "key": "a32_prog",
+            "label": "Name und FKZ",
+            "type": "text",
+            "fullName": "formular/Page8/a32_multi/teil_1/a32_prog",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_1"
+          },
+          {
+            "key": "a32_zuw_geber",
+            "label": "z.B. BMWE, BMFTR, EU, Forschungszulage (nicht den Projektträger eintragen)",
+            "type": "text",
+            "fullName": "formular/Page8/a32_multi/teil_1/a32_zuw_geber",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_1"
+          }
+        ]
+      },
+      {
+        "title": "teil_2",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "a32_titel",
+            "label": "Titel",
+            "type": "text",
+            "fullName": "formular/Page8/a32_multi/teil_2/a32_titel",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / a32_multi / teil_2"
+          }
+        ]
+      },
+      {
+        "title": "text",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "a641_a1",
+            "label": "Kosten für Projektpersonal",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_a1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_a2",
+            "label": "Arbeitgeberbeiträge zur Sozialversicherung",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_a2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_a3",
+            "label": "Personalzusatzkosten",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_a3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_a4",
+            "label": "Projektbezogene Kosten für Weiterbildung",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_a4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_a5",
+            "label": "Steigerung von Personalkosten",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_a5",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_b1",
+            "label": "Kosten für Arbeitsgeräte, Anlagen, Instrumente und Ausrüstung",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_b1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_b2",
+            "label": "Abschreibungen für weitere im Projekt genutzte Geräte und Anlagen",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_b2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_b3",
+            "label": "Gerätemieten",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_b3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_b4",
+            "label": "geringfügige Wirtschaftsgüter",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_b4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_c1",
+            "label": "Gebäude (nur Wertminderung)",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_c1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_c2",
+            "label": "Gebäudemieten",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_c2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_c3",
+            "label": "Grundstücke",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_c3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_d1",
+            "label": "Aufträge gemäß Anlage 6.3",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_d1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_d2",
+            "label": "Recherchen",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_d2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_d3",
+            "label": "Erwerb oder Lizenzierung von Patenten Dritter",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_d3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_d4",
+            "label": "Kosten für Beratung und gleichwertige Dienstleistungen",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_d4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_e1",
+            "label": "pauschal 20% der Summe der Kosten unter a) bis d)",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_e1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          },
+          {
+            "key": "a641_e2",
+            "label": "Ergebnis übrige Kosten",
+            "type": "number",
+            "fullName": "formular/Page16a/text/a641_e2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16a / text"
+          }
+        ]
+      },
+      {
+        "title": "Tabelle1",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "a8_sitz",
+            "label": "a8_sitz",
+            "type": "text",
+            "fullName": "formular/Page18/a8_tab/Tabelle1/Zeile1/a8_sitz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page18 / a8_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "a8_unt",
+            "label": "a8_unt",
+            "type": "text",
+            "fullName": "formular/Page18/a8_tab/Tabelle1/Zeile1/a8_unt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page18 / a8_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "an",
+            "label": "Auftragnehmer",
+            "type": "text",
+            "fullName": "formular/Page15/a73_tab/Tabelle1/Zeile1/an",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15 / a73_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "ap",
+            "label": "Siehe Mustertabelle in \"lies mich\". Den \"lies mich\" Info-Knopf finden Sie oben auf der ersten Seite dieses PDF-Dokuments.",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/tab/Tabelle1/Zeile2/ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "ap_orig",
+            "label": "Ausfüllhinweise finden Sie in der Datei \"lies mich.pdf\" im Downloadbereich.",
+            "type": "text",
+            "fullName": "formular/Page11/a6_tabelle/Tabelle1/Zeile2/ap_orig",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_tabelle / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "ap_short",
+            "label": "ap_short",
+            "type": "text",
+            "fullName": "formular/Page11/a6_tabelle/Tabelle1/Zeile2/ap_short",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_tabelle / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "bis",
+            "label": "bis",
+            "type": "date",
+            "fullName": "formular/Page15b/a62/tab/Tabelle1/Zeile2/bis",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "chk_a6",
+            "label": "chk_a6",
+            "type": "checkbox",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Zeile1/chk_a6",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "chk_a6_ges",
+            "label": "chk_a6_ges",
+            "type": "checkbox",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Fußzeile/chk_a6_ges",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Fußzeile"
+          },
+          {
+            "key": "ddl_quali",
+            "label": "Qualifikation",
+            "type": "select",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Zeile1/ddl_quali",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1",
+            "options": [
+              "A Gruppe A: Mitarbeiter mit Hoch- und Fachhochschulabschluss",
+              "B Gruppe B: Mitarbeiter mit anderen staatlichen Abschlüssen, z.B. Fachschulingenieur, Techniker, Meister",
+              "C Gruppe C: Facharbeiter in einem anerkannten Ausbildungsberuf"
+            ]
+          },
+          {
+            "key": "kosten",
+            "label": "Kosten",
+            "type": "number",
+            "fullName": "formular/Page15/a73_tab/Tabelle1/Zeile1/kosten",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15 / a73_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "kosten_ges",
+            "label": "kosten_ges",
+            "type": "number",
+            "fullName": "formular/Page15/a73_tab/Tabelle1/Fußzeile/kosten_ges",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15 / a73_tab / Tabelle1 / Fußzeile"
+          },
+          {
+            "key": "len_ap",
+            "label": "len_ap",
+            "type": "text",
+            "fullName": "formular/Page11/a6_tabelle/Tabelle1/Zeile2/len_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_tabelle / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "len_ap_short",
+            "label": "len_ap_short",
+            "type": "number",
+            "fullName": "formular/Page11/a6_tabelle/Tabelle1/Zeile2/len_ap_short",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_tabelle / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "lfd",
+            "label": "Die Nummerierung der Arbeitspakete kann auch alphanumerisch sein (z.B. 1.3.2)",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/lfd",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "ma_nr",
+            "label": "Diese Nummer korrespondiert mit der (automatisch vergebenen) Mitarbeiternummer in der nachfolgenden Anlage 6.1",
+            "type": "number",
+            "fullName": "formular/Page11/a6_tabelle/Tabelle1/Zeile2/ma_nr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_tabelle / Tabelle1 / Zeile2"
+          },
+          {
+            "key": "p_kosten",
+            "label": "p_kosten",
+            "type": "number",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Zeile1/p_kosten",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "pm",
+            "label": "Personenmonate (max. Genauigkeit: 3 Nachkommastellen)",
+            "type": "number",
+            "fullName": "formular/Page12/kontr_ap/tab/Zeile1/pm",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1 / Tabelle3 / Zeile1"
+          },
+          {
+            "key": "sum_a52_euro",
+            "label": "Auftragskosten gem. Angebot [gerundet auf ganze €]",
+            "type": "number",
+            "fullName": "formular/Page15b/a62/summe_euro/Tabelle1/Fußzeile/sum_a52_euro",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / summe_euro / Tabelle1 / Fußzeile"
+          },
+          {
+            "key": "sum_a52_pm",
+            "label": "sum_a52_pm",
+            "type": "number",
+            "fullName": "formular/Page15b/a62/tab/Tabelle1/Fußzeile/sum_a52_pm",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / Fußzeile"
+          },
+          {
+            "key": "sum_ges_pk",
+            "label": "sum_ges_pk",
+            "type": "number",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Fußzeile/sum_ges_pk",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Fußzeile"
+          },
+          {
+            "key": "sum_ges_pm",
+            "label": "sum_ges_pm",
+            "type": "number",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Fußzeile/sum_ges_pm",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Fußzeile"
+          },
+          {
+            "key": "sum_pers_aufnahme",
+            "label": "Zuschlag für übrige Kosten (max. 90% der Personalkosten, gerundet auf ganze Euro)",
+            "type": "number",
+            "fullName": "formular/Page15c/a63c/summe_euro/Tabelle1/Fußzeile/sum_pers_aufnahme",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_01 / Tabelle_64_kosten / Zeile_pers_aufnahme"
+          },
+          {
+            "key": "sum_pm",
+            "label": "Personenmonate (max. Genauigkeit: 3 Nachkommastellen)",
+            "type": "number",
+            "fullName": "formular/Page11/a6_tabelle/Tabelle1/Fußzeile/sum_pm",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1 / Tabelle3 / fuss"
+          },
+          {
+            "key": "termin",
+            "label": "Termin",
+            "type": "text",
+            "fullName": "formular/Page15/a73_tab/Tabelle1/Zeile1/termin",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15 / a73_tab / Tabelle1 / Zeile1"
+          },
+          {
+            "key": "von",
+            "label": "von",
+            "type": "date",
+            "fullName": "formular/Page15b/a62/tab/Tabelle1/Zeile2/von",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / Zeile2"
+          }
+        ]
+      },
+      {
+        "title": "Page1",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "akronym",
+            "label": "Kurzbezeichnung des Kooperationsprojektes (Projektname Gesamtprojekt)",
+            "type": "text",
+            "fullName": "formular/Page1/akronym",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "antr_proz",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page1/antr_proz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / aufschlag"
+          },
+          {
+            "key": "antr_summe",
+            "label": "Zuschlag für übrige Kosten (max. 90% der Personalkosten, gerundet auf ganze Euro)",
+            "type": "number",
+            "fullName": "formular/Page1/antr_summe",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_03 / Tabelle12 / Zeile1"
+          },
+          {
+            "key": "anz_klick",
+            "label": "anz_klick",
+            "type": "number",
+            "fullName": "formular/Page1/anz_klick",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "bezvor",
+            "label": "Kurzbezeichnung des Kooperationsprojektes (Projektname Gesamtprojekt)",
+            "type": "text",
+            "fullName": "formular/Page1/bezvor",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "fkz_zim_netzwerk",
+            "label": "Wenn ja aus welchem? (Name / FKZ)",
+            "type": "text",
+            "fullName": "formular/Page1/fkz_zim_netzwerk",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "hinweis_chronologie",
+            "label": "hinweis_chronologie",
+            "type": "text",
+            "fullName": "formular/Page1/hinweis_chronologie",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "jahr_akt",
+            "label": "jahr_akt",
+            "type": "number",
+            "fullName": "formular/Page1/jahr_akt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "jahr_bis",
+            "label": "jahr_bis",
+            "type": "number",
+            "fullName": "formular/Page1/jahr_bis",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "jahr_von",
+            "label": "jahr_von",
+            "type": "number",
+            "fullName": "formular/Page1/jahr_von",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "kurzfass",
+            "label": "Kurzfassung der Projektbeschreibung (Abstract/Zusammenfassung)",
+            "type": "text",
+            "fullName": "formular/Page1/kurzfass",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "lbis",
+            "label": "bis",
+            "type": "date",
+            "fullName": "formular/Page1/lbis",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "lvon",
+            "label": "vom",
+            "type": "date",
+            "fullName": "formular/Page1/lvon",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "show_txt_a61a_an",
+            "label": "show_txt_a61a_an",
+            "type": "text",
+            "fullName": "formular/Page1/show_txt_a61a_an",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "show_txt_a61a_ges",
+            "label": "show_txt_a61a_ges",
+            "type": "number",
+            "fullName": "formular/Page1/show_txt_a61a_ges",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "thema",
+            "label": "Kurzbezeichnung des Teilprojektes des Antragstellers (Projektname Teilprojekt)",
+            "type": "text",
+            "fullName": "formular/Page1/thema",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "typ_ku_kf",
+            "label": "typ_ku_kf",
+            "type": "text",
+            "fullName": "formular/Page1/typ_ku_kf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1"
+          },
+          {
+            "key": "zuw_kosten",
+            "label": "Zuschlag für übrige Kosten (max. 90% der Personalkosten, gerundet auf ganze Euro)",
+            "type": "number",
+            "fullName": "formular/Page1/zuw_kosten",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_01 / Tabelle_64_kosten / Fußzeile"
+          }
+        ]
+      },
+      {
+        "title": "kopf",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "an_nr",
+            "label": "an_nr",
+            "type": "number",
+            "fullName": "formular/Page15b/a62/kopf/an_nr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf"
+          },
+          {
+            "key": "an_txt",
+            "label": "Kurzbezeichnung des FuE-Auftrages",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/kopf/an_txt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf"
+          },
+          {
+            "key": "an_typ",
+            "label": "Der Auftragnehmer ist eine Einrichtung vom Typ",
+            "type": "select",
+            "fullName": "formular/Page15b/a62/kopf/an_typ",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf",
+            "options": [
+              "Typ bitte auswählen",
+              "Helmholtz-Gemeinschaft",
+              "Wilhelm-Leibniz-Gemeinschaft",
+              "Max-Planck-Gesellschaft",
+              "Fraunhofer-Gesellschaft",
+              "Universität",
+              "Fachhochschule",
+              "Landes- oder Bundesforschungsanstalt",
+              "private, nicht wirtschaftlich tätige FE",
+              "privatrechtliches Unternehmen"
+            ]
+          },
+          {
+            "key": "ausl",
+            "label": "Ausland",
+            "type": "checkbox",
+            "fullName": "formular/Page15b/a62/kopf/ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf",
+            "options": [
+              "2"
+            ]
+          },
+          {
+            "key": "b_land",
+            "label": "Bundesland",
+            "type": "select",
+            "fullName": "formular/Page15b/a62/kopf/b_land",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf",
+            "options": [
+              "Bundesland bitte auswählen",
+              "Baden-Würtemberg",
+              "Bayern",
+              "Berlin",
+              "Brandenburg",
+              "Bremen",
+              "Hamburg",
+              "Hessen",
+              "Mecklenburg-Vorpommern",
+              "Niedersachsen",
+              "Nordrhein-Westfalen",
+              "Rheinland-Pfalz",
+              "Saarland",
+              "Sachsen",
+              "Sachsen-Anhalt",
+              "Schleswig-Holstein",
+              "Thüringen"
+            ]
+          },
+          {
+            "key": "dt",
+            "label": "Deutschland",
+            "type": "checkbox",
+            "fullName": "formular/Page15b/a62/kopf/dt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf",
+            "options": [
+              "1"
+            ]
+          },
+          {
+            "key": "land",
+            "label": "Land",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/kopf/land",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15b / a62 / kopf"
+          },
+          {
+            "key": "pers_sende_nr",
+            "label": "pers_sende_nr",
+            "type": "number",
+            "fullName": "formular/Page15c/a63c/kopf/pers_sende_nr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / kopf"
+          },
+          {
+            "key": "pers_sende_quali",
+            "label": "Kurzbezeichnung des FuE-Auftrages",
+            "type": "text",
+            "fullName": "formular/Page15c/a63c/kopf/pers_sende_quali",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / kopf"
+          }
+        ]
+      },
+      {
+        "title": "Allgemeine Felder",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "antrag_nr",
+            "label": "Antrag Nr.",
+            "type": "text",
+            "fullName": "formular/antrag_nr",
+            "source": "XFA-A701590",
+            "groupPath": "formular"
+          },
+          {
+            "key": "hashwert_anzeige",
+            "label": "hashwert_anzeige",
+            "type": "text",
+            "fullName": "formular/hashwert_anzeige",
+            "source": "XFA-A701590",
+            "groupPath": "formular"
+          }
+        ]
+      },
+      {
+        "title": "Page3",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "anz_fe",
+            "label": "Anzahl der am Projekt beteiligten Forschungseinrichtungen",
+            "type": "text",
+            "fullName": "formular/Page3/anz_fe",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "anz_fe_a",
+            "label": "davon antragstellende Forschungseinrichtungen",
+            "type": "text",
+            "fullName": "formular/Page3/anz_fe_a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "anz_unt",
+            "label": "Anzahl der am Projekt beteiligten Unternehmen",
+            "type": "text",
+            "fullName": "formular/Page3/anz_unt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "anz_unt_a",
+            "label": "davon antragstellende Unternehmen",
+            "type": "text",
+            "fullName": "formular/Page3/anz_unt_a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "prog",
+            "label": "Hauptadresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page3/prog",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "u_berater_anschr",
+            "label": "Anschrift Beratungsunternehmen",
+            "type": "text",
+            "fullName": "formular/Page3/u_berater_anschr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "u_berater_honorar",
+            "label": "Honorar",
+            "type": "number",
+            "fullName": "formular/Page3/u_berater_honorar",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "u_berater_komp",
+            "label": "sonstige Kompensation",
+            "type": "text",
+            "fullName": "formular/Page3/u_berater_komp",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          },
+          {
+            "key": "u_berater_name",
+            "label": "Name Beratungsunternehmen",
+            "type": "text",
+            "fullName": "formular/Page3/u_berater_name",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page3"
+          }
+        ]
+      },
+      {
+        "title": "kopf_1",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "anz_seiten",
+            "label": "anz_seiten",
+            "type": "number",
+            "fullName": "formular/Page15b/a62/tab/Tabelle1/kopf_1/anz_seiten",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / kopf_1"
+          }
+        ]
+      },
+      {
+        "title": "kopf_0",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "anz_zeilen",
+            "label": "anz_zeilen",
+            "type": "number",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/kopf_0/anz_zeilen",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / tab / Tabelle1 / kopf_0"
+          }
+        ]
+      },
+      {
+        "title": "Page11",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "ap_nr_old",
+            "label": "ap_nr_old",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/ap_nr_old",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "avg_len",
+            "label": "avg_len",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/avg_len",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "avg_len_short",
+            "label": "avg_len_short",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/avg_len_short",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "avg_to_much",
+            "label": "avg_to_much",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/avg_to_much",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "ma_nr_old",
+            "label": "ma_nr_old",
+            "type": "number",
+            "fullName": "formular/Page11/a6_kopf/ma_nr_old",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "max_len",
+            "label": "max_len",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/max_len",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "pm_old",
+            "label": "pm_old",
+            "type": "number",
+            "fullName": "formular/Page11/a6_kopf/pm_old",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "row_cnt",
+            "label": "row_cnt",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/row_cnt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "sum_len",
+            "label": "sum_len",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/sum_len",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "sum_len_short",
+            "label": "sum_len_short",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/sum_len_short",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          },
+          {
+            "key": "to_much",
+            "label": "to_much",
+            "type": "text",
+            "fullName": "formular/Page11/a6_kopf/to_much",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page11 / a6_kopf"
+          }
+        ]
+      },
+      {
+        "title": "teil_6_bank",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "bank",
+            "label": "Name der Bank",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6_bank/bank",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6_bank"
+          },
+          {
+            "key": "bic",
+            "label": "BIC (Bank Identifier Code)",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6_bank/bic",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6_bank"
+          },
+          {
+            "key": "iban",
+            "label": "IBAN Kontonummer",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6_bank/iban",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6_bank"
+          },
+          {
+            "key": "verw_zweck",
+            "label": "Verwendungszweck (max. 27 Zeichen)",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6_bank/verw_zweck",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6_bank"
+          }
+        ]
+      },
+      {
+        "title": "bc_id",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "bc_id_0",
+            "label": "bc_id_0",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_0",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_1",
+            "label": "bc_id_1",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_10",
+            "label": "bc_id_10",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_10",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_11",
+            "label": "bc_id_11",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_11",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_12",
+            "label": "bc_id_12",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_12",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_13",
+            "label": "bc_id_13",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_13",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_14",
+            "label": "bc_id_14",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_14",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_15",
+            "label": "bc_id_15",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_15",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_16",
+            "label": "bc_id_16",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_16",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_17",
+            "label": "bc_id_17",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_17",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_18",
+            "label": "bc_id_18",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_18",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_19",
+            "label": "bc_id_19",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_19",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_2",
+            "label": "bc_id_2",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_20",
+            "label": "bc_id_20",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_20",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_21",
+            "label": "bc_id_21",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_21",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_22",
+            "label": "bc_id_22",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_22",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_23",
+            "label": "bc_id_23",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_23",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_24",
+            "label": "bc_id_24",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_24",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_3",
+            "label": "bc_id_3",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_4",
+            "label": "bc_id_4",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_5",
+            "label": "bc_id_5",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_5",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_6",
+            "label": "bc_id_6",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_6",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_7",
+            "label": "bc_id_7",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_7",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_8",
+            "label": "bc_id_8",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_8",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          },
+          {
+            "key": "bc_id_9",
+            "label": "bc_id_9",
+            "type": "text",
+            "fullName": "formular/Page_bc_01/bc_id/bc_id_9",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_01 / bc_id"
+          }
+        ]
+      },
+      {
+        "title": "teil_8_zahlen",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "besch_fue",
+            "label": "Beschäftigte in FuE (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/besch_fue",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          },
+          {
+            "key": "besch_ges",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/besch_ges",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          },
+          {
+            "key": "besch_ges_jae",
+            "label": "Anzahl Beschäftigte in Jahresarbeitseinheiten, gesamt",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/besch_ges_jae",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          },
+          {
+            "key": "bil_jahr",
+            "label": "Jahreszahl bitte vierstellig eingeben",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/bil_jahr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          },
+          {
+            "key": "bilanz",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page10/Tabelle141/Zeile1/bilanz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / dynamisch / teil_141 / Tabelle141 / Zeile1"
+          },
+          {
+            "key": "ums_jahr",
+            "label": "Jahreszahl bitte vierstellig eingeben",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/ums_jahr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          },
+          {
+            "key": "ums_jahr2",
+            "label": "Jahreszahl bitte vierstellig eingeben",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/ums_jahr2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          },
+          {
+            "key": "umsatz",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page10/Tabelle141/Zeile1/umsatz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / dynamisch / teil_141 / Tabelle141 / Zeile1"
+          },
+          {
+            "key": "umsatz_2",
+            "label": "Umsatz",
+            "type": "number",
+            "fullName": "formular/Page2/alles/teil_8_zahlen/umsatz_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_8_zahlen"
+          }
+        ]
+      },
+      {
+        "title": "a_31",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "bug_fix_multipage",
+            "label": "do_show_menu",
+            "type": "text",
+            "fullName": "formular/Page7/a_31/bug_fix_multipage",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31"
+          },
+          {
+            "key": "txt",
+            "label": "Darstellung des Antragstellers und seiner Entwicklung (notwendiger Inhalt: siehe oben)",
+            "type": "text",
+            "fullName": "formular/Page7/a_31/txt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15 / a73_tab / Tabelle1 / Zeile1"
+          }
+        ]
+      },
+      {
+        "title": "unten",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_a11_01",
+            "label": "Anlage Nr. 1-9",
+            "type": "checkbox",
+            "fullName": "formular/Page21/unten/a11_chk_01/chk_a11_01",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21_b / unten / a11_chk_04"
+          },
+          {
+            "key": "datum_a11",
+            "label": "Es ist egal, ob Sie dieses Datum auf der ersten Seite oder hier ausfüllen, dieses Datum erscheint auf jedem Blatt des Antrages rechts oben.",
+            "type": "date",
+            "fullName": "formular/Page21/unten/a11_chk_02/datum_a11",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21_b / unten / a11_chk_06"
+          },
+          {
+            "key": "f_programm_a11",
+            "label": "Ort",
+            "type": "text",
+            "fullName": "formular/Page21/unten/a11_chk_02/f_programm_a11",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21_b / unten / a11_chk_06"
+          },
+          {
+            "key": "name_a11",
+            "label": "Ort",
+            "type": "text",
+            "fullName": "formular/Page21_b/unten/a11_chk_08/name_a11",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21_b / unten / a11_chk_08"
+          },
+          {
+            "key": "txt_weiter",
+            "label": "txt_weiter",
+            "type": "text",
+            "fullName": "formular/Page21/unten/a11_frage_1/txt_weiter",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21 / unten / a11_frage_1"
+          }
+        ]
+      },
+      {
+        "title": "txt",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_a1_211",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/unten/txt/chk_a1_211",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / unten / txt"
+          },
+          {
+            "key": "chk_a1_212",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/unten/txt/chk_a1_212",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / unten / txt"
+          },
+          {
+            "key": "chk_a1_213",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/unten/txt/chk_a1_213",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / unten / txt"
+          }
+        ]
+      },
+      {
+        "title": "oben",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_a1_eigen",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/chk_a1_eigen",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page8 / text_a3_fe"
+          },
+          {
+            "key": "chk_a1_partner",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/chk_a1_partner",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / oben"
+          },
+          {
+            "key": "chk_a1_verbund",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/chk_a1_verbund",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / oben"
+          },
+          {
+            "key": "eigen",
+            "label": "Eigenständiges Unternehmen",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/eigen",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / oben",
+            "options": [
+              "1"
+            ]
+          },
+          {
+            "key": "partner",
+            "label": "Partnerunternehmen",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/partner",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / oben"
+          },
+          {
+            "key": "unt_plus_gf",
+            "label": "Unternehmensangaben",
+            "type": "text",
+            "fullName": "formular/Page5/oben/unt_plus_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / oben"
+          },
+          {
+            "key": "verbund",
+            "label": "Verbundenes Unternehmen",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/verbund",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / oben",
+            "options": [
+              "2"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Page6",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_a2",
+            "label": "gewerbliche Wirtschaft",
+            "type": "checkbox",
+            "fullName": "formular/Page6/a2_multi_1/chk_a2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page6 / a2_multi_1"
+          }
+        ]
+      },
+      {
+        "title": "teil2",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_a4_pat_0",
+            "label": "chk_a4_pat_0",
+            "type": "checkbox",
+            "fullName": "formular/Page9/a4_rest/teil2/chk_a4_pat_0",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page9 / a4_rest / teil2"
+          },
+          {
+            "key": "chk_a4_pat_1",
+            "label": "chk_a4_pat_1",
+            "type": "checkbox",
+            "fullName": "formular/Page9/a4_rest/teil2/chk_a4_pat_1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page9 / a4_rest / teil2"
+          },
+          {
+            "key": "chk_a4_pat_2",
+            "label": "chk_a4_pat_2",
+            "type": "checkbox",
+            "fullName": "formular/Page9/a4_rest/teil2/chk_a4_pat_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page9 / a4_rest / teil2"
+          },
+          {
+            "key": "chk_a4_pat_3",
+            "label": "chk_a4_pat_3",
+            "type": "checkbox",
+            "fullName": "formular/Page9/a4_rest/teil2/chk_a4_pat_3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page9 / a4_rest / teil2"
+          },
+          {
+            "key": "chk_a4_pat_4",
+            "label": "chk_a4_pat_4",
+            "type": "checkbox",
+            "fullName": "formular/Page9/a4_rest/teil2/chk_a4_pat_4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page9 / a4_rest / teil2"
+          }
+        ]
+      },
+      {
+        "title": "teil_3_check",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_andernorts",
+            "label": "Befindet sich der FuE-Geschäftsbetrieb andernorts?",
+            "type": "checkbox",
+            "fullName": "formular/Page2/alles/teil_3_check/chk_andernorts",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_3_check"
+          }
+        ]
+      },
+      {
+        "title": "quote_unt",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_kl",
+            "label": "45 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_kl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_kl_ausl",
+            "label": "55 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_kl_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_kl_grw",
+            "label": "55 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_kl_grw",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_kl_grw_ausl",
+            "label": "60 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_kl_grw_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_kl_jung",
+            "label": "50 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_kl_jung",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_kl_jung_ausl",
+            "label": "60 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_kl_jung_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_mit",
+            "label": "40 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_mit",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_mit_ausl",
+            "label": "50 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_mit_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_wmu_1000",
+            "label": "30 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_wmu_1000",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_wmu_1000_ausl",
+            "label": "40 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_wmu_1000_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_wmu_500_a",
+            "label": "25 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_wmu_500_a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_wmu_500_a_ausl",
+            "label": "40 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_wmu_500_a_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_wmu_500_b",
+            "label": "30 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_wmu_500_b",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "chk_wmu_500_b_ausl",
+            "label": "25 %",
+            "type": "checkbox",
+            "fullName": "formular/Page16/a64_02/quote_unt/chk_wmu_500_b_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_kl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_kl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_kl_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_kl_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_kl_grw",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_kl_grw",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_kl_grw_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_kl_grw_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_kl_jung",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_kl_jung",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_kl_jung_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_kl_jung_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_mit",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_mit",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_mit_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_mit_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_wmu_1000",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_wmu_1000",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_wmu_1000_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_wmu_1000_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_wmu_500_a",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_wmu_500_a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_wmu_500_a_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_wmu_500_a_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_wmu_500_b",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_wmu_500_b",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          },
+          {
+            "key": "proz_wmu_500_b_ausl",
+            "label": "%",
+            "type": "number",
+            "fullName": "formular/Page16/a64_02/quote_unt/proz_wmu_500_b_ausl",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_02 / quote_unt"
+          }
+        ]
+      },
+      {
+        "title": "Page4",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_m4_0",
+            "label": "Anlage Nr. 1-9",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_0",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4"
+          },
+          {
+            "key": "chk_m4_00",
+            "label": "Anlage Nr. 1-9",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_00",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4"
+          },
+          {
+            "key": "chk_m4_1",
+            "label": "bei Unternehmen: amtlicher Registereintrag (z.B. Handelsregister) bzw. Gewerbeanmeldung; bei Vereinen: Vereinsregisterauszug",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4"
+          },
+          {
+            "key": "chk_m4_2",
+            "label": "Markteinführungskonzept (gem. Richtlinie 4.4.1)",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4"
+          },
+          {
+            "key": "chk_m4_4",
+            "label": "Nachweis der Gemeinnützigkeit von privaten nicht wirtschaftlich tätigen Forschungseinrichtungen (Freistellungsbescheid)",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4"
+          },
+          {
+            "key": "chk_m4_5",
+            "label": "Entwurf des FuE-Vertrages (Inhalt gem. Richtlinie 4.1.4)",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_5",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4"
+          }
+        ]
+      },
+      {
+        "title": "Page4_kleingedruckt",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_m4_3",
+            "label": "Entwurf der Vereinbarung über das Kooperationsprojekt (Inhalt gemäß Richtlinie Ziffer 4.1.3)",
+            "type": "checkbox",
+            "fullName": "formular/Page4/chk_m4_3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4_kleingedruckt"
+          }
+        ]
+      },
+      {
+        "title": "teil_2_adr",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_post_adr",
+            "label": "Besitzt der Antragsteller eine Postfachadresse?",
+            "type": "checkbox",
+            "fullName": "formular/Page2/alles/teil_2_adr/chk_post_adr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "ddl_land",
+            "label": "Bundesland",
+            "type": "select",
+            "fullName": "formular/Page2/alles/teil_2_adr/ddl_land",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr",
+            "options": [
+              "Bundesland bitte auswählen",
+              "Baden-Württemberg",
+              "Bayern",
+              "Berlin",
+              "Brandenburg",
+              "Bremen",
+              "Hamburg",
+              "Hessen",
+              "Mecklenburg-Vorpommern",
+              "Niedersachsen",
+              "Nordrhein-Westfalen",
+              "Rheinland-Pfalz",
+              "Saarland",
+              "Sachsen",
+              "Sachsen-Anhalt",
+              "Schleswig-Holstein",
+              "Thüringen"
+            ]
+          },
+          {
+            "key": "ort",
+            "label": "Hauptadresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/kopf/ort",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "pfach",
+            "label": "Postfach- (Haupt-) Adresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_2_adr/pfach",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "pfach_ort",
+            "label": "Postfach- (Haupt-) Adresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_2_adr/pfach_ort",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "pfach_plz",
+            "label": "Postfach- (Haupt-) Adresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_2_adr/pfach_plz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "plz",
+            "label": "Hauptadresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/kopf/plz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "str",
+            "label": "Hauptadresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/kopf/str",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          },
+          {
+            "key": "www",
+            "label": "Internetadresse des Antragstellers",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_2_adr/www",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_2_adr"
+          }
+        ]
+      },
+      {
+        "title": "teil_4_adr_ext",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "chk_post_adr_ext",
+            "label": "Postfach?",
+            "type": "checkbox",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/chk_post_adr_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "ddl_land_ext",
+            "label": "Bundesland",
+            "type": "select",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/ddl_land_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext",
+            "options": [
+              "Bundesland bitte auswählen",
+              "Baden-Württemberg",
+              "Bayern",
+              "Berlin",
+              "Brandenburg",
+              "Bremen",
+              "Hamburg",
+              "Hessen",
+              "Mecklenburg-Vorpommern",
+              "Niedersachsen",
+              "Nordrhein-Westfalen",
+              "Rheinland-Pfalz",
+              "Saarland",
+              "Sachsen",
+              "Sachsen-Anhalt",
+              "Schleswig-Holstein",
+              "Thüringen"
+            ]
+          },
+          {
+            "key": "institut_ext",
+            "label": "Adresse der FuE-Stelle, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/institut_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "ort_ext",
+            "label": "Adresse der FuE-Stelle, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/ort_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "pfach_ext",
+            "label": "Postfach-Adresse des Antragstellers, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/pfach_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "pfach_ort_ext",
+            "label": "Postfach-Adresse des Antragstellers, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/pfach_ort_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "pfach_plz_ext",
+            "label": "Postfach-Adresse des Antragstellers, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/pfach_plz_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "plz_ext",
+            "label": "Adresse der FuE-Stelle, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/plz_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          },
+          {
+            "key": "str_ext",
+            "label": "Adresse der FuE-Stelle, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_4_adr_ext/str_ext",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_4_adr_ext"
+          }
+        ]
+      },
+      {
+        "title": "kopf_02",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "datum",
+            "label": "Es ist egal, ob Sie dieses Datum auf der ersten Seite oder hier ausfüllen, dieses Datum erscheint auf jedem Blatt des Antrages rechts oben.",
+            "type": "date",
+            "fullName": "formular/Page1/datum",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4 / statisch"
+          },
+          {
+            "key": "t_prog_id",
+            "label": "t_prog_id",
+            "type": "text",
+            "fullName": "formular/kopf_02/t_prog_id",
+            "source": "XFA-A701590",
+            "groupPath": "formular / kopf_13a"
+          },
+          {
+            "key": "typ_ku_kf_long",
+            "label": "typ_ku_kf_long",
+            "type": "text",
+            "fullName": "formular/typ_ku_kf_long",
+            "source": "XFA-A701590",
+            "groupPath": "formular / kopf_13a"
+          }
+        ]
+      },
+      {
+        "title": "statisch",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "do_import_calculation",
+            "label": "do_import_calculation",
+            "type": "number",
+            "fullName": "formular/Page1/statisch/do_import_calculation",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page1 / statisch"
+          },
+          {
+            "key": "ja",
+            "label": "ja",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/ja",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21 / unten / a11_frage_1",
+            "options": [
+              "1"
+            ]
+          },
+          {
+            "key": "name_gezeichnet",
+            "label": "Vollständiger Name des oder der unterschriftleistenden Personen",
+            "type": "text",
+            "fullName": "formular/Page16b/name_gezeichnet",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4 / statisch"
+          },
+          {
+            "key": "nein",
+            "label": "nein (begründen)",
+            "type": "checkbox",
+            "fullName": "formular/Page5/oben/nein",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21 / unten / a11_frage_1",
+            "options": [
+              "2"
+            ]
+          },
+          {
+            "key": "ort_datum",
+            "label": "Ort",
+            "type": "text",
+            "fullName": "formular/Page4/statisch/ort_datum",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page4 / statisch"
+          }
+        ]
+      },
+      {
+        "title": "kopf_18",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "dummy",
+            "label": "Textfeld",
+            "type": "text",
+            "fullName": "formular/kopf_18/dummy",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page21 / unten / a11_frage_1"
+          }
+        ]
+      },
+      {
+        "title": "Tabelle3",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "euro",
+            "label": "euro",
+            "type": "number",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Zeile1/Tabelle3/Zeile1/euro",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1 / Tabelle3 / Zeile1"
+          }
+        ]
+      },
+      {
+        "title": "teil_5_gf_ap",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "fax_ap",
+            "label": "Telefon- und Faxnummern bitte komplett mit Vorwahlen eingeben",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/fax_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "fax_gf",
+            "label": "Telefon- und Faxnummern bitte komplett mit Vorwahlen eingeben",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/fax_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "fkt",
+            "label": "Adresse der FuE-Stelle, falls von Hauptadresse abweichend",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/fkt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "geb_gf",
+            "label": "geb.",
+            "type": "date",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/geb_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "mail_ap",
+            "label": "E-Mail-Adresse Ansprechpartner",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/mail_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "mail_gf",
+            "label": "E-Mail-Adresse Geschäftsführer",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/mail_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "name_ap",
+            "label": "Personalien Ansprechpartner",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/name_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "name_gf",
+            "label": "Personalien Geschäftsführer",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/name_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "tel_ap",
+            "label": "Telefon- und Faxnummern bitte komplett mit Vorwahlen eingeben",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/tel_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "tel_gf",
+            "label": "Telefon- und Faxnummern bitte komplett mit Vorwahlen eingeben",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/tel_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "titel_ap",
+            "label": "Personalien Ansprechpartner",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/titel_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "titel_gf",
+            "label": "Personalien Geschäftsführer",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/titel_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "vname_ap",
+            "label": "Personalien Ansprechpartner",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/vname_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          },
+          {
+            "key": "vname_gf",
+            "label": "Personalien Geschäftsführer",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_5_gf_ap/vname_gf",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_5_gf_ap"
+          }
+        ]
+      },
+      {
+        "title": "teil_1_allg",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "fe_typ",
+            "label": "Wenn der Antragsteller ein Unternehmen ist, bitte die Auswahl auf \"wenn FE, dann Typ bitte auswählen\" belassen. Wenn der Antragsteller eine Forschungseinrichtung ist, hier bitte den Typ der Forschungseinrichtung festlegen. Hinweis: Wenn an dieser Stelle ein Forschungseinrichtungstyp festgelegt wird, werden auf den folgenden Seiten Felder, die für Forschungseinrichtungen irrelevant sind, ausgeblendet.",
+            "type": "select",
+            "fullName": "formular/Page2/alles/teil_1_allg/fe_typ",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_1_allg",
+            "options": [
+              "wenn FE, dann Typ bitte auswählen",
+              "Helmholtz-Gemeinschaft",
+              "Wilhelm-Leibniz-Gemeinschaft",
+              "Max-Planck-Gesellschaft",
+              "Fraunhofer-Gesellschaft",
+              "Universität / Hochschule",
+              "Fachhochschule",
+              "Landesforschungsanstalt",
+              "Bundesforschungsanstalt",
+              "private, nicht wirtschaftlich tätige FE"
+            ]
+          },
+          {
+            "key": "firma",
+            "label": "vollständiger Name der Firma / Einrichtung (wenn möglich gemäß Handelsregistereintrag)",
+            "type": "text",
+            "fullName": "formular/Page15b/a62/kopf/firma",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_1_allg"
+          },
+          {
+            "key": "re_form",
+            "label": "Rechtsform",
+            "type": "select",
+            "fullName": "formular/Page2/alles/teil_1_allg/re_form",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_1_allg",
+            "options": [
+              "Typ bitte auswählen",
+              "Einzelunternehmen",
+              "GmbH",
+              "GmbH & Co.KG",
+              "oHG",
+              "KG",
+              "AG",
+              "GbR",
+              "e.V.",
+              "wirtschaftlich tätige FE",
+              "sonstige"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Tabelle_64_kosten",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "flag_no_msg",
+            "label": "flag_no_msg",
+            "type": "number",
+            "fullName": "formular/Page16/a64_01/Tabelle_64_kosten/Zeile2/flag_no_msg",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_01 / Tabelle_64_kosten / Zeile2"
+          },
+          {
+            "key": "fremd",
+            "label": "fremd",
+            "type": "number",
+            "fullName": "formular/Page16/a64_01/Tabelle_64_kosten/Zeile3/fremd",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_01 / Tabelle_64_kosten / Zeile3"
+          },
+          {
+            "key": "sum_auftr",
+            "label": "Zuschlag für übrige Kosten (max. 90% der Personalkosten, gerundet auf ganze Euro)",
+            "type": "number",
+            "fullName": "formular/Page16/a64_01/Tabelle_64_kosten/Zeile_auftrag/sum_auftr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_01 / Tabelle_64_kosten / Zeile_auftrag"
+          },
+          {
+            "key": "uebr",
+            "label": "Zuschlag für übrige Kosten (max. 100 bzw. 85% der Personalkosten, gerundet auf ganze Euro)",
+            "type": "number",
+            "fullName": "formular/Page16b/uebr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page16 / a64_01 / Tabelle_64_kosten / Zeile2"
+          }
+        ]
+      },
+      {
+        "title": "teil_7_hr",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "gjahr",
+            "label": "Handlesregistereintrag",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_7_hr/gjahr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_7_hr"
+          },
+          {
+            "key": "regist_dat",
+            "label": "Handlesregistereintrag",
+            "type": "date",
+            "fullName": "formular/Page2/alles/teil_7_hr/regist_dat",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_7_hr"
+          },
+          {
+            "key": "regist_nr",
+            "label": "Handlesregistereintrag",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_7_hr/regist_nr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_7_hr"
+          },
+          {
+            "key": "regist_ort",
+            "label": "Handlesregistereintrag",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_7_hr/regist_ort",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_7_hr"
+          }
+        ]
+      },
+      {
+        "title": "Tabelle11",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "j1",
+            "label": "j1",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/Zeile_jahr/j1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / Zeile_jahr"
+          },
+          {
+            "key": "j2",
+            "label": "j2",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/Zeile_jahr/j2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / Zeile_jahr"
+          },
+          {
+            "key": "j3",
+            "label": "j3",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/Zeile_jahr/j3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / Zeile_jahr"
+          },
+          {
+            "key": "j4",
+            "label": "j4",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/Zeile_jahr/j4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / Zeile_jahr"
+          },
+          {
+            "key": "j5",
+            "label": "j5",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/Zeile_jahr/j5",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / Zeile_jahr"
+          }
+        ]
+      },
+      {
+        "title": "Tabelle141",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "jahr",
+            "label": "Jahresscheibe (dieser Wert wird automatisch generiert, sobald im Mantelbogen (Seite 1) die Laufzeit des Projektes eingetragen wird)",
+            "type": "number",
+            "fullName": "formular/Page13/a71/daten/jahr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1 / Tabelle3 / Zeile1"
+          },
+          {
+            "key": "pers",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page10/Tabelle141/Zeile1/pers",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page5 / dynamisch / teil_142 / Tabelle142 / Kopfzeile"
+          }
+        ]
+      },
+      {
+        "title": "Tabelle21",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "jahr_0",
+            "label": "Jahrerszahl",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Kopfzeile/jahr_0",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Kopfzeile"
+          },
+          {
+            "key": "jahr_1",
+            "label": "jahr_1",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Kopfzeile/jahr_1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Kopfzeile"
+          },
+          {
+            "key": "jahr_2",
+            "label": "jahr_2",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Kopfzeile/jahr_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Kopfzeile"
+          },
+          {
+            "key": "pers_0",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Zeile1/pers_0",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Zeile1"
+          },
+          {
+            "key": "pers_1",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Zeile1/pers_1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Zeile1"
+          },
+          {
+            "key": "pers_2",
+            "label": "Anzahl Beschäftigte, gesamt (ganzzahlige Anzahl)",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Zeile1/pers_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Zeile1"
+          },
+          {
+            "key": "ums_0",
+            "label": "Umsatz in Euro",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Zeile2/ums_0",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Zeile2"
+          },
+          {
+            "key": "ums_1",
+            "label": "Umsatz in Euro",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Zeile2/ums_1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Zeile2"
+          },
+          {
+            "key": "ums_2",
+            "label": "Umsatz in Euro",
+            "type": "number",
+            "fullName": "formular/Page7/a_31/statisch_unt/Tabelle21/Zeile2/ums_2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page7 / a_31 / statisch_unt / Tabelle21 / Zeile2"
+          }
+        ]
+      },
+      {
+        "title": "drittmittel",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "mail_dritt",
+            "label": "Mail Drittmittelstelle",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6a_dritt/drittmittel/mail_dritt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6a_dritt / drittmittel"
+          },
+          {
+            "key": "name_dritt",
+            "label": "Name Bearbeiter Drittmittelstelle",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6a_dritt/drittmittel/name_dritt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6a_dritt / drittmittel"
+          },
+          {
+            "key": "tel_dritt",
+            "label": "Tel. Drittmittelstelle",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_6a_dritt/drittmittel/tel_dritt",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6a_dritt / drittmittel"
+          },
+          {
+            "key": "wirtschafts_id_nr",
+            "label": "Handlesregistereintrag",
+            "type": "text",
+            "fullName": "formular/Page2/alles/teil_7_hr/wirtschafts_id_nr",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page2 / alles / teil_6a_dritt / drittmittel"
+          }
+        ]
+      },
+      {
+        "title": "dummy",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "n_anz_61",
+            "label": "n_anz_61",
+            "type": "number",
+            "fullName": "formular/Page13/dummy/n_anz_61",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / dummy"
+          },
+          {
+            "key": "n_anz_63c",
+            "label": "n_anz_63c",
+            "type": "number",
+            "fullName": "formular/Page15c/dummy/n_anz_63c",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / dummy"
+          }
+        ]
+      },
+      {
+        "title": "Page18",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "opt_a7_wirtschaftlich",
+            "label": "nichtwirtschaftlichen",
+            "type": "checkbox",
+            "fullName": "formular/Page18/a8_rest/a8_uschr3/opt_a7_wirtschaftlich",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page18 / a8_rest / a8_uschr3",
+            "options": [
+              "nichtwirtschaftlichen",
+              "0"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "kein_seitenumbruch_1",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "pers_sende_einrichtung",
+            "label": "Kurzbezeichnung des FuE-Auftrages",
+            "type": "text",
+            "fullName": "formular/Page15c/a63c/nachsatz/kein_seitenumbruch_1/pers_sende_einrichtung",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / nachsatz / kein_seitenumbruch_1"
+          }
+        ]
+      },
+      {
+        "title": "nachsatz",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "pers_sende_von",
+            "label": "vom",
+            "type": "date",
+            "fullName": "formular/Page15c/a63c/nachsatz/pers_sende_von",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / nachsatz"
+          }
+        ]
+      },
+      {
+        "title": "Page13",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "show_txt_a61a",
+            "label": "show_txt_a61a",
+            "type": "number",
+            "fullName": "formular/Page13/a71/a71a/show_txt_a61a",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page13 / a71 / a71a"
+          }
+        ]
+      },
+      {
+        "title": "Page9",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "studie_fkz",
+            "label": "FKZ Durchführbarkeitsstudie",
+            "type": "text",
+            "fullName": "formular/Page9/a4_rest/a2_single/studie_fkz",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page9 / a4_rest / a2_single"
+          }
+        ]
+      },
+      {
+        "title": "tab",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "sum",
+            "label": "sum",
+            "type": "number",
+            "fullName": "formular/Page12/kontr_ap/tab/Fußzeile/sum",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page12 / kontr_ap / tab / Fußzeile"
+          },
+          {
+            "key": "txt_ap",
+            "label": "txt_ap",
+            "type": "text",
+            "fullName": "formular/Page12/kontr_ma/tab/Zeile1/txt_ap",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page12 / kontr_ma / tab / Zeile1"
+          }
+        ]
+      },
+      {
+        "title": "fuss",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "sum_pk",
+            "label": "sum_pk",
+            "type": "number",
+            "fullName": "formular/Page14/a72_tab/Tabelle1/Zeile1/Tabelle3/fuss/sum_pk",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page14 / a72_tab / Tabelle1 / Zeile1 / Tabelle3 / fuss"
+          }
+        ]
+      },
+      {
+        "title": "Page_bc_03",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "tab_p13",
+            "label": "tabelle_page_13",
+            "type": "text",
+            "fullName": "formular/Page_bc_03/tab_p13",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_03"
+          },
+          {
+            "key": "tab_p13_count",
+            "label": "tabelle_page_13_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_03/tab_p13_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_03"
+          },
+          {
+            "key": "tab_p15",
+            "label": "tabelle_page_15",
+            "type": "text",
+            "fullName": "formular/Page_bc_03/tab_p15",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_03"
+          },
+          {
+            "key": "tab_p15_count",
+            "label": "tabelle_page_15_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_03/tab_p15_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_03"
+          }
+        ]
+      },
+      {
+        "title": "Page_bc_04",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "tab_p14",
+            "label": "tabelle_page_15",
+            "type": "text",
+            "fullName": "formular/Page_bc_04/tab_p14",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_04"
+          },
+          {
+            "key": "tab_p14_count",
+            "label": "tabelle_page_15_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_04/tab_p14_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_04"
+          },
+          {
+            "key": "tab_p18",
+            "label": "tabelle_page_18",
+            "type": "text",
+            "fullName": "formular/Page_bc_04/tab_p18",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_04"
+          },
+          {
+            "key": "tab_p18_count",
+            "label": "tabelle_page_18_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_04/tab_p18_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_04"
+          }
+        ]
+      },
+      {
+        "title": "Page_bc_02",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "tab_p6",
+            "label": "tabelle_page_6",
+            "type": "text",
+            "fullName": "formular/Page_bc_02/tab_p6",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_02"
+          },
+          {
+            "key": "tab_p6_count",
+            "label": "tabelle_page_6_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_02/tab_p6_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_02"
+          },
+          {
+            "key": "tab_p8",
+            "label": "tabelle_page_8",
+            "type": "text",
+            "fullName": "formular/Page_bc_02/tab_p8",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_02"
+          },
+          {
+            "key": "tab_p8_count",
+            "label": "tabelle_page_8_set_count",
+            "type": "text",
+            "fullName": "formular/Page_bc_02/tab_p8_count",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page_bc_02"
+          }
+        ]
+      },
+      {
+        "title": "unterschrift",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "uschrift",
+            "label": "Unterschrift",
+            "type": "text",
+            "fullName": "formular/Page13/a71/daten/uschrift",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page15c / a63c / nachsatz / kein_seitenumbruch_2 / unterschrift"
+          },
+          {
+            "key": "uschrift_a8",
+            "label": "uschrift_a8",
+            "type": "text",
+            "fullName": "formular/Page19/unterschrift/uschrift_a8",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / unterschrift"
+          }
+        ]
+      },
+      {
+        "title": "z11",
+        "columns": 2,
+        "fields": [
+          {
+            "key": "w1",
+            "label": "alle Angaben in Tausend Euro",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/z11/w1",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / z1_summe"
+          },
+          {
+            "key": "w2",
+            "label": "alle Angaben in Tausend Euro",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/z11/w2",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / z1_summe"
+          },
+          {
+            "key": "w3",
+            "label": "alle Angaben in Tausend Euro",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/z11/w3",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / z1_summe"
+          },
+          {
+            "key": "w4",
+            "label": "alle Angaben in Tausend Euro",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/z11/w4",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / z1_summe"
+          },
+          {
+            "key": "w5",
+            "label": "alle Angaben in Tausend Euro",
+            "type": "number",
+            "fullName": "formular/Page19/a9/Tabelle11/z11/w5",
+            "source": "XFA-A701590",
+            "groupPath": "formular / Page19 / a9 / Tabelle11 / z1_summe"
+          }
         ]
       }
     ]

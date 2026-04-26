@@ -1898,6 +1898,16 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         }, [schemaFields, setInitialValues]);
 
         useEffect(() => {
+          const referenceFieldNames = [
+            ...new Set(
+              staticSchema.flatMap((page) =>
+                (page.sections || []).flatMap((section) =>
+                  (section.fields || []).map((field) => `${field?.key || field?.name || ""}`.trim()).filter(Boolean)
+                )
+              )
+            ),
+          ];
+          const renderedFieldNames = [...new Set(schemaFields.map((field) => `${field?.key || field?.name || ""}`.trim()).filter(Boolean))];
           const totalFields = schemaFields.length;
           const fieldsWithPdfNames = schemaFields.filter((field) => Boolean(`${field?.fullName || field?.name || ""}`.trim())).length;
           const fieldsWithVisibleLabels = schemaFields.filter((field) => Boolean(`${field?.label || ""}`.trim())).length;
@@ -1907,13 +1917,22 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           }).length;
           const choiceFields = schemaFields.filter((field) => ["checkbox", "radio", "select"].includes(field?.type)).length;
           const sectionCount = staticSchema.reduce((sum, page) => sum + ((page.sections || []).length), 0);
+          const missingFields = referenceFieldNames.filter((fieldName) => !renderedFieldNames.includes(fieldName));
+          const unlabeledFields = schemaFields
+            .filter((field) => !`${field?.label || ""}`.trim())
+            .map((field) => field?.fullName || field?.name || field?.key)
+            .filter(Boolean);
 
-          console.log("Extracted schema fields:", totalFields);
+          console.log("PDF total fields:", referenceFieldNames.length);
+          console.log("Schema fields:", totalFields);
+          console.log("Rendered fields:", renderedFieldNames.length);
           console.log("Fields with PDF names:", fieldsWithPdfNames);
           console.log("Fields with visible labels:", fieldsWithVisibleLabels);
           console.log("Fields using fallback labels:", fieldsUsingFallbackLabels);
           console.log("Choice/Radio/Checkbox fields:", choiceFields);
           console.log("Grouping sections:", sectionCount);
+          console.log("Missing fields:", missingFields);
+          console.log("Unlabeled fields:", unlabeledFields);
         }, [schemaFields, staticSchema]);
 
         const renderInput = (field) => {
@@ -1945,9 +1964,9 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               </select>
             );
           }
-          if (field?.type === "textarea") return <textarea {...commonProps} rows={3} />;
+          if (field?.type === "textarea") return <textarea {...commonProps} rows={field?.rows || 3} />;
           if (field?.type === "date") return <input {...commonProps} type="date" />;
-          if (field?.type === "number") return <input {...commonProps} type="number" step="0.01" />;
+          if (field?.type === "number") return <input {...commonProps} type="number" step={field?.step || "0.01"} />;
           return <input {...commonProps} type="text" />;
         };
 
