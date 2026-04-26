@@ -12,6 +12,113 @@ app.use(express.json({ limit: "30mb" }));
 
 const multipartParser = express.raw({ type: "multipart/form-data", limit: "30mb" });
 
+
+const PDF_SEARCH_ROOTS = [".", "public", "app", "assets", "static", "uploads", "docs"];
+
+const normalizePdfStem = (value = "") =>
+  `${value}`
+    .toLowerCase()
+    .replace(/\.pdf$/i, "")
+    .replace(/[\s_-]+/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const isInsideRoot = (rootDir, targetPath) => {
+  const rel = path.relative(rootDir, targetPath);
+  return !rel.startsWith("..") && !path.isAbsolute(rel);
+};
+
+const listPdfCandidates = async (baseDir) => {
+  const queue = [];
+  const seen = new Set();
+  PDF_SEARCH_ROOTS.forEach((entry) => {
+    const abs = path.resolve(baseDir, entry);
+    if (!seen.has(abs)) {
+      seen.add(abs);
+      queue.push(abs);
+    }
+  });
+
+  const results = [];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    let stat;
+    try {
+      stat = await fs.stat(current);
+    } catch (_error) {
+      continue;
+    }
+    if (!stat.isDirectory()) continue;
+
+    let dirEntries = [];
+    try {
+      dirEntries = await fs.readdir(current, { withFileTypes: true });
+    } catch (_error) {
+      continue;
+    }
+
+    dirEntries.forEach((entry) => {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.git') return;
+        queue.push(fullPath);
+        return;
+      }
+      if (!entry.isFile()) return;
+      if (!/\.pdf$/i.test(entry.name)) return;
+      const relative = path.relative(baseDir, fullPath).split(path.sep).join('/');
+      const normalized = normalizePdfStem(entry.name);
+      results.push({
+        fileName: entry.name,
+        absolutePath: fullPath,
+        relativePath: relative,
+        normalized,
+      });
+    });
+  }
+  return results;
+};
+
+const scorePdfCandidate = (normalizedName) => {
+  let score = 0;
+  if (!normalizedName) return score;
+  if (normalizedName.includes('a701590')) score += 80;
+  if (normalizedName.includes('zim')) score += 25;
+  if (normalizedName.includes('antrag')) score += 25;
+  if (normalizedName === 'zim antrag a701590') score += 150;
+  if (normalizedName.startsWith('zim antrag a701590')) score += 40;
+  if (normalizedName === 'a701590') score += 40;
+  return score;
+};
+
+const resolveA701590Pdf = async (baseDir) => {
+  const candidates = await listPdfCandidates(baseDir);
+  const ranked = candidates
+    .map((candidate) => ({ ...candidate, score: scorePdfCandidate(candidate.normalized) }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.relativePath.localeCompare(b.relativePath, 'de');
+    });
+
+  const resolved = ranked.find((entry) => entry.score > 0) || null;
+  const debug = {
+    candidates: ranked.map((entry) => ({
+      path: entry.relativePath,
+      normalized: entry.normalized,
+      score: entry.score,
+    })),
+    rejectionReason: resolved ? null : 'Kein PDF mit ausreichender Übereinstimmung zu ZIM-Antrag-A701590 gefunden.',
+  };
+
+  return {
+    resolved,
+    debug,
+  };
+};
+
+let cachedResolvedMantelbogenPdf = null;
+
 const parseMultipart = (req) => {
   const contentType = req.headers["content-type"] || "";
   const boundaryMatch = contentType.match(/boundary=(.+)$/i);
@@ -159,6 +266,49 @@ app.post("/api/zim/fill", multipartParser, async (req, res) => {
     res.send(response.pdfBuffer);
   } catch (error) {
     res.status(400).json({ error: error.message || "PDF-Befüllung fehlgeschlagen." });
+  }
+});
+
+
+app.get("/api/zim/mantelbogen/company-one/source", async (_req, res) => {
+  try {
+    const { resolved, debug } = await resolveA701590Pdf(__dirname);
+    cachedResolvedMantelbogenPdf = resolved;
+
+    console.log("Found PDF candidates:", debug.candidates);
+    console.log("Resolved A701590 PDF:", resolved?.relativePath || null);
+
+    return res.json({
+      found: Boolean(resolved),
+      resolvedPath: resolved?.relativePath || null,
+      fileName: resolved?.fileName || null,
+      normalizedName: resolved?.normalized || null,
+      debug,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || "PDF-Auflösung fehlgeschlagen." });
+  }
+});
+
+app.get("/api/zim/mantelbogen/company-one/pdf", async (_req, res) => {
+  try {
+    if (!cachedResolvedMantelbogenPdf) {
+      const { resolved } = await resolveA701590Pdf(__dirname);
+      cachedResolvedMantelbogenPdf = resolved;
+    }
+
+    if (!cachedResolvedMantelbogenPdf) {
+      return res.status(404).json({ error: "A701590 PDF nicht gefunden." });
+    }
+
+    const absolutePath = cachedResolvedMantelbogenPdf.absolutePath;
+    if (!isInsideRoot(__dirname, absolutePath)) {
+      return res.status(403).json({ error: "Ungültiger Dateipfad." });
+    }
+
+    return res.sendFile(absolutePath);
+  } catch (error) {
+    return res.status(500).json({ error: error.message || "PDF-Datei konnte nicht geladen werden." });
   }
 });
 
