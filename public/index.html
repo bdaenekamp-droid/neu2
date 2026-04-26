@@ -117,6 +117,7 @@
 
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
     <script src="/version.js"></script>
@@ -957,20 +958,43 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
       };
 
       const detectA701590PdfFields = async () => {
-        const pdfResponse = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, { cache: "no-store" });
-        if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
-        const pdfBlob = await pdfResponse.blob();
-        const formData = new FormData();
-        formData.append("file", pdfBlob, "A701590.pdf");
-        formData.append("payload", JSON.stringify({}));
-        const fieldsResponse = await fetch("/api/zim/fields", {
-          method: "POST",
-          body: formData,
+        console.log("PDF fetch method:", "GET");
+        console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
+        const pdfResponse = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, {
+          method: "GET",
+          cache: "no-store",
         });
-        if (!fieldsResponse.ok) throw new Error(`PDF-Felder konnten nicht analysiert werden (HTTP ${fieldsResponse.status}).`);
-        const analysis = await fieldsResponse.json();
-        const leafPaths = Array.isArray(analysis?.leafPaths) ? analysis.leafPaths : [];
-        const interactiveFields = leafPaths
+        console.log("PDF fetch status:", pdfResponse.status);
+        if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
+
+        const pdfArrayBuffer = await pdfResponse.arrayBuffer();
+        console.log("PDF bytes:", pdfArrayBuffer.byteLength);
+
+        const pdfjsLib = window.pdfjsLib;
+        if (!pdfjsLib?.getDocument) {
+          console.log("PDF parse success:", false);
+          throw new Error("PDF-Analysebibliothek ist nicht verfügbar.");
+        }
+
+        const loadingTask = pdfjsLib.getDocument({ data: pdfArrayBuffer, disableWorker: true });
+        const pdfDocument = await loadingTask.promise;
+        const pageCount = Number(pdfDocument?.numPages) || 0;
+
+        const fieldObjects = (await pdfDocument.getFieldObjects?.()) || {};
+        const objectPaths = Object.keys(fieldObjects);
+
+        const annotationPaths = [];
+        for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+          const page = await pdfDocument.getPage(pageNumber);
+          const annotations = await page.getAnnotations();
+          annotations
+            .filter((annotation) => annotation?.subtype === "Widget" && annotation?.fieldName)
+            .forEach((annotation) => annotationPaths.push(`${annotation.fieldName}`));
+        }
+
+        const leafPaths = [...objectPaths, ...annotationPaths];
+        const uniqueLeafPaths = leafPaths.filter((path, index, arr) => arr.findIndex((entry) => entry === path) === index);
+        const interactiveFields = uniqueLeafPaths
           .filter((path) => isLikelyInteractivePdfField(path))
           .map((path) => {
             const key = path.split("/").pop() || path;
@@ -983,14 +1007,19 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               type: inferFieldTypeFromKey(key),
               storageKey: getMantelbogenStorageKeyForPath(path),
             };
-          })
-          .filter((field, index, arr) => arr.findIndex((entry) => entry.path === field.path) === index);
+          });
+
+        console.log("PDF parse success:", true);
+        console.log("Extracted PDF form fields:", interactiveFields.length);
 
         return {
-          pageCount: Number(analysis?.pageCount) || 0,
-          totalLeafCount: leafPaths.length,
+          pageCount,
+          totalLeafCount: uniqueLeafPaths.length,
           fields: interactiveFields,
-          error: null,
+          error:
+            interactiveFields.length === 0
+              ? "Die PDF wurde geladen, aber die Formularfelder konnten nicht direkt extrahiert werden."
+              : null,
         };
       };
 
