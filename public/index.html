@@ -105,6 +105,29 @@
         margin: 0;
       }
 
+      .textLayer {
+        opacity: 0.2;
+        line-height: 1;
+      }
+
+      .textLayer span,
+      .textLayer br {
+        color: transparent;
+        position: absolute;
+        white-space: pre;
+        transform-origin: 0% 0%;
+      }
+
+      .annotationLayer {
+        pointer-events: auto;
+      }
+
+      .annotationLayer section {
+        position: absolute;
+        box-sizing: border-box;
+        transform-origin: 0 0;
+      }
+
       @media print {
         .fullscreen-overlay-close {
           display: none !important;
@@ -2003,181 +2026,220 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         );
       };
 
-      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues, pdfResolution, detectedPdfAnalysis = null }) => {
-        const detectedPdfFields = Array.isArray(detectedPdfAnalysis?.fields) ? detectedPdfAnalysis.fields : [];
-        const reconstructedPdfPages = useMemo(
-          () => buildMantelbogenPagesFromDetectedPdfFields(detectedPdfFields),
-          [detectedPdfFields]
-        );
-        const allPages = useMemo(
-          () => (reconstructedPdfPages.length ? reconstructedPdfPages : ZIM_MANTELBOGEN_COMPANY_ONE_PAGES),
-          [reconstructedPdfPages]
-        );
-        const renderedFieldCount = useMemo(
-          () =>
-            allPages.reduce(
-              (count, page) => count + page.sections.reduce((sectionCount, section) => sectionCount + section.fields.length, 0),
-              0
-            ),
-          [allPages]
-        );
-        const missingFieldPaths = useMemo(() => [], []);
+      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, pdfResolution }) => {
+        const viewerRef = useRef(null);
+        const [renderState, setRenderState] = useState({
+          loading: false,
+          loaded: false,
+          pageCount: 0,
+          renderedPages: 0,
+          hasAcroForm: false,
+          hasXfa: false,
+          error: null,
+        });
+
+        const fieldElementsRef = useRef({});
+
+        const getStorageKeyForPdfField = useCallback((fieldName = "") => {
+          const normalized = `${fieldName}`.trim().replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "");
+          return normalized ? `pdf::${normalized}` : "";
+        }, []);
+
+        const applyStoredValueToElement = useCallback((element, value) => {
+          if (!element) return;
+          if (element.type === "checkbox" || element.type === "radio") {
+            element.checked = Boolean(value);
+            return;
+          }
+          element.value = value === undefined || value === null ? "" : `${value}`;
+        }, []);
 
         useEffect(() => {
-          if (!detectedPdfFields.length && !detectedPdfAnalysis?.totalLeafCount) return;
-          console.log("Resolved PDF:", pdfResolution?.resolvedPath || null);
-          console.log("PDF pages:", detectedPdfAnalysis?.pageCount || 0);
-          console.log("PDF leaf paths detected:", detectedPdfAnalysis?.totalLeafCount || 0);
-          console.log("Detected PDF fields:", detectedPdfFields.length);
-          console.log("Rendered fields:", renderedFieldCount);
-          console.log("Missing fields:", missingFieldPaths);
-        }, [detectedPdfFields, detectedPdfAnalysis, renderedFieldCount, missingFieldPaths, pdfResolution]);
+          Object.entries(fieldElementsRef.current).forEach(([storageKey, elements]) => {
+            const currentValue = values?.[storageKey];
+            elements.forEach((element) => applyStoredValueToElement(element, currentValue));
+          });
+        }, [values, applyStoredValueToElement]);
 
-        const getFieldValue = (field) => {
-          const storedValue = values?.[field.key];
-          if (storedValue !== undefined && storedValue !== null && storedValue !== "") return storedValue;
-          if (field.prefillKey && prefillValues?.[field.prefillKey]) return prefillValues[field.prefillKey];
-          return field.type === "checkbox" ? false : "";
-        };
+        useEffect(() => {
+          let isActive = true;
+          const renderPdf = async () => {
+            const container = viewerRef.current;
+            if (!container) return;
+            container.innerHTML = "";
+            fieldElementsRef.current = {};
+            setRenderState((prev) => ({ ...prev, loading: true, loaded: false, error: null }));
 
-        const getFieldContainerClass = (field, columns = 2) => {
-          if (field.span === 2 && columns >= 2) return "md:col-span-2";
-          if (field.span === 3 && columns >= 3) return "lg:col-span-3";
-          if (field.type === "textarea" && columns >= 2) return "md:col-span-2";
-          return "";
-        };
+            try {
+              console.log("PDF fetch method:", "GET");
+              console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
+              const response = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, { method: "GET", cache: "no-store" });
+              console.log("PDF fetch status:", response.status);
+              if (!response.ok) {
+                throw new Error(`Die PDF wurde nicht geladen (HTTP ${response.status}).`);
+              }
 
-        const renderField = (field) => {
-          const value = getFieldValue(field);
-          const commonClassName = "mt-1 h-10 w-full rounded-sm border border-slate-400/80 bg-white px-3 text-sm text-slate-900 focus:border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300";
+              const pdfArrayBuffer = await response.arrayBuffer();
+              const pdfjsLib = window.pdfjsLib;
+              if (!pdfjsLib?.getDocument) throw new Error("Die Rendering-Library pdf.js ist nicht verfügbar.");
 
-          if (field.type === "textarea") {
-            return (
-              <textarea
-                rows={field.rows || 4}
-                value={value}
-                onChange={(event) => onFieldChange(field.key, event.target.value)}
-                className="mt-1 w-full rounded-sm border border-slate-400/80 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              />
-            );
+              const loadingTask = pdfjsLib.getDocument({
+                data: pdfArrayBuffer,
+                disableWorker: true,
+                enableXfa: true,
+                isEvalSupported: false,
+              });
+              const pdfDocument = await loadingTask.promise;
+              const pageCount = Number(pdfDocument?.numPages) || 0;
+              const fieldObjects = (await pdfDocument.getFieldObjects?.()) || null;
+              const hasAcroForm = Boolean(fieldObjects && Object.keys(fieldObjects).length);
+              const hasXfa = Boolean(pdfDocument?.allXfaHtml);
+              console.log("PDF loaded:", true);
+              console.log("PDF page count:", pageCount);
+              console.log("AcroForm detected:", hasAcroForm);
+              console.log("XFA detected:", hasXfa);
+
+              let renderedPages = 0;
+              for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+                const page = await pdfDocument.getPage(pageNumber);
+                const viewport = page.getViewport({ scale: 1.35 });
+                const pageWrapper = document.createElement("article");
+                pageWrapper.className = "mx-auto w-full rounded-sm border border-slate-300 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.20)]";
+                pageWrapper.style.maxWidth = `${Math.round(viewport.width + 36)}px`;
+
+                const pageHeader = document.createElement("p");
+                pageHeader.className = "mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500";
+                pageHeader.textContent = `ZIM-Mantelbögen · Unternehmen 1 · Seite ${pageNumber} von ${pageCount}`;
+                pageWrapper.appendChild(pageHeader);
+
+                const pageView = document.createElement("div");
+                pageView.className = "relative";
+                pageView.style.width = `${viewport.width}px`;
+                pageView.style.height = `${viewport.height}px`;
+
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.floor(viewport.width);
+                canvas.height = Math.floor(viewport.height);
+                canvas.style.width = `${viewport.width}px`;
+                canvas.style.height = `${viewport.height}px`;
+                pageView.appendChild(canvas);
+
+                const textLayerDiv = document.createElement("div");
+                textLayerDiv.className = "textLayer absolute inset-0";
+                pageView.appendChild(textLayerDiv);
+
+                const annotationLayerDiv = document.createElement("div");
+                annotationLayerDiv.className = "annotationLayer absolute inset-0";
+                pageView.appendChild(annotationLayerDiv);
+                pageWrapper.appendChild(pageView);
+                container.appendChild(pageWrapper);
+
+                await page.render({
+                  canvasContext: canvas.getContext("2d"),
+                  viewport,
+                  annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
+                }).promise;
+
+                const textContent = await page.getTextContent();
+                pdfjsLib.renderTextLayer({ textContent, container: textLayerDiv, viewport, textDivs: [] });
+
+                const annotations = await page.getAnnotations({ intent: "display" });
+                const widgetCount = annotations.filter((annotation) => annotation?.subtype === "Widget").length;
+                console.log(`Page ${pageNumber} annotation count:`, annotations.length);
+                console.log(`Page ${pageNumber} widget count:`, widgetCount);
+
+                if (pdfjsLib.AnnotationLayer?.render) {
+                  await pdfjsLib.AnnotationLayer.render({
+                    viewport: viewport.clone({ dontFlip: true }),
+                    div: annotationLayerDiv,
+                    annotations,
+                    page,
+                    annotationStorage: pdfDocument.annotationStorage,
+                    renderForms: true,
+                  });
+                }
+
+                const inputs = annotationLayerDiv.querySelectorAll("input, textarea, select");
+                console.log(`Rendered form elements page ${pageNumber}:`, inputs.length);
+                inputs.forEach((element) => {
+                  const rawName = element.name || element.getAttribute("data-element-id") || "";
+                  const storageKey = getStorageKeyForPdfField(rawName);
+                  if (!storageKey) return;
+                  if (!fieldElementsRef.current[storageKey]) fieldElementsRef.current[storageKey] = [];
+                  fieldElementsRef.current[storageKey].push(element);
+                  applyStoredValueToElement(element, values?.[storageKey]);
+                  element.addEventListener("change", (event) => {
+                    const target = event.target;
+                    const nextValue = target.type === "checkbox" ? Boolean(target.checked) : target.value;
+                    onFieldChange(storageKey, nextValue);
+                  });
+                  element.addEventListener("input", (event) => {
+                    const target = event.target;
+                    const nextValue = target.type === "checkbox" ? Boolean(target.checked) : target.value;
+                    onFieldChange(storageKey, nextValue);
+                  });
+                });
+
+                renderedPages += 1;
+              }
+
+              console.log("Rendered pages:", renderedPages);
+              if (isActive) {
+                setRenderState({
+                  loading: false,
+                  loaded: true,
+                  pageCount,
+                  renderedPages,
+                  hasAcroForm,
+                  hasXfa,
+                  error: renderedPages === pageCount ? null : "Nicht alle PDF-Seiten konnten vollständig gerendert werden.",
+                });
+              }
+            } catch (error) {
+              console.log("PDF loaded:", false);
+              console.log("PDF render error:", error?.message || error);
+              if (isActive) {
+                setRenderState({
+                  loading: false,
+                  loaded: false,
+                  pageCount: 0,
+                  renderedPages: 0,
+                  hasAcroForm: false,
+                  hasXfa: false,
+                  error: error?.message || "Die PDF-Formularansicht konnte nicht geladen werden.",
+                });
+              }
+            }
+          };
+
+          if (pdfResolution?.found) {
+            renderPdf();
           }
-
-          if (field.type === "select") {
-            return (
-              <select
-                value={value}
-                onChange={(event) => onFieldChange(field.key, event.target.value)}
-                className={commonClassName}
-              >
-                {(field.options || []).map((option) => (
-                  <option key={`${field.key}-${option || "leer"}`} value={option}>
-                    {option || "Bitte wählen"}
-                  </option>
-                ))}
-              </select>
-            );
-          }
-
-          if (field.type === "radio") {
-            return (
-              <div className="mt-2 flex flex-wrap gap-4 rounded-sm border border-slate-300 bg-white px-3 py-2">
-                {(field.options || []).map((option) => (
-                  <label key={`${field.key}-${option}`} className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input
-                      type="radio"
-                      name={field.key}
-                      checked={value === option}
-                      onChange={() => onFieldChange(field.key, option)}
-                      className="h-4 w-4 accent-slate-700"
-                    />
-                    <span>{option}</span>
-                  </label>
-                ))}
-              </div>
-            );
-          }
-
-          if (field.type === "checkbox") {
-            return (
-              <label className="mt-2 inline-flex w-full items-center gap-2 rounded-sm border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={Boolean(value)}
-                  onChange={(event) => onFieldChange(field.key, event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-400 accent-slate-700"
-                />
-                <span>Ja</span>
-              </label>
-            );
-          }
-
-          return (
-            <input
-              type={field.type || "text"}
-              step={field.step}
-              value={value}
-              onChange={(event) => onFieldChange(field.key, event.target.value)}
-              className={commonClassName}
-            />
-          );
-        };
+          return () => {
+            isActive = false;
+          };
+        }, [onFieldChange, pdfResolution?.found, getStorageKeyForPdfField, applyStoredValueToElement]);
 
         return (
           <div className="space-y-6">
             {pdfResolution?.checked && !pdfResolution?.found ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: Die Datei /ZIM-Antrag-A701590.pdf wurde nicht gefunden. Bitte legen Sie die PDF manuell im Verzeichnis public ab.
+                Hinweis: Die Datei /ZIM-Antrag-A701590.pdf wurde nicht gefunden. Bitte legen Sie die PDF im Verzeichnis public ab.
               </div>
-            ) : pdfResolution?.found && detectedPdfAnalysis?.error ? (
+            ) : renderState.error ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: Die Datei <strong>ZIM-Antrag-A701590.pdf</strong> wurde gefunden, aber die Formularfelder konnten nicht vollständig extrahiert werden. ({detectedPdfAnalysis.error})
+                Hinweis: Die PDF wurde geladen, aber das Formularformat wird von der aktuellen Rendering-Library nicht vollständig unterstützt. ({renderState.error})
               </div>
-            ) : pdfResolution?.found ? (
+            ) : (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                Quelle erkannt: <strong>{pdfResolution.fileName || "ZIM-Antrag-A701590.pdf"}</strong>
-                <span className="ml-2 text-emerald-700">({pdfResolution.resolvedPath})</span>
+                Quelle erkannt: <strong>{pdfResolution?.fileName || "ZIM-Antrag-A701590.pdf"}</strong>
+                <span className="ml-2 text-emerald-700">(Seiten: {renderState.pageCount || "–"}, gerendert: {renderState.renderedPages || "–"}, AcroForm: {renderState.hasAcroForm ? "ja" : "nein"}, XFA: {renderState.hasXfa ? "ja" : "nein"})</span>
               </div>
-            ) : null}
+            )}
 
             <div className="max-h-[78vh] overflow-y-auto rounded-lg border border-slate-300/90 bg-slate-200/50 p-5">
-              <div className="mx-auto max-w-[900px] space-y-10">
-                {allPages.map((page, pageIndex) => (
-                  <article
-                    key={page.id}
-                    className="mx-auto w-full rounded-sm border border-slate-300 bg-white px-10 py-8 shadow-[0_16px_36px_rgba(15,23,42,0.20)]"
-                    style={{ minHeight: "1120px" }}
-                  >
-                    <header className="mb-5 border-b-2 border-slate-200 pb-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">ZIM-Mantelbögen · Unternehmen 1</p>
-                      <h4 className="mt-1 text-lg font-semibold text-slate-900">{page.title}</h4>
-                      <p className="text-sm text-slate-600">{page.subtitle}</p>
-                      <p className="mt-1 text-xs text-slate-500">Seite {pageIndex + 1} von {allPages.length}</p>
-                    </header>
-
-                    <div className="space-y-5">
-                      {page.sections.map((section) => {
-                        const columns = section.columns || 2;
-                        const gridClass = columns === 3
-                          ? "mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                          : "mt-3 grid grid-cols-1 gap-4 md:grid-cols-2";
-                        return (
-                          <section key={`${page.id}-${section.title}`} className="rounded-sm border border-slate-300 bg-slate-50 p-4">
-                            <h5 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-700">{section.title}</h5>
-                            <div className={gridClass}>
-                              {section.fields.map((field) => (
-                                <div key={field.key} className={getFieldContainerClass(field, columns)}>
-                                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{field.label}</label>
-                                  {renderField(field)}
-                                </div>
-                              ))}
-                            </div>
-                          </section>
-                        );
-                      })}
-                    </div>
-                  </article>
-                ))}
-              </div>
+              {renderState.loading ? <p className="text-sm text-slate-600">PDF wird geladen und vollständig gerendert …</p> : null}
+              <div ref={viewerRef} className="mx-auto max-w-[1120px] space-y-8" />
             </div>
           </div>
         );
@@ -2981,30 +3043,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           resolveA701590PdfSource().then((result) => {
             if (!isMounted) return;
             setCompanyOneMantelbogenPdfResolution(result);
-            if (!result?.found) {
-              setCompanyOneDetectedPdfAnalysis({ pageCount: 0, totalLeafCount: 0, fields: [], error: null });
-              return;
-            }
-            detectA701590PdfFields()
-              .then((analysis) => {
-                if (!isMounted) return;
-                setCompanyOneDetectedPdfAnalysis({
-                  pageCount: analysis?.pageCount || 0,
-                  totalLeafCount: analysis?.totalLeafCount || 0,
-                  fields: Array.isArray(analysis?.fields) ? analysis.fields : [],
-                  error: null,
-                });
-              })
-              .catch((error) => {
-                console.log("PDF field detection failed:", error?.message || error);
-                if (!isMounted) return;
-                setCompanyOneDetectedPdfAnalysis({
-                  pageCount: 0,
-                  totalLeafCount: 0,
-                  fields: [],
-                  error: error?.message || "PDF-Analyse fehlgeschlagen.",
-                });
-              });
+            setCompanyOneDetectedPdfAnalysis({ pageCount: 0, totalLeafCount: 0, fields: [], error: null });
           });
           return () => {
             isMounted = false;
