@@ -805,8 +805,6 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         pm: Array(5).fill(""),
       });
 
-      const ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH = "/ZIM-Antrag-A701590.pdf";
-
       const ZIM_MANTELBOGEN_COMPANY_ONE_PAGES = [
         {
           id: "a701590-seite-1",
@@ -893,193 +891,27 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         },
       ];
 
-      const isLikelyInteractivePdfField = (path = "") => {
-        const normalized = `${path}`.trim();
-        if (!normalized || !normalized.startsWith("formular/")) return false;
-
-        const ignoredPathFragments = [
-          "/statisch/",
-          "/pics",
-          "/warnung",
-          "/hinweis",
-          "/dummy",
-          "/hash",
-          "/bc_id/",
-          "/version",
-          "/printdate",
-          "/client",
-          "/pagecount",
-          "/fieldstatusall",
-          "/fieldsalreadylocked",
-          "/kopfzeile",
-          "/fußzeile",
-          "/fusszeile",
-        ];
-
-        const lowerPath = normalized.toLowerCase();
-        if (ignoredPathFragments.some((fragment) => lowerPath.includes(fragment))) return false;
-
-        const leaf = normalized.split("/").pop() || "";
-        const lowerLeaf = leaf.toLowerCase();
-        const ignoredLeafs = new Set(["p", "span", "kopf", "oben", "unten", "statisch", "teilformular", "reset"]);
-        if (ignoredLeafs.has(lowerLeaf)) return false;
-        return /[a-z]/i.test(leaf);
-      };
-
-      const inferFieldTypeFromKey = (key = "") => {
-        if (/^(chk_|opt_)/i.test(key) || /(_chk_|_opt_)/i.test(key)) return "checkbox";
-        if (/(mail|email)/i.test(key)) return "email";
-        if (/www|website|url/i.test(key)) return "url";
-        if (/(datum|_dat$|geb|_von$|_bis$|date)/i.test(key)) return "date";
-        if (/(sum|betrag|euro|kosten|pm|proz|quote|ums|bilanz|nr|jahr|anz|std|faktor)/i.test(key)) return "number";
-        if (/(thema|kurzfass|bem|anschr|titel|text|prog|zweck)/i.test(key)) return "textarea";
-        return "text";
-      };
-
-      const humanizePdfFieldLabel = (key = "") =>
-        `${key}`
-          .replace(/^chk_/, "")
-          .replace(/^opt_/, "")
-          .replace(/_/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .replace(/\b\w/g, (char) => char.toUpperCase()) || key;
-
-      const getMantelbogenStorageKeyForPath = (path = "") =>
-        `pdf::${`${path}`.replace(/^formular\//, "").replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "")}`;
-
-      const buildMantelbogenPagesFromDetectedPdfFields = (pdfFields = []) => {
-        if (!Array.isArray(pdfFields) || pdfFields.length === 0) return [];
-        const grouped = pdfFields.reduce((acc, field) => {
-          const group = field.group || "sonstige";
-          if (!acc[group]) acc[group] = [];
-          acc[group].push(field);
-          return acc;
-        }, {});
-
-        const sections = Object.entries(grouped)
-          .sort((a, b) => a[0].localeCompare(b[0], "de"))
-          .map(([groupName, fields]) => ({
-            title: `Erkannte PDF-Gruppe: ${groupName.toUpperCase()}`,
-            columns: 2,
-            fields: fields.sort((a, b) => a.path.localeCompare(b.path, "de")).map((field) => ({
-              key: field.storageKey,
-              label: `${field.label} (${field.path})`,
-              type: field.type,
-              rows: field.type === "textarea" ? 3 : undefined,
-            })),
-          }));
-
-        return [
-          {
-            id: "a701590-seite-pdf-rekonstruiert",
-            title: "Antrag A701590 – Aus PDF rekonstruierte Felder",
-            subtitle: "Automatisch aus /ZIM-Antrag-A701590.pdf extrahierte Formularfelder",
-            sections,
-          },
-        ];
-      };
-
-      const detectA701590PdfFields = async () => {
-        console.log("PDF fetch method:", "GET");
-        console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
-        const pdfResponse = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, {
-          method: "GET",
-          cache: "no-store",
-        });
-        console.log("PDF fetch status:", pdfResponse.status);
-        if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
-
-        const pdfArrayBuffer = await pdfResponse.arrayBuffer();
-        console.log("PDF bytes:", pdfArrayBuffer.byteLength);
-
-        const pdfjsLib = window.pdfjsLib;
-        if (!pdfjsLib?.getDocument) {
-          console.log("PDF parse success:", false);
-          throw new Error("PDF-Analysebibliothek ist nicht verfügbar.");
-        }
-
-        const loadingTask = pdfjsLib.getDocument({ data: pdfArrayBuffer, disableWorker: true });
-        const pdfDocument = await loadingTask.promise;
-        const pageCount = Number(pdfDocument?.numPages) || 0;
-
-        const fieldObjects = (await pdfDocument.getFieldObjects?.()) || {};
-        const objectPaths = Object.keys(fieldObjects);
-
-        const annotationPaths = [];
-        for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-          const page = await pdfDocument.getPage(pageNumber);
-          const annotations = await page.getAnnotations();
-          annotations
-            .filter((annotation) => annotation?.subtype === "Widget" && annotation?.fieldName)
-            .forEach((annotation) => annotationPaths.push(`${annotation.fieldName}`));
-        }
-
-        const leafPaths = [...objectPaths, ...annotationPaths];
-        const uniqueLeafPaths = leafPaths.filter((path, index, arr) => arr.findIndex((entry) => entry === path) === index);
-        const interactiveFields = uniqueLeafPaths
-          .filter((path) => isLikelyInteractivePdfField(path))
-          .map((path) => {
-            const key = path.split("/").pop() || path;
-            const group = path.split("/")[1] || "sonstige";
-            return {
-              path,
-              key,
-              group,
-              label: humanizePdfFieldLabel(key),
-              type: inferFieldTypeFromKey(key),
-              storageKey: getMantelbogenStorageKeyForPath(path),
-            };
-          });
-
-        console.log("PDF parse success:", true);
-        console.log("Extracted PDF form fields:", interactiveFields.length);
-
-        return {
-          pageCount,
-          totalLeafCount: uniqueLeafPaths.length,
-          fields: interactiveFields,
-          error:
-            interactiveFields.length === 0
-              ? "Die PDF wurde geladen, aber die Formularfelder konnten nicht direkt extrahiert werden."
-              : null,
-        };
-      };
-
-      const resolveA701590PdfSource = async () => {
-        console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
-        try {
-          const response = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, {
-            method: "GET",
-            cache: "no-store",
-          });
-          console.log("PDF fetch status:", response.status);
-          const isFound = response.status === 200;
-          console.log("PDF available:", isFound);
-
-          return {
-            found: isFound,
-            resolvedPath: isFound ? ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH : null,
-            fileName: isFound ? "ZIM-Antrag-A701590.pdf" : null,
-            normalizedName: null,
-            debug: null,
-            error: isFound ? null : `HTTP ${response.status}`,
-            checked: true,
-          };
-        } catch (error) {
-          console.log("PDF fetch status:", "network-error");
-          console.log("PDF available:", false);
-          return {
-            found: false,
-            resolvedPath: null,
-            fileName: null,
-            normalizedName: null,
-            debug: null,
-            error: error?.message || "PDF-Auflösung fehlgeschlagen.",
-            checked: true,
-          };
-        }
-      };
+      const buildStaticZimMantelbogenCompanyOneSchema = (pages = ZIM_MANTELBOGEN_COMPANY_ONE_PAGES) =>
+        pages.map((page, pageIndex) => ({
+          ...page,
+          sections: (page.sections || []).map((section, sectionIndex) => ({
+            ...section,
+            fields: (section.fields || []).map((field, fieldIndex) => {
+              const baseKey = `${field.key || `feld_${pageIndex + 1}_${sectionIndex + 1}_${fieldIndex + 1}`}`.trim();
+              const storageKey = `zim_u1::${baseKey}`;
+              return {
+                ...field,
+                key: baseKey,
+                name: baseKey,
+                fullName: `formular/${baseKey}`,
+                storageKey,
+                group: section.title,
+                source: "Static-A701590-Schema",
+                required: Boolean(field.required),
+              };
+            }),
+          })),
+        }));
 
       const buildZimMantelbogenCompanyOnePrefill = (companyNames = [], employeesByCompany = []) => {
         const firstEmployee = Array.isArray(employeesByCompany?.[0])
@@ -2026,14 +1858,28 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         );
       };
 
-      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, pdfResolution, detectedPdfAnalysis, prefillValues }) => {
-        const [renderState, setRenderState] = useState({
-          loading: false,
-          error: null,
-          fields: [],
-          analysis: null,
-          unmappedFields: [],
-        });
+      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues }) => {
+        const [staticSchema, setStaticSchema] = useState(() => buildStaticZimMantelbogenCompanyOneSchema());
+        useEffect(() => {
+          let isMounted = true;
+          fetch("/seeds/zim-mantelbogen-unternehmen1-schema.json", { cache: "no-store" })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((schemaJson) => {
+              if (!isMounted || !Array.isArray(schemaJson) || !schemaJson.length) return;
+              setStaticSchema(buildStaticZimMantelbogenCompanyOneSchema(schemaJson));
+            })
+            .catch(() => {});
+          return () => {
+            isMounted = false;
+          };
+        }, []);
+        const schemaFields = useMemo(
+          () =>
+            staticSchema.flatMap((page) =>
+              (page.sections || []).flatMap((section) => (section.fields || []).map((field) => ({ ...field, pageTitle: page.title })))
+            ),
+          [staticSchema]
+        );
 
         const setInitialValues = useCallback((fields) => {
           fields.forEach((field) => {
@@ -2048,76 +1894,27 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         }, [onFieldChange, prefillValues, values]);
 
         useEffect(() => {
-          let isActive = true;
-          const loadSchema = async () => {
-            if (!pdfResolution?.found) return;
-            setRenderState((prev) => ({ ...prev, loading: true, error: null }));
-            try {
-              console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
-              const pdfResponse = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, { method: "GET", cache: "no-store" });
-              if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
-              const pdfBlob = await pdfResponse.blob();
+          setInitialValues(schemaFields);
+        }, [schemaFields, setInitialValues]);
 
-              const formData = new FormData();
-              formData.append("file", pdfBlob, "ZIM-Antrag-A701590.pdf");
-              formData.append("payload", JSON.stringify({}));
+        useEffect(() => {
+          const totalFields = schemaFields.length;
+          const fieldsWithPdfNames = schemaFields.filter((field) => Boolean(`${field?.fullName || field?.name || ""}`.trim())).length;
+          const fieldsWithVisibleLabels = schemaFields.filter((field) => Boolean(`${field?.label || ""}`.trim())).length;
+          const fieldsUsingFallbackLabels = schemaFields.filter((field) => {
+            const label = `${field?.label || ""}`.trim().toLowerCase();
+            return !label || /^feld(\s|_|\d)/i.test(label);
+          }).length;
+          const choiceFields = schemaFields.filter((field) => ["checkbox", "radio", "select"].includes(field?.type)).length;
+          const sectionCount = staticSchema.reduce((sum, page) => sum + ((page.sections || []).length), 0);
 
-              let analysisResponse = await fetch("/api/zim/fields", { method: "POST", body: formData });
-              if (!analysisResponse.ok) {
-                analysisResponse = await fetch("/api/zim/analyze", { method: "POST", body: formData });
-              }
-              if (!analysisResponse.ok) throw new Error(`Schema-Extraktion fehlgeschlagen (HTTP ${analysisResponse.status}).`);
-              const analysisResult = await analysisResponse.json();
-              const fields = Array.isArray(analysisResult?.fields) ? analysisResult.fields : [];
-              const analysis = analysisResult?.analysis || {};
-
-              console.log("PDF loaded:", true);
-              console.log("Page count:", analysis.pageCount || 0);
-              console.log("Has AcroForm:", Boolean(analysis.hasAcroForm));
-              console.log("Has XFA:", Boolean(analysis.hasXfa));
-              console.log("Has PDF JavaScript:", Boolean(analysis.hasJavaScript));
-              console.log("Extracted total fields:", fields.length);
-              console.log("Fields per page:", analysis.fieldsPerPage || {});
-              console.log("Fields per source:", analysis.fieldSources || {});
-              console.log("Unmapped fields:", analysis.unmappedFields || []);
-              console.log("Rendered form fields:", fields.length);
-
-              if (!isActive) return;
-              setInitialValues(fields);
-              setRenderState({
-                loading: false,
-                error: fields.length ? null : "Die PDF wurde geladen, aber es konnten keine Formularfelder extrahiert werden.",
-                fields,
-                analysis,
-                unmappedFields: analysis.unmappedFields || [],
-              });
-            } catch (error) {
-              console.log("PDF loaded:", false);
-              console.error("Schema extraction error:", error);
-              if (!isActive) return;
-              setRenderState((prev) => ({
-                ...prev,
-                loading: false,
-                error: error?.message || "Die PDF wurde geladen, konnte aber nicht als Formularschema extrahiert werden.",
-              }));
-            }
-          };
-
-          loadSchema();
-          return () => {
-            isActive = false;
-          };
-        }, [pdfResolution?.found, setInitialValues]);
-
-        const groupedFields = useMemo(() => {
-          const sourceFields = renderState.fields.length ? renderState.fields : (detectedPdfAnalysis?.fields || []);
-          return sourceFields.reduce((acc, field) => {
-            const group = field?.group || (field?.page ? `Seite ${field.page}` : "Sonstige");
-            if (!acc[group]) acc[group] = [];
-            acc[group].push(field);
-            return acc;
-          }, {});
-        }, [renderState.fields, detectedPdfAnalysis?.fields]);
+          console.log("Extracted schema fields:", totalFields);
+          console.log("Fields with PDF names:", fieldsWithPdfNames);
+          console.log("Fields with visible labels:", fieldsWithVisibleLabels);
+          console.log("Fields using fallback labels:", fieldsUsingFallbackLabels);
+          console.log("Choice/Radio/Checkbox fields:", choiceFields);
+          console.log("Grouping sections:", sectionCount);
+        }, [schemaFields, staticSchema]);
 
         const renderInput = (field) => {
           const storageKey = field?.storageKey;
@@ -2154,37 +1951,22 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           return <input {...commonProps} type="text" />;
         };
 
-        const statusAnalysis = renderState.analysis || {};
-        const sourceLabel = statusAnalysis.fieldSources
-          ? Object.entries(statusAnalysis.fieldSources).map(([key, count]) => `${key}: ${count}`).join(", ")
-          : "–";
-
         return (
           <div className="space-y-6">
-            {pdfResolution?.checked && !pdfResolution?.found ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: Die Datei /ZIM-Antrag-A701590.pdf wurde nicht gefunden. Bitte legen Sie die PDF im Verzeichnis public ab.
-              </div>
-            ) : renderState.error ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: {renderState.error}
-              </div>
-            ) : (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                Die PDF wurde geladen. Es wurden {statusAnalysis.acroFieldCount || 0} AcroForm-Felder und {statusAnalysis.xfaFieldCount || 0} XFA-Felder erkannt.
-                <div className="mt-1 text-emerald-700">Seiten: {statusAnalysis.pageCount || "–"}, JavaScript: {statusAnalysis.hasJavaScript ? "ja" : "nein"}, Quellen: {sourceLabel}</div>
-              </div>
-            )}
-
             <div className="space-y-4">
-              {renderState.loading ? <p className="text-sm text-slate-600">PDF wird analysiert und Formularschema wird extrahiert …</p> : null}
-              {Object.entries(groupedFields).map(([groupName, fields]) => (
-                <section key={groupName} className="rounded-lg border border-slate-200 bg-white p-4 shadow-subtle">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{groupName}</h3>
+              {staticSchema.map((page) => (
+                <div key={page.id} className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">{page.title}</h3>
+                    {page.subtitle ? <p className="text-sm text-slate-600">{page.subtitle}</p> : null}
+                  </div>
+                  {(page.sections || []).map((section) => (
+                <section key={`${page.id}-${section.title}`} className="rounded-lg border border-slate-200 bg-white p-4 shadow-subtle">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{section.title}</h3>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {fields.map((field, index) => (
+                    {(section.fields || []).map((field, index) => (
                       <label key={`${field.storageKey || field.fullName || field.name}-${index}`} className="block text-xs font-medium text-slate-700">
-                        {field.label || field.name || field.fullName || `Feld ${index + 1}`}
+                        {field.label || field.name || field.fullName}
                         {field.required ? <span className="ml-1 text-rose-600">*</span> : null}
                         {renderInput(field)}
                         <span className="mt-1 block text-[11px] text-slate-500">{field.fullName || field.name} · Typ: {field.type || "text"} · Quelle: {field.source || "Fallback"}</span>
@@ -2192,6 +1974,8 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                     ))}
                   </div>
                 </section>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
@@ -2975,52 +2759,6 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           () => buildZimMantelbogenCompanyOnePrefill(companyNames, employeesByCompany),
           [companyNames, employeesByCompany]
         );
-        const [companyOneMantelbogenPdfResolution, setCompanyOneMantelbogenPdfResolution] = useState({
-          found: false,
-          resolvedPath: null,
-          fileName: null,
-          normalizedName: null,
-          debug: null,
-          error: null,
-          checked: false,
-        });
-        const [companyOneDetectedPdfAnalysis, setCompanyOneDetectedPdfAnalysis] = useState({
-          pageCount: 0,
-          totalLeafCount: 0,
-          fields: [],
-          error: null,
-        });
-
-        useEffect(() => {
-          let isMounted = true;
-          resolveA701590PdfSource().then((result) => {
-            if (!isMounted) return;
-            setCompanyOneMantelbogenPdfResolution(result);
-            if (!result?.found) {
-              setCompanyOneDetectedPdfAnalysis({ pageCount: 0, totalLeafCount: 0, fields: [], error: null });
-              return;
-            }
-            detectA701590PdfFields()
-              .then((analysis) => {
-                if (!isMounted) return;
-                setCompanyOneDetectedPdfAnalysis(analysis);
-              })
-              .catch((error) => {
-                if (!isMounted) return;
-                setCompanyOneDetectedPdfAnalysis({
-                  pageCount: 0,
-                  totalLeafCount: 0,
-                  fields: [],
-                  error: error?.message || "PDF-Analyse fehlgeschlagen.",
-                });
-              });
-          });
-          return () => {
-            isMounted = false;
-          };
-        }, []);
-
-
         const updateCompanyOneMantelbogenField = useCallback((fieldKey, value) => {
           setCompanyData((prev) => {
             const next = normalizeCompanyData(prev);
@@ -6057,8 +5795,6 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                         values={companyOneMantelbogenValues}
                         onFieldChange={updateCompanyOneMantelbogenField}
                         prefillValues={companyOneMantelbogenPrefill}
-                        pdfResolution={companyOneMantelbogenPdfResolution}
-                        detectedPdfAnalysis={companyOneDetectedPdfAnalysis}
                       />
                     ) : (
                       <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
