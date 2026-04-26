@@ -234,6 +234,7 @@ def read_pdf_context(input_path, payload):
     mismatch = bool(pdf_akronym and project_name and pdf_akronym.strip().lower() != project_name.strip().lower())
     return {
         "reader": reader,
+        "pageCount": len(reader.pages),
         "datasets_stream": datasets_stream,
         "root": root,
         "formular": formular,
@@ -273,6 +274,7 @@ def main():
 
     if args.action == "analyze":
         print(json.dumps({
+            "pageCount": context["pageCount"],
             "leafPaths": context["paths"],
             "mappings": context["mappings"],
             "unmappedPaths": context["unmapped"],

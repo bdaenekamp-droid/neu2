@@ -881,10 +881,9 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
       const isLikelyInteractivePdfField = (path = "") => {
         const normalized = `${path}`.trim();
         if (!normalized || !normalized.startsWith("formular/")) return false;
+
         const ignoredPathFragments = [
           "/statisch/",
-          "/text/",
-          "/txt/",
           "/pics",
           "/warnung",
           "/hinweis",
@@ -895,15 +894,21 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           "/printdate",
           "/client",
           "/pagecount",
-          "/FieldStatusAll",
-          "/FieldsAlreadyLocked",
+          "/fieldstatusall",
+          "/fieldsalreadylocked",
+          "/kopfzeile",
+          "/fußzeile",
+          "/fusszeile",
         ];
-        if (ignoredPathFragments.some((fragment) => normalized.includes(fragment))) return false;
 
-        const leaf = normalized.split("/").pop();
-        const ignoredLeafs = new Set(["P", "Span", "Kopfzeile", "kopf", "unten", "oben", "statisch", "Teilformular"]);
-        if (ignoredLeafs.has(leaf)) return false;
-        return true;
+        const lowerPath = normalized.toLowerCase();
+        if (ignoredPathFragments.some((fragment) => lowerPath.includes(fragment))) return false;
+
+        const leaf = normalized.split("/").pop() || "";
+        const lowerLeaf = leaf.toLowerCase();
+        const ignoredLeafs = new Set(["p", "span", "kopf", "oben", "unten", "statisch", "teilformular", "reset"]);
+        if (ignoredLeafs.has(lowerLeaf)) return false;
+        return /[a-z]/i.test(leaf);
       };
 
       const inferFieldTypeFromKey = (key = "") => {
@@ -925,25 +930,28 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           .trim()
           .replace(/\b\w/g, (char) => char.toUpperCase()) || key;
 
-      const buildMantelbogenSupplementPages = (missingKeys = []) => {
-        if (!Array.isArray(missingKeys) || missingKeys.length === 0) return [];
-        const grouped = missingKeys.reduce((acc, key) => {
-          const group = key.includes("_") ? key.split("_")[0] : "sonstige";
+      const getMantelbogenStorageKeyForPath = (path = "") =>
+        `pdf::${`${path}`.replace(/^formular\//, "").replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "")}`;
+
+      const buildMantelbogenSupplementPages = (missingFields = []) => {
+        if (!Array.isArray(missingFields) || missingFields.length === 0) return [];
+        const grouped = missingFields.reduce((acc, field) => {
+          const group = field.group || "sonstige";
           if (!acc[group]) acc[group] = [];
-          acc[group].push(key);
+          acc[group].push(field);
           return acc;
         }, {});
 
         const sections = Object.entries(grouped)
           .sort((a, b) => a[0].localeCompare(b[0], "de"))
-          .map(([groupName, keys]) => ({
+          .map(([groupName, fields]) => ({
             title: `Erkannte PDF-Gruppe: ${groupName.toUpperCase()}`,
             columns: 2,
-            fields: keys.sort((a, b) => a.localeCompare(b, "de")).map((key) => ({
-              key,
-              label: humanizePdfFieldLabel(key),
-              type: inferFieldTypeFromKey(key),
-              rows: inferFieldTypeFromKey(key) === "textarea" ? 3 : undefined,
+            fields: fields.sort((a, b) => a.path.localeCompare(b.path, "de")).map((field) => ({
+              key: field.storageKey,
+              label: `${field.label} (${field.path})`,
+              type: field.type,
+              rows: field.type === "textarea" ? 3 : undefined,
             })),
           }));
 
@@ -971,11 +979,28 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         if (!fieldsResponse.ok) throw new Error(`PDF-Felder konnten nicht analysiert werden (HTTP ${fieldsResponse.status}).`);
         const analysis = await fieldsResponse.json();
         const leafPaths = Array.isArray(analysis?.leafPaths) ? analysis.leafPaths : [];
-        return leafPaths
+        const interactiveFields = leafPaths
           .filter((path) => isLikelyInteractivePdfField(path))
-          .map((path) => path.split("/").pop())
-          .filter(Boolean)
-          .filter((key, index, arr) => arr.indexOf(key) === index);
+          .map((path) => {
+            const key = path.split("/").pop() || path;
+            const group = path.split("/")[1] || "sonstige";
+            return {
+              path,
+              key,
+              group,
+              label: humanizePdfFieldLabel(key),
+              type: inferFieldTypeFromKey(key),
+              storageKey: getMantelbogenStorageKeyForPath(path),
+            };
+          })
+          .filter((field, index, arr) => arr.findIndex((entry) => entry.path === field.path) === index);
+
+        return {
+          pageCount: Number(analysis?.pageCount) || 0,
+          totalLeafCount: leafPaths.length,
+          fields: interactiveFields,
+          error: null,
+        };
       };
 
       const resolveA701590PdfSource = async () => {
@@ -1965,7 +1990,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         );
       };
 
-      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues, pdfResolution, detectedPdfFieldKeys = [] }) => {
+      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues, pdfResolution, detectedPdfAnalysis = null }) => {
         const baseRenderedKeys = useMemo(
           () =>
             ZIM_MANTELBOGEN_COMPANY_ONE_PAGES.flatMap((page) =>
@@ -1973,26 +1998,31 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
             ),
           []
         );
-        const missingFieldKeys = useMemo(
-          () => detectedPdfFieldKeys.filter((key) => !baseRenderedKeys.includes(key)),
-          [detectedPdfFieldKeys, baseRenderedKeys]
+        const detectedPdfFields = Array.isArray(detectedPdfAnalysis?.fields) ? detectedPdfAnalysis.fields : [];
+        const missingFields = useMemo(
+          () => detectedPdfFields.filter((field) => !baseRenderedKeys.includes(field.key)),
+          [detectedPdfFields, baseRenderedKeys]
         );
         const supplementalPages = useMemo(
-          () => buildMantelbogenSupplementPages(missingFieldKeys),
-          [missingFieldKeys]
+          () => buildMantelbogenSupplementPages(missingFields),
+          [missingFields]
         );
         const allPages = useMemo(
           () => [...ZIM_MANTELBOGEN_COMPANY_ONE_PAGES, ...supplementalPages],
           [supplementalPages]
         );
-        const renderedFieldCount = baseRenderedKeys.length + missingFieldKeys.length;
+        const renderedFieldCount = baseRenderedKeys.length + missingFields.length;
+        const missingFieldPaths = useMemo(() => [], []);
 
         useEffect(() => {
-          if (!detectedPdfFieldKeys.length) return;
-          console.log("PDF fields detected:", detectedPdfFieldKeys.length);
+          if (!detectedPdfFields.length && !detectedPdfAnalysis?.totalLeafCount) return;
+          console.log("Resolved PDF:", pdfResolution?.resolvedPath || null);
+          console.log("PDF pages:", detectedPdfAnalysis?.pageCount || 0);
+          console.log("PDF leaf paths detected:", detectedPdfAnalysis?.totalLeafCount || 0);
+          console.log("PDF fields detected:", detectedPdfFields.length);
           console.log("Rendered form fields:", renderedFieldCount);
-          console.log("Missing fields:", missingFieldKeys);
-        }, [detectedPdfFieldKeys, renderedFieldCount, missingFieldKeys]);
+          console.log("Missing fields:", missingFieldPaths);
+        }, [detectedPdfFields, detectedPdfAnalysis, renderedFieldCount, missingFieldPaths, pdfResolution]);
 
         const getFieldValue = (field) => {
           const storedValue = values?.[field.key];
@@ -2087,14 +2117,20 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           <div className="space-y-6">
             {pdfResolution?.checked && !pdfResolution?.found ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: Die Datei <strong>A701590</strong> wurde im aktuellen Repo nicht gefunden.
+                Hinweis: {pdfResolution?.error
+                  ? `Die Datei ZIM-Antrag-A701590.pdf konnte nicht aufgelöst werden (${pdfResolution.error}).`
+                  : "Die Datei ZIM-Antrag-A701590.pdf wurde im Repo nicht gefunden."}
                 {Array.isArray(pdfResolution?.debug?.candidates) && pdfResolution.debug.candidates.length > 0 ? (
                   <span className="block pt-1 text-xs text-amber-800">Bitte Dev-Konsole prüfen: alle PDF-Kandidaten wurden geloggt.</span>
                 ) : null}
               </div>
+            ) : pdfResolution?.found && detectedPdfAnalysis?.error ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Hinweis: Die Datei <strong>ZIM-Antrag-A701590.pdf</strong> wurde gefunden, aber die Formularfelder konnten nicht vollständig extrahiert werden. ({detectedPdfAnalysis.error})
+              </div>
             ) : pdfResolution?.found ? (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                Quelle erkannt: <strong>{pdfResolution.fileName || "A701590.pdf"}</strong>
+                Quelle erkannt: <strong>{pdfResolution.fileName || "ZIM-Antrag-A701590.pdf"}</strong>
                 <span className="ml-2 text-emerald-700">({pdfResolution.resolvedPath})</span>
               </div>
             ) : null}
@@ -2929,23 +2965,41 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           error: null,
           checked: false,
         });
-        const [companyOneDetectedPdfFieldKeys, setCompanyOneDetectedPdfFieldKeys] = useState([]);
+        const [companyOneDetectedPdfAnalysis, setCompanyOneDetectedPdfAnalysis] = useState({
+          pageCount: 0,
+          totalLeafCount: 0,
+          fields: [],
+          error: null,
+        });
 
         useEffect(() => {
           let isMounted = true;
           resolveA701590PdfSource().then((result) => {
             if (!isMounted) return;
             setCompanyOneMantelbogenPdfResolution(result);
-            if (!result?.found) return;
+            if (!result?.found) {
+              setCompanyOneDetectedPdfAnalysis({ pageCount: 0, totalLeafCount: 0, fields: [], error: null });
+              return;
+            }
             detectA701590PdfFields()
-              .then((keys) => {
+              .then((analysis) => {
                 if (!isMounted) return;
-                setCompanyOneDetectedPdfFieldKeys(Array.isArray(keys) ? keys : []);
+                setCompanyOneDetectedPdfAnalysis({
+                  pageCount: analysis?.pageCount || 0,
+                  totalLeafCount: analysis?.totalLeafCount || 0,
+                  fields: Array.isArray(analysis?.fields) ? analysis.fields : [],
+                  error: null,
+                });
               })
               .catch((error) => {
                 console.log("PDF field detection failed:", error?.message || error);
                 if (!isMounted) return;
-                setCompanyOneDetectedPdfFieldKeys([]);
+                setCompanyOneDetectedPdfAnalysis({
+                  pageCount: 0,
+                  totalLeafCount: 0,
+                  fields: [],
+                  error: error?.message || "PDF-Analyse fehlgeschlagen.",
+                });
               });
           });
           return () => {
@@ -5991,7 +6045,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                         onFieldChange={updateCompanyOneMantelbogenField}
                         prefillValues={companyOneMantelbogenPrefill}
                         pdfResolution={companyOneMantelbogenPdfResolution}
-                        detectedPdfFieldKeys={companyOneDetectedPdfFieldKeys}
+                        detectedPdfAnalysis={companyOneDetectedPdfAnalysis}
                       />
                     ) : (
                       <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
