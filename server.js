@@ -14,6 +14,7 @@ const multipartParser = express.raw({ type: "multipart/form-data", limit: "30mb"
 
 
 const PDF_SEARCH_ROOTS = [".", "public", "app", "assets", "static", "uploads", "docs"];
+const A701590_SEARCH_PATTERNS = ["zim antrag a701590", "zim a701590", "a701590"];
 
 const normalizePdfStem = (value = "") =>
   `${value}`
@@ -80,22 +81,32 @@ const listPdfCandidates = async (baseDir) => {
   return results;
 };
 
-const scorePdfCandidate = (normalizedName) => {
+const scorePdfCandidate = (candidate) => {
+  const normalizedName = normalizePdfStem(candidate?.fileName || "");
+  const normalizedPath = normalizePdfStem(candidate?.relativePath || "");
+  const haystack = `${normalizedName} ${normalizedPath}`.trim();
+
   let score = 0;
-  if (!normalizedName) return score;
-  if (normalizedName.includes('a701590')) score += 80;
-  if (normalizedName.includes('zim')) score += 25;
-  if (normalizedName.includes('antrag')) score += 25;
-  if (normalizedName === 'zim antrag a701590') score += 150;
-  if (normalizedName.startsWith('zim antrag a701590')) score += 40;
-  if (normalizedName === 'a701590') score += 40;
+  if (!haystack) return score;
+
+  A701590_SEARCH_PATTERNS.forEach((pattern) => {
+    if (haystack.includes(pattern)) score += 70;
+  });
+
+  if (haystack.includes('a701590')) score += 120;
+  if (haystack.includes('zim')) score += 25;
+  if (haystack.includes('antrag')) score += 25;
+  if (normalizedName === 'zim antrag a701590') score += 220;
+  if (normalizedName.startsWith('zim antrag a701590')) score += 80;
+  if (normalizedName === 'a701590') score += 50;
+
   return score;
 };
 
 const resolveA701590Pdf = async (baseDir) => {
   const candidates = await listPdfCandidates(baseDir);
   const ranked = candidates
-    .map((candidate) => ({ ...candidate, score: scorePdfCandidate(candidate.normalized) }))
+    .map((candidate) => ({ ...candidate, score: scorePdfCandidate(candidate) }))
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return a.relativePath.localeCompare(b.relativePath, 'de');
