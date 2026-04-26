@@ -924,9 +924,9 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
       const getMantelbogenStorageKeyForPath = (path = "") =>
         `pdf::${`${path}`.replace(/^formular\//, "").replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "")}`;
 
-      const buildMantelbogenSupplementPages = (missingFields = []) => {
-        if (!Array.isArray(missingFields) || missingFields.length === 0) return [];
-        const grouped = missingFields.reduce((acc, field) => {
+      const buildMantelbogenPagesFromDetectedPdfFields = (pdfFields = []) => {
+        if (!Array.isArray(pdfFields) || pdfFields.length === 0) return [];
+        const grouped = pdfFields.reduce((acc, field) => {
           const group = field.group || "sonstige";
           if (!acc[group]) acc[group] = [];
           acc[group].push(field);
@@ -948,9 +948,9 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
 
         return [
           {
-            id: "a701590-seite-dynamisch-ergaenzt",
-            title: "Antrag A701590 – Ergänzte PDF-Felder",
-            subtitle: "Automatisch aus der gefundenen PDF abgeleitete, bislang fehlende Felder",
+            id: "a701590-seite-pdf-rekonstruiert",
+            title: "Antrag A701590 – Aus PDF rekonstruierte Felder",
+            subtitle: "Automatisch aus /ZIM-Antrag-A701590.pdf extrahierte Formularfelder",
             sections,
           },
         ];
@@ -995,12 +995,15 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
       };
 
       const resolveA701590PdfSource = async () => {
+        console.log("PDF path:", ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH);
         try {
           const response = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, {
-            method: "HEAD",
+            method: "GET",
             cache: "no-store",
           });
+          console.log("PDF fetch status:", response.status);
           const isFound = response.status === 200;
+          console.log("PDF available:", isFound);
 
           return {
             found: isFound,
@@ -1012,6 +1015,8 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
             checked: true,
           };
         } catch (error) {
+          console.log("PDF fetch status:", "network-error");
+          console.log("PDF available:", false);
           return {
             found: false,
             resolvedPath: null,
@@ -1970,27 +1975,23 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
       };
 
       const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues, pdfResolution, detectedPdfAnalysis = null }) => {
-        const baseRenderedKeys = useMemo(
-          () =>
-            ZIM_MANTELBOGEN_COMPANY_ONE_PAGES.flatMap((page) =>
-              page.sections.flatMap((section) => section.fields.map((field) => field.key))
-            ),
-          []
-        );
         const detectedPdfFields = Array.isArray(detectedPdfAnalysis?.fields) ? detectedPdfAnalysis.fields : [];
-        const missingFields = useMemo(
-          () => detectedPdfFields.filter((field) => !baseRenderedKeys.includes(field.key)),
-          [detectedPdfFields, baseRenderedKeys]
-        );
-        const supplementalPages = useMemo(
-          () => buildMantelbogenSupplementPages(missingFields),
-          [missingFields]
+        const reconstructedPdfPages = useMemo(
+          () => buildMantelbogenPagesFromDetectedPdfFields(detectedPdfFields),
+          [detectedPdfFields]
         );
         const allPages = useMemo(
-          () => [...ZIM_MANTELBOGEN_COMPANY_ONE_PAGES, ...supplementalPages],
-          [supplementalPages]
+          () => (reconstructedPdfPages.length ? reconstructedPdfPages : ZIM_MANTELBOGEN_COMPANY_ONE_PAGES),
+          [reconstructedPdfPages]
         );
-        const renderedFieldCount = baseRenderedKeys.length + missingFields.length;
+        const renderedFieldCount = useMemo(
+          () =>
+            allPages.reduce(
+              (count, page) => count + page.sections.reduce((sectionCount, section) => sectionCount + section.fields.length, 0),
+              0
+            ),
+          [allPages]
+        );
         const missingFieldPaths = useMemo(() => [], []);
 
         useEffect(() => {
@@ -1998,8 +1999,8 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           console.log("Resolved PDF:", pdfResolution?.resolvedPath || null);
           console.log("PDF pages:", detectedPdfAnalysis?.pageCount || 0);
           console.log("PDF leaf paths detected:", detectedPdfAnalysis?.totalLeafCount || 0);
-          console.log("PDF fields detected:", detectedPdfFields.length);
-          console.log("Rendered form fields:", renderedFieldCount);
+          console.log("Detected PDF fields:", detectedPdfFields.length);
+          console.log("Rendered fields:", renderedFieldCount);
           console.log("Missing fields:", missingFieldPaths);
         }, [detectedPdfFields, detectedPdfAnalysis, renderedFieldCount, missingFieldPaths, pdfResolution]);
 
