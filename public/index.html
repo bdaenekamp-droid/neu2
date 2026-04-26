@@ -2045,6 +2045,8 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           return normalized ? `pdf::${normalized}` : "";
         }, []);
 
+        const ensureArray = useCallback((candidate) => (Array.isArray(candidate) ? candidate : []), []);
+
         const applyStoredValueToElement = useCallback((element, value) => {
           if (!element) return;
           if (element.type === "checkbox" || element.type === "radio") {
@@ -2094,97 +2096,173 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               const fieldObjects = (await pdfDocument.getFieldObjects?.()) || null;
               const hasAcroForm = Boolean(fieldObjects && Object.keys(fieldObjects).length);
               const hasXfa = Boolean(pdfDocument?.allXfaHtml);
+              const xfaDatasets = ensureArray(pdfDocument?.allXfaHtml?.children);
               console.log("PDF loaded:", true);
               console.log("PDF page count:", pageCount);
               console.log("AcroForm detected:", hasAcroForm);
               console.log("XFA detected:", hasXfa);
+              console.log("XFA root children:", xfaDatasets.length);
+              console.log("AcroForm field object keys:", fieldObjects ? Object.keys(fieldObjects).length : 0);
 
               let renderedPages = 0;
+              let skippedAnnotations = 0;
               for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-                const page = await pdfDocument.getPage(pageNumber);
-                const viewport = page.getViewport({ scale: 1.35 });
-                const pageWrapper = document.createElement("article");
-                pageWrapper.className = "mx-auto w-full rounded-sm border border-slate-300 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.20)]";
-                pageWrapper.style.maxWidth = `${Math.round(viewport.width + 36)}px`;
+                try {
+                  console.log("Rendering page:", pageNumber);
+                  const page = await pdfDocument.getPage(pageNumber);
+                  const viewport = page.getViewport({ scale: 1.35 });
+                  const pageWrapper = document.createElement("article");
+                  pageWrapper.className = "mx-auto w-full rounded-sm border border-slate-300 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.20)]";
+                  pageWrapper.style.maxWidth = `${Math.round(viewport.width + 36)}px`;
 
-                const pageHeader = document.createElement("p");
-                pageHeader.className = "mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500";
-                pageHeader.textContent = `ZIM-Mantelbögen · Unternehmen 1 · Seite ${pageNumber} von ${pageCount}`;
-                pageWrapper.appendChild(pageHeader);
+                  const pageHeader = document.createElement("p");
+                  pageHeader.className = "mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500";
+                  pageHeader.textContent = `ZIM-Mantelbögen · Unternehmen 1 · Seite ${pageNumber} von ${pageCount}`;
+                  pageWrapper.appendChild(pageHeader);
 
-                const pageView = document.createElement("div");
-                pageView.className = "relative";
-                pageView.style.width = `${viewport.width}px`;
-                pageView.style.height = `${viewport.height}px`;
+                  const pageView = document.createElement("div");
+                  pageView.className = "relative";
+                  pageView.style.width = `${viewport.width}px`;
+                  pageView.style.height = `${viewport.height}px`;
 
-                const canvas = document.createElement("canvas");
-                canvas.width = Math.floor(viewport.width);
-                canvas.height = Math.floor(viewport.height);
-                canvas.style.width = `${viewport.width}px`;
-                canvas.style.height = `${viewport.height}px`;
-                pageView.appendChild(canvas);
+                  const canvas = document.createElement("canvas");
+                  canvas.width = Math.floor(viewport.width);
+                  canvas.height = Math.floor(viewport.height);
+                  canvas.style.width = `${viewport.width}px`;
+                  canvas.style.height = `${viewport.height}px`;
+                  pageView.appendChild(canvas);
 
-                const textLayerDiv = document.createElement("div");
-                textLayerDiv.className = "textLayer absolute inset-0";
-                pageView.appendChild(textLayerDiv);
+                  const textLayerDiv = document.createElement("div");
+                  textLayerDiv.className = "textLayer absolute inset-0";
+                  pageView.appendChild(textLayerDiv);
 
-                const annotationLayerDiv = document.createElement("div");
-                annotationLayerDiv.className = "annotationLayer absolute inset-0";
-                pageView.appendChild(annotationLayerDiv);
-                pageWrapper.appendChild(pageView);
-                container.appendChild(pageWrapper);
+                  const annotationLayerDiv = document.createElement("div");
+                  annotationLayerDiv.className = "annotationLayer absolute inset-0";
+                  pageView.appendChild(annotationLayerDiv);
+                  pageWrapper.appendChild(pageView);
+                  container.appendChild(pageWrapper);
 
-                await page.render({
-                  canvasContext: canvas.getContext("2d"),
-                  viewport,
-                  annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
-                }).promise;
+                  await page.render({
+                    canvasContext: canvas.getContext("2d"),
+                    viewport,
+                    annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
+                  }).promise;
 
-                const textContent = await page.getTextContent();
-                pdfjsLib.renderTextLayer({ textContent, container: textLayerDiv, viewport, textDivs: [] });
+                  try {
+                    const textContent = await page.getTextContent();
+                    const textItems = ensureArray(textContent?.items);
+                    console.log(`Page ${pageNumber} text items:`, textItems.length);
+                    pdfjsLib.renderTextLayer({
+                      textContent: {
+                        ...textContent,
+                        items: textItems,
+                      },
+                      container: textLayerDiv,
+                      viewport,
+                      textDivs: [],
+                    });
+                  } catch (textError) {
+                    console.error(`Page ${pageNumber} text layer failed:`, textError);
+                  }
 
-                const annotations = await page.getAnnotations({ intent: "display" });
-                const widgetCount = annotations.filter((annotation) => annotation?.subtype === "Widget").length;
-                console.log(`Page ${pageNumber} annotation count:`, annotations.length);
-                console.log(`Page ${pageNumber} widget count:`, widgetCount);
+                  let rawAnnotations = [];
+                  try {
+                    rawAnnotations = ensureArray(await page.getAnnotations({ intent: "display" }));
+                  } catch (annotationFetchError) {
+                    console.error(`Page ${pageNumber} annotation fetch failed:`, annotationFetchError);
+                  }
+                  const sanitizedAnnotations = rawAnnotations.reduce((acc, annotation, annotationIndex) => {
+                    if (!annotation || typeof annotation !== "object") {
+                      console.warn(`Page ${pageNumber} skipping invalid annotation at index`, annotationIndex, annotation);
+                      skippedAnnotations += 1;
+                      return acc;
+                    }
+                    const safeAnnotation = {
+                      ...annotation,
+                      rect: ensureArray(annotation?.rect),
+                      quadPoints: ensureArray(annotation?.quadPoints),
+                      option: ensureArray(annotation?.option),
+                      options: ensureArray(annotation?.options),
+                      exportValue: ensureArray(annotation?.exportValue),
+                      buttonValue: ensureArray(annotation?.buttonValue),
+                      fieldValue: annotation?.fieldValue ?? "",
+                      annotationFlags: annotation?.annotationFlags ?? 0,
+                    };
+                    acc.push(safeAnnotation);
+                    return acc;
+                  }, []);
 
-                if (pdfjsLib.AnnotationLayer?.render) {
-                  await pdfjsLib.AnnotationLayer.render({
-                    viewport: viewport.clone({ dontFlip: true }),
-                    div: annotationLayerDiv,
-                    annotations,
-                    page,
-                    annotationStorage: pdfDocument.annotationStorage,
-                    renderForms: true,
+                  const widgetCount = sanitizedAnnotations.filter((annotation) => annotation?.subtype === "Widget").length;
+                  console.log(`Page ${pageNumber} annotation count:`, sanitizedAnnotations.length);
+                  console.log(`Page ${pageNumber} widget count:`, widgetCount);
+
+                  if (pdfjsLib.AnnotationLayer?.render) {
+                    try {
+                      await pdfjsLib.AnnotationLayer.render({
+                        viewport: viewport.clone({ dontFlip: true }),
+                        div: annotationLayerDiv,
+                        annotations: sanitizedAnnotations,
+                        page,
+                        annotationStorage: pdfDocument.annotationStorage,
+                        renderForms: true,
+                      });
+                    } catch (annotationRenderError) {
+                      console.error(`Page ${pageNumber} annotation layer failed; retrying with isolated annotations.`, annotationRenderError);
+                      for (let index = 0; index < sanitizedAnnotations.length; index += 1) {
+                        const singleAnnotation = sanitizedAnnotations[index];
+                        try {
+                          await pdfjsLib.AnnotationLayer.render({
+                            viewport: viewport.clone({ dontFlip: true }),
+                            div: annotationLayerDiv,
+                            annotations: [singleAnnotation],
+                            page,
+                            annotationStorage: pdfDocument.annotationStorage,
+                            renderForms: true,
+                          });
+                        } catch (singleAnnotationError) {
+                          skippedAnnotations += 1;
+                          console.error("Field render failed:", singleAnnotation?.id || singleAnnotation?.fieldName || `page-${pageNumber}-annotation-${index}`, singleAnnotationError, singleAnnotation);
+                        }
+                      }
+                    }
+                  }
+
+                  const inputs = annotationLayerDiv.querySelectorAll("input, textarea, select");
+                  console.log(`Rendered form elements page ${pageNumber}:`, inputs.length);
+                  inputs.forEach((element, elementIndex) => {
+                    try {
+                      const rawName = element?.name || element?.getAttribute?.("data-element-id") || "";
+                      const storageKey = getStorageKeyForPdfField(rawName);
+                      if (!storageKey) return;
+                      if (!fieldElementsRef.current[storageKey]) fieldElementsRef.current[storageKey] = [];
+                      fieldElementsRef.current[storageKey].push(element);
+                      applyStoredValueToElement(element, values?.[storageKey]);
+                      element.addEventListener("change", (event) => {
+                        const target = event?.target;
+                        const nextValue = target?.type === "checkbox" ? Boolean(target?.checked) : target?.value;
+                        onFieldChange(storageKey, nextValue ?? "");
+                      });
+                      element.addEventListener("input", (event) => {
+                        const target = event?.target;
+                        const nextValue = target?.type === "checkbox" ? Boolean(target?.checked) : target?.value;
+                        onFieldChange(storageKey, nextValue ?? "");
+                      });
+                    } catch (fieldBindingError) {
+                      skippedAnnotations += 1;
+                      console.error(`Field binding failed on page ${pageNumber} index ${elementIndex}:`, fieldBindingError, element);
+                    }
                   });
+
+                  renderedPages += 1;
+                } catch (pageError) {
+                  console.error(`Page ${pageNumber} failed:`, pageError);
                 }
-
-                const inputs = annotationLayerDiv.querySelectorAll("input, textarea, select");
-                console.log(`Rendered form elements page ${pageNumber}:`, inputs.length);
-                inputs.forEach((element) => {
-                  const rawName = element.name || element.getAttribute("data-element-id") || "";
-                  const storageKey = getStorageKeyForPdfField(rawName);
-                  if (!storageKey) return;
-                  if (!fieldElementsRef.current[storageKey]) fieldElementsRef.current[storageKey] = [];
-                  fieldElementsRef.current[storageKey].push(element);
-                  applyStoredValueToElement(element, values?.[storageKey]);
-                  element.addEventListener("change", (event) => {
-                    const target = event.target;
-                    const nextValue = target.type === "checkbox" ? Boolean(target.checked) : target.value;
-                    onFieldChange(storageKey, nextValue);
-                  });
-                  element.addEventListener("input", (event) => {
-                    const target = event.target;
-                    const nextValue = target.type === "checkbox" ? Boolean(target.checked) : target.value;
-                    onFieldChange(storageKey, nextValue);
-                  });
-                });
-
-                renderedPages += 1;
               }
 
               console.log("Rendered pages:", renderedPages);
+              console.log("Skipped problematic annotations/fields:", skippedAnnotations);
               if (isActive) {
+                const hasPartialIssues = renderedPages !== pageCount || skippedAnnotations > 0;
                 setRenderState({
                   loading: false,
                   loaded: true,
@@ -2192,12 +2270,14 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                   renderedPages,
                   hasAcroForm,
                   hasXfa,
-                  error: renderedPages === pageCount ? null : "Nicht alle PDF-Seiten konnten vollständig gerendert werden.",
+                  error: hasPartialIssues
+                    ? "Die PDF wurde geladen, aber einzelne Formularfelder konnten nicht vollständig verarbeitet werden. Die übrigen Felder werden weiterhin angezeigt."
+                    : null,
                 });
               }
             } catch (error) {
               console.log("PDF loaded:", false);
-              console.log("PDF render error:", error?.message || error);
+              console.error("PDF render error:", error);
               if (isActive) {
                 setRenderState({
                   loading: false,
@@ -2206,7 +2286,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                   renderedPages: 0,
                   hasAcroForm: false,
                   hasXfa: false,
-                  error: error?.message || "Die PDF-Formularansicht konnte nicht geladen werden.",
+                  error: "Die PDF-Formularansicht konnte nicht vollständig geladen werden. Bitte prüfen Sie die Datei oder versuchen Sie es erneut.",
                 });
               }
             }
@@ -2228,7 +2308,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
               </div>
             ) : renderState.error ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: Die PDF wurde geladen, aber das Formularformat wird von der aktuellen Rendering-Library nicht vollständig unterstützt. ({renderState.error})
+                Hinweis: {renderState.error}
               </div>
             ) : (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
