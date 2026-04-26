@@ -781,7 +781,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         pm: Array(5).fill(""),
       });
 
-      const ZIM_MANTELBOGEN_COMPANY_ONE_SEARCH_PATTERNS = ["zim antrag a701590", "zim a701590", "a701590"];
+      const ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH = "/ZIM-Antrag-A701590.pdf";
 
       const ZIM_MANTELBOGEN_COMPANY_ONE_PAGES = [
         {
@@ -868,15 +868,6 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           ],
         },
       ];
-
-      const normalizeMantelbogenPdfName = (value = "") =>
-        `${value}`
-          .toLowerCase()
-          .replace(/\.pdf$/i, "")
-          .replace(/[\s_-]+/g, " ")
-          .replace(/[^a-z0-9 ]+/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
 
       const isLikelyInteractivePdfField = (path = "") => {
         const normalized = `${path}`.trim();
@@ -966,7 +957,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
       };
 
       const detectA701590PdfFields = async () => {
-        const pdfResponse = await fetch("/api/zim/mantelbogen/company-one/pdf");
+        const pdfResponse = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, { cache: "no-store" });
         if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
         const pdfBlob = await pdfResponse.blob();
         const formData = new FormData();
@@ -1005,34 +996,22 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
 
       const resolveA701590PdfSource = async () => {
         try {
-          const response = await fetch("/api/zim/mantelbogen/company-one/source");
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-          const payload = await response.json();
-          const candidates = Array.isArray(payload?.debug?.candidates) ? payload.debug.candidates : [];
-          const resolvedPath = payload?.resolvedPath || null;
-          const resolvedFileName = payload?.fileName || "";
-          const normalizedResolvedName = normalizeMantelbogenPdfName(resolvedFileName || resolvedPath || "");
-          const hasPatternMatch = ZIM_MANTELBOGEN_COMPANY_ONE_SEARCH_PATTERNS.some((pattern) =>
-            normalizedResolvedName.includes(pattern)
-          );
-
-          console.log("Found PDF candidates:", candidates);
-          console.log("Resolved A701590 PDF:", resolvedPath);
+          const response = await fetch(ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH, {
+            method: "HEAD",
+            cache: "no-store",
+          });
+          const isFound = response.status === 200;
 
           return {
-            found: Boolean(payload?.found) && Boolean(resolvedPath) && (hasPatternMatch || Boolean(payload?.found)),
-            resolvedPath,
-            fileName: payload?.fileName || null,
-            normalizedName: payload?.normalizedName || null,
-            debug: payload?.debug || null,
-            error: null,
+            found: isFound,
+            resolvedPath: isFound ? ZIM_MANTELBOGEN_COMPANY_ONE_PDF_PATH : null,
+            fileName: isFound ? "ZIM-Antrag-A701590.pdf" : null,
+            normalizedName: null,
+            debug: null,
+            error: isFound ? null : `HTTP ${response.status}`,
             checked: true,
           };
         } catch (error) {
-          console.log("Found PDF candidates:", []);
-          console.log("Resolved A701590 PDF:", null);
           return {
             found: false,
             resolvedPath: null,
@@ -2117,12 +2096,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           <div className="space-y-6">
             {pdfResolution?.checked && !pdfResolution?.found ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Hinweis: {pdfResolution?.error
-                  ? `Die Datei ZIM-Antrag-A701590.pdf konnte nicht aufgelöst werden (${pdfResolution.error}).`
-                  : "Die Datei ZIM-Antrag-A701590.pdf wurde im Repo nicht gefunden."}
-                {Array.isArray(pdfResolution?.debug?.candidates) && pdfResolution.debug.candidates.length > 0 ? (
-                  <span className="block pt-1 text-xs text-amber-800">Bitte Dev-Konsole prüfen: alle PDF-Kandidaten wurden geloggt.</span>
-                ) : null}
+                Hinweis: Die Datei /ZIM-Antrag-A701590.pdf wurde nicht gefunden. Bitte legen Sie die PDF manuell im Verzeichnis public ab.
               </div>
             ) : pdfResolution?.found && detectedPdfAnalysis?.error ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
