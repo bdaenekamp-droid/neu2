@@ -1,0 +1,85 @@
+[
+  {
+    "id": "a701590-seite-1",
+    "title": "Antrag A701590 – Mantelbogen",
+    "subtitle": "Grunddaten zum Unternehmen und Vorhaben",
+    "sections": [
+      {
+        "title": "1. Allgemeine Unternehmensdaten",
+        "columns": 2,
+        "fields": [
+          { "key": "firma", "label": "Firma", "type": "text", "prefillKey": "companyName" },
+          { "key": "rechtsform", "label": "Rechtsform", "type": "select", "options": ["", "GmbH", "UG", "AG", "KG", "OHG", "Einzelunternehmen", "Sonstige"] },
+          { "key": "feTyp", "label": "Art des Antragstellers", "type": "radio", "options": ["Unternehmen", "Forschungseinrichtung"] },
+          { "key": "projektAcronym", "label": "Akronym", "type": "text" },
+          { "key": "thema", "label": "Thema / Titel des Vorhabens", "type": "textarea", "rows": 3, "span": 2 },
+          { "key": "kurzfass", "label": "Kurzfassung", "type": "textarea", "rows": 4, "span": 2 },
+          { "key": "projektstart", "label": "Laufzeit von", "type": "date" },
+          { "key": "projektende", "label": "Laufzeit bis", "type": "date" }
+        ]
+      },
+      {
+        "title": "2. Adresse",
+        "columns": 2,
+        "fields": [
+          { "key": "str", "label": "Straße / Hausnummer", "type": "text" },
+          { "key": "plz", "label": "PLZ", "type": "text" },
+          { "key": "ort", "label": "Ort", "type": "text" },
+          { "key": "land", "label": "Land", "type": "select", "options": ["", "Deutschland", "Österreich", "Schweiz", "Sonstiges"] },
+          { "key": "www", "label": "Website", "type": "url" },
+          { "key": "chk_post_adr", "label": "Postfachadresse statt Straßenadresse", "type": "checkbox" },
+          { "key": "pfach", "label": "Postfach", "type": "text" },
+          { "key": "pfach_plz", "label": "Postfach-PLZ", "type": "text" },
+          { "key": "pfach_ort", "label": "Postfach-Ort", "type": "text" }
+        ]
+      },
+      {
+        "title": "3. Geschäftsführung / Ansprechpartner",
+        "columns": 2,
+        "fields": [
+          { "key": "titel_gf", "label": "Titel (Geschäftsführung)", "type": "text" },
+          { "key": "vname_gf", "label": "Vorname (Geschäftsführung)", "type": "text" },
+          { "key": "name_gf", "label": "Nachname (Geschäftsführung)", "type": "text" },
+          { "key": "geb_gf", "label": "Geburtsdatum", "type": "date" },
+          { "key": "tel_gf", "label": "Telefon (Geschäftsführung)", "type": "text" },
+          { "key": "mail_gf", "label": "E-Mail (Geschäftsführung)", "type": "email" },
+          { "key": "vname_ap", "label": "Vorname Ansprechpartner/in", "type": "text", "prefillKey": "contactFirstName" },
+          { "key": "name_ap", "label": "Nachname Ansprechpartner/in", "type": "text", "prefillKey": "contactLastName" },
+          { "key": "fkt", "label": "Funktion", "type": "text" },
+          { "key": "tel_ap", "label": "Telefon Ansprechpartner/in", "type": "text" },
+          { "key": "mail_ap", "label": "E-Mail Ansprechpartner/in", "type": "email", "prefillKey": "contactEmail" }
+        ]
+      },
+      {
+        "title": "4. Register / Bank / Förderbezug",
+        "columns": 2,
+        "fields": [
+          { "key": "regist_ort", "label": "Registergericht / Ort", "type": "text" },
+          { "key": "regist_nr", "label": "Registernummer", "type": "text" },
+          { "key": "regist_dat", "label": "Eintragungsdatum", "type": "date" },
+          { "key": "gjahr", "label": "Geschäftsjahr", "type": "text" },
+          { "key": "bank", "label": "Kreditinstitut", "type": "text" },
+          { "key": "iban", "label": "IBAN", "type": "text" },
+          { "key": "bic", "label": "BIC", "type": "text" },
+          { "key": "verw_zweck", "label": "Verwendungszweck", "type": "text" },
+          { "key": "chk_andernorts", "label": "Antrag wurde auch an anderer Stelle gestellt", "type": "checkbox", "span": 2 }
+        ]
+      },
+      {
+        "title": "5. Unternehmenskennzahlen",
+        "columns": 3,
+        "fields": [
+          { "key": "ums_jahr", "label": "Umsatz Jahr 1", "type": "number", "step": "0.01" },
+          { "key": "umsatz", "label": "Umsatz (EUR) Jahr 1", "type": "number", "step": "0.01" },
+          { "key": "besch_ges", "label": "Beschäftigte gesamt Jahr 1", "type": "number", "step": "1" },
+          { "key": "ums_jahr2", "label": "Umsatz Jahr 2", "type": "number", "step": "0.01" },
+          { "key": "umsatz_2", "label": "Umsatz (EUR) Jahr 2", "type": "number", "step": "0.01" },
+          { "key": "besch_ges_jae", "label": "Beschäftigte gesamt Jahr 2", "type": "number", "step": "1" },
+          { "key": "bil_jahr", "label": "Bilanzjahr", "type": "number", "step": "1" },
+          { "key": "bilanz", "label": "Bilanzsumme (EUR)", "type": "number", "step": "0.01" },
+          { "key": "besch_fue", "label": "Beschäftigte F&E", "type": "number", "step": "1" }
+        ]
+      }
+    ]
+  }
+]
