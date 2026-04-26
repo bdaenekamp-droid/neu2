@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import io
 import json
 import re
 import unicodedata
@@ -54,29 +53,49 @@ def format_month_year(value: str) -> str:
     return dt.strftime("%m.%Y") if dt else ""
 
 
-def get_xfa_datasets_stream(reader: PdfReader):
-    acro = reader.trailer["/Root"].get("/AcroForm")
+def normalize_pdf_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return str(name).replace("/", "")
+
+
+def get_acroform(reader: PdfReader):
+    root = reader.trailer.get("/Root")
+    if root is None:
+        return None
+    acro = root.get("/AcroForm")
     if acro is None:
-        raise ValueError("PDF enthält kein /AcroForm.")
-    acro = acro.get_object()
+        return None
+    return acro.get_object() if hasattr(acro, "get_object") else acro
+
+
+def get_xfa_parts(reader: PdfReader):
+    acro = get_acroform(reader)
+    if acro is None:
+        return {}
     xfa = acro.get("/XFA")
     if xfa is None:
-        raise ValueError("PDF enthält kein /XFA.")
+        return {}
+    xfa = xfa.get_object() if hasattr(xfa, "get_object") else xfa
 
-    if hasattr(xfa, "get_object"):
-        xfa = xfa.get_object()
-
+    parts = {}
     if isinstance(xfa, list):
         for i in range(0, len(xfa), 2):
-            name = str(xfa[i])
             if i + 1 >= len(xfa):
                 continue
+            name = str(xfa[i])
             obj = xfa[i + 1]
-            if hasattr(obj, "get_object"):
-                obj = obj.get_object()
-            if name == "datasets":
-                return obj
-    raise ValueError("XFA datasets stream nicht gefunden.")
+            obj = obj.get_object() if hasattr(obj, "get_object") else obj
+            parts[name] = obj
+    return parts
+
+
+def get_xfa_datasets_stream(reader: PdfReader):
+    parts = get_xfa_parts(reader)
+    stream = parts.get("datasets")
+    if stream is None:
+        raise ValueError("XFA datasets stream nicht gefunden.")
+    return stream
 
 
 def find_formular(root: ET.Element):
@@ -91,7 +110,10 @@ def find_formular(root: ET.Element):
     for child in data_node:
         if local_name(child.tag) == "formular":
             return child
-    raise ValueError("<formular> unter <xfa:data> nicht gefunden.")
+    for child in data_node:
+        if isinstance(child.tag, str):
+            return child
+    raise ValueError("Kein Datensatz unter <xfa:data> gefunden.")
 
 
 def list_paths(node: ET.Element, prefix=""):
@@ -221,20 +243,278 @@ def map_fields(paths, payload):
     return mappings, unmapped
 
 
+def detect_pdf_javascript(reader: PdfReader) -> bool:
+    root = reader.trailer.get("/Root")
+    names = root.get("/Names") if root else None
+    names = names.get_object() if hasattr(names, "get_object") else names
+    if not names:
+        return False
+    return names.get("/JavaScript") is not None
+
+
+def infer_field_type(name: str, ft: str | None, options):
+    lower = (name or "").lower()
+    if ft == "Btn":
+        if isinstance(options, list) and len(options) > 1:
+            return "radio"
+        return "checkbox"
+    if ft == "Ch":
+        return "select"
+    if ft == "Tx":
+        if any(token in lower for token in ["bem", "beschr", "text", "addr", "anschrift"]):
+            return "textarea"
+        return "text"
+    if ft == "Sig":
+        return "signature"
+    if re.search(r"(datum|date|_von|_bis|geb)", lower):
+        return "date"
+    if re.search(r"(mail|email)", lower):
+        return "email"
+    if re.search(r"(nr|zahl|betrag|sum|kosten|pm|quote|proz|jahr)", lower):
+        return "number"
+    return "text"
+
+
+def to_storage_key(raw: str) -> str:
+    return "pdf::" + re.sub(r"[^\w]+", "_", raw or "").strip("_")
+
+
+def extract_widget_info(reader: PdfReader):
+    by_name = {}
+    for page_index, page in enumerate(reader.pages):
+        annots = page.get("/Annots") or []
+        for annot_ref in annots:
+            annot = annot_ref.get_object() if hasattr(annot_ref, "get_object") else annot_ref
+            if normalize_pdf_name(annot.get("/Subtype")) != "Widget":
+                continue
+            name = annot.get("/T")
+            if not name:
+                parent = annot.get("/Parent")
+                parent = parent.get_object() if hasattr(parent, "get_object") else parent
+                name = parent.get("/T") if parent else None
+            if not name:
+                continue
+            rect = annot.get("/Rect")
+            normalized_name = str(name)
+            entry = by_name.setdefault(normalized_name, {"pages": set(), "rects": []})
+            entry["pages"].add(page_index + 1)
+            if isinstance(rect, list) and len(rect) == 4:
+                entry["rects"].append([float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3])])
+
+    return {
+        name: {"pages": sorted(list(data["pages"])), "rects": data["rects"]}
+        for name, data in by_name.items()
+    }
+
+
+def extract_acro_fields(reader: PdfReader, widget_info):
+    acro = get_acroform(reader)
+    if acro is None:
+        return []
+
+    fields = acro.get("/Fields") or []
+    result = []
+
+    def walk(field_ref, parents):
+        field = field_ref.get_object() if hasattr(field_ref, "get_object") else field_ref
+        t_name = field.get("/T")
+        full_parts = parents + ([str(t_name)] if t_name else [])
+        kids = field.get("/Kids") or []
+        ft = normalize_pdf_name(field.get("/FT")) if field.get("/FT") else None
+
+        if ft or not kids:
+            full_name = ".".join([part for part in full_parts if part])
+            opts = field.get("/Opt")
+            normalized_opts = []
+            if isinstance(opts, list):
+                for opt in opts:
+                    if isinstance(opt, list) and opt:
+                        normalized_opts.append(str(opt[-1]))
+                    else:
+                        normalized_opts.append(str(opt))
+            flags = int(field.get("/Ff") or 0)
+            required = bool(flags & (1 << 1))
+            widget = widget_info.get(full_name) or widget_info.get(str(t_name or "")) or {"pages": [], "rects": []}
+            result.append({
+                "id": full_name or str(t_name or f"field_{len(result)+1}"),
+                "name": str(t_name or full_name or ""),
+                "fullName": full_name or str(t_name or ""),
+                "label": str(field.get("/TU") or t_name or full_name or "Feld"),
+                "type": infer_field_type(full_name or str(t_name or ""), ft, normalized_opts),
+                "pdfFieldType": ft,
+                "value": "" if field.get("/V") is None else str(field.get("/V")),
+                "defaultValue": "" if field.get("/DV") is None else str(field.get("/DV")),
+                "required": required,
+                "options": normalized_opts,
+                "page": widget["pages"][0] if widget["pages"] else None,
+                "pages": widget["pages"],
+                "rect": widget["rects"][0] if widget["rects"] else None,
+                "rects": widget["rects"],
+                "group": f"Seite {widget['pages'][0]}" if widget["pages"] else "AcroForm",
+                "parent": ".".join(parents) if parents else None,
+                "source": "AcroForm",
+                "storageKey": to_storage_key(full_name or str(t_name or "")),
+            })
+
+        for kid in kids:
+            walk(kid, full_parts)
+
+    for field in fields:
+        walk(field, [])
+
+    unique = {}
+    for field in result:
+        unique[field["id"]] = field
+    return list(unique.values())
+
+
+def extract_xfa_schema(reader: PdfReader, formular_paths):
+    parts = get_xfa_parts(reader)
+    template_part = parts.get("template")
+    if template_part is None:
+        return []
+
+    template_xml = template_part.get_data()
+    root = ET.fromstring(template_xml)
+    fields = []
+
+    def walk(node, parent_segments, group_name):
+        tag = local_name(node.tag)
+        if tag == "subform":
+            name = node.attrib.get("name") or group_name
+            next_group = name or group_name
+            for child in list(node):
+                if isinstance(child.tag, str):
+                    walk(child, parent_segments, next_group)
+            return
+
+        if tag == "field":
+            name = node.attrib.get("name") or f"xfa_field_{len(fields)+1}"
+            full = "/".join([segment for segment in [*parent_segments, name] if segment])
+            label_node = node.find(".//{*}caption/{*}value/{*}text")
+            raw_label = (label_node.text or "").strip() if label_node is not None and label_node.text else ""
+            ui_type = "text"
+            for child in node.iter():
+                child_name = local_name(child.tag)
+                if child_name in {"checkButton", "choiceList", "dateTimeEdit", "numericEdit", "textEdit", "passwordEdit"}:
+                    ui_type = {
+                        "checkButton": "checkbox",
+                        "choiceList": "select",
+                        "dateTimeEdit": "date",
+                        "numericEdit": "number",
+                        "textEdit": "text",
+                        "passwordEdit": "text",
+                    }[child_name]
+                    break
+            fields.append({
+                "id": full,
+                "name": name,
+                "fullName": full,
+                "label": raw_label or name,
+                "type": ui_type,
+                "required": False,
+                "options": [],
+                "page": None,
+                "rect": None,
+                "group": group_name or "XFA",
+                "parent": "/".join(parent_segments) if parent_segments else None,
+                "source": "XFA",
+                "storageKey": to_storage_key(full),
+            })
+            return
+
+        for child in list(node):
+            if isinstance(child.tag, str):
+                walk(child, parent_segments, group_name)
+
+    walk(root, ["formular"], "XFA")
+
+    by_name = {entry["fullName"]: entry for entry in fields}
+    for path in formular_paths:
+        if path in by_name:
+            continue
+        leaf = path.split("/")[-1]
+        by_name[path] = {
+            "id": path,
+            "name": leaf,
+            "fullName": path,
+            "label": leaf,
+            "type": infer_field_type(path, None, None),
+            "required": False,
+            "options": [],
+            "page": None,
+            "rect": None,
+            "group": path.split("/")[1] if len(path.split("/")) > 1 else "XFA",
+            "parent": "/".join(path.split("/")[:-1]) or None,
+            "source": "XFA-datasets",
+            "storageKey": to_storage_key(path),
+        }
+
+    return list(by_name.values())
+
+
 def read_pdf_context(input_path, payload):
     reader = PdfReader(input_path)
-    datasets_stream = get_xfa_datasets_stream(reader)
-    xml_bytes = datasets_stream.get_data()
-    root = ET.fromstring(xml_bytes)
-    formular = find_formular(root)
-    all_paths = list_paths(formular)
-    mappings, unmapped = map_fields(all_paths, payload)
-    pdf_akronym = get_value(formular, "formular/akronym") or get_value(formular, "akronym")
+    page_count = len(reader.pages)
+    has_acro = get_acroform(reader) is not None
+    xfa_parts = get_xfa_parts(reader)
+    has_xfa = bool(xfa_parts)
+
+    formular = None
+    root = None
+    datasets_stream = None
+    all_paths = []
+    mappings = []
+    unmapped = []
+    pdf_akronym = None
+
+    if has_xfa and "datasets" in xfa_parts:
+        datasets_stream = xfa_parts["datasets"]
+        xml_bytes = datasets_stream.get_data()
+        root = ET.fromstring(xml_bytes)
+        formular = find_formular(root)
+        all_paths = list_paths(formular)
+        mappings, unmapped = map_fields(all_paths, payload)
+        pdf_akronym = get_value(formular, "formular/akronym") or get_value(formular, "akronym")
+
     project_name = (payload.get("project", {}) or {}).get("name", "")
     mismatch = bool(pdf_akronym and project_name and pdf_akronym.strip().lower() != project_name.strip().lower())
+
+    widget_info = extract_widget_info(reader)
+    acro_fields = extract_acro_fields(reader, widget_info) if has_acro else []
+    xfa_fields = extract_xfa_schema(reader, all_paths) if has_xfa else []
+
+    merged = {}
+    for field in acro_fields + xfa_fields:
+        merged[field["storageKey"]] = field
+    fields = list(merged.values())
+
+    fields_per_page = {}
+    source_counts = {}
+    for field in fields:
+        page_label = str(field.get("page") or "unknown")
+        fields_per_page[page_label] = fields_per_page.get(page_label, 0) + 1
+        source = field.get("source") or "unknown"
+        source_counts[source] = source_counts.get(source, 0) + 1
+
+    analysis = {
+        "pdfLoaded": True,
+        "pageCount": page_count,
+        "hasAcroForm": has_acro,
+        "hasXfa": has_xfa,
+        "hasJavaScript": detect_pdf_javascript(reader),
+        "hasNestedFieldTree": any((field.get("parent") for field in acro_fields)),
+        "hasWidgetAnnotations": bool(widget_info),
+        "acroFieldCount": len(acro_fields),
+        "xfaFieldCount": len(xfa_fields),
+        "totalFieldCount": len(fields),
+        "fieldsPerPage": fields_per_page,
+        "fieldSources": source_counts,
+        "unmappedFields": unmapped,
+    }
+
     return {
         "reader": reader,
-        "pageCount": len(reader.pages),
         "datasets_stream": datasets_stream,
         "root": root,
         "formular": formular,
@@ -244,10 +524,15 @@ def read_pdf_context(input_path, payload):
         "pdfAkronym": pdf_akronym,
         "projectName": project_name,
         "mismatch": mismatch,
+        "analysis": analysis,
+        "fields": fields,
     }
 
 
 def write_filled_pdf(context, output_path):
+    if context["formular"] is None:
+        raise ValueError("Die hochgeladene PDF enthält kein XFA datasets Formular.")
+
     for entry in context["mappings"]:
         set_value(context["formular"], entry["path"], entry["value"])
 
@@ -274,13 +559,15 @@ def main():
 
     if args.action == "analyze":
         print(json.dumps({
-            "pageCount": context["pageCount"],
+            "pageCount": context["analysis"]["pageCount"],
             "leafPaths": context["paths"],
             "mappings": context["mappings"],
             "unmappedPaths": context["unmapped"],
             "pdfAkronym": context["pdfAkronym"],
             "projectName": context["projectName"],
             "mismatch": context["mismatch"],
+            "analysis": context["analysis"],
+            "fields": context["fields"],
         }))
         return
 
