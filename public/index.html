@@ -877,6 +877,107 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           .replace(/[^a-z0-9 ]+/g, " ")
           .replace(/\s+/g, " ")
           .trim();
+
+      const isLikelyInteractivePdfField = (path = "") => {
+        const normalized = `${path}`.trim();
+        if (!normalized || !normalized.startsWith("formular/")) return false;
+        const ignoredPathFragments = [
+          "/statisch/",
+          "/text/",
+          "/txt/",
+          "/pics",
+          "/warnung",
+          "/hinweis",
+          "/dummy",
+          "/hash",
+          "/bc_id/",
+          "/version",
+          "/printdate",
+          "/client",
+          "/pagecount",
+          "/FieldStatusAll",
+          "/FieldsAlreadyLocked",
+        ];
+        if (ignoredPathFragments.some((fragment) => normalized.includes(fragment))) return false;
+
+        const leaf = normalized.split("/").pop();
+        const ignoredLeafs = new Set(["P", "Span", "Kopfzeile", "kopf", "unten", "oben", "statisch", "Teilformular"]);
+        if (ignoredLeafs.has(leaf)) return false;
+        return true;
+      };
+
+      const inferFieldTypeFromKey = (key = "") => {
+        if (/^(chk_|opt_)/i.test(key) || /(_chk_|_opt_)/i.test(key)) return "checkbox";
+        if (/(mail|email)/i.test(key)) return "email";
+        if (/www|website|url/i.test(key)) return "url";
+        if (/(datum|_dat$|geb|_von$|_bis$|date)/i.test(key)) return "date";
+        if (/(sum|betrag|euro|kosten|pm|proz|quote|ums|bilanz|nr|jahr|anz|std|faktor)/i.test(key)) return "number";
+        if (/(thema|kurzfass|bem|anschr|titel|text|prog|zweck)/i.test(key)) return "textarea";
+        return "text";
+      };
+
+      const humanizePdfFieldLabel = (key = "") =>
+        `${key}`
+          .replace(/^chk_/, "")
+          .replace(/^opt_/, "")
+          .replace(/_/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/\b\w/g, (char) => char.toUpperCase()) || key;
+
+      const buildMantelbogenSupplementPages = (missingKeys = []) => {
+        if (!Array.isArray(missingKeys) || missingKeys.length === 0) return [];
+        const grouped = missingKeys.reduce((acc, key) => {
+          const group = key.includes("_") ? key.split("_")[0] : "sonstige";
+          if (!acc[group]) acc[group] = [];
+          acc[group].push(key);
+          return acc;
+        }, {});
+
+        const sections = Object.entries(grouped)
+          .sort((a, b) => a[0].localeCompare(b[0], "de"))
+          .map(([groupName, keys]) => ({
+            title: `Erkannte PDF-Gruppe: ${groupName.toUpperCase()}`,
+            columns: 2,
+            fields: keys.sort((a, b) => a.localeCompare(b, "de")).map((key) => ({
+              key,
+              label: humanizePdfFieldLabel(key),
+              type: inferFieldTypeFromKey(key),
+              rows: inferFieldTypeFromKey(key) === "textarea" ? 3 : undefined,
+            })),
+          }));
+
+        return [
+          {
+            id: "a701590-seite-dynamisch-ergaenzt",
+            title: "Antrag A701590 – Ergänzte PDF-Felder",
+            subtitle: "Automatisch aus der gefundenen PDF abgeleitete, bislang fehlende Felder",
+            sections,
+          },
+        ];
+      };
+
+      const detectA701590PdfFields = async () => {
+        const pdfResponse = await fetch("/api/zim/mantelbogen/company-one/pdf");
+        if (!pdfResponse.ok) throw new Error(`PDF konnte nicht geladen werden (HTTP ${pdfResponse.status}).`);
+        const pdfBlob = await pdfResponse.blob();
+        const formData = new FormData();
+        formData.append("file", pdfBlob, "A701590.pdf");
+        formData.append("payload", JSON.stringify({}));
+        const fieldsResponse = await fetch("/api/zim/fields", {
+          method: "POST",
+          body: formData,
+        });
+        if (!fieldsResponse.ok) throw new Error(`PDF-Felder konnten nicht analysiert werden (HTTP ${fieldsResponse.status}).`);
+        const analysis = await fieldsResponse.json();
+        const leafPaths = Array.isArray(analysis?.leafPaths) ? analysis.leafPaths : [];
+        return leafPaths
+          .filter((path) => isLikelyInteractivePdfField(path))
+          .map((path) => path.split("/").pop())
+          .filter(Boolean)
+          .filter((key, index, arr) => arr.indexOf(key) === index);
+      };
+
       const resolveA701590PdfSource = async () => {
         try {
           const response = await fetch("/api/zim/mantelbogen/company-one/source");
@@ -896,12 +997,13 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           console.log("Resolved A701590 PDF:", resolvedPath);
 
           return {
-            found: Boolean(payload?.found) && Boolean(resolvedPath) && hasPatternMatch,
+            found: Boolean(payload?.found) && Boolean(resolvedPath) && (hasPatternMatch || Boolean(payload?.found)),
             resolvedPath,
             fileName: payload?.fileName || null,
             normalizedName: payload?.normalizedName || null,
             debug: payload?.debug || null,
             error: null,
+            checked: true,
           };
         } catch (error) {
           console.log("Found PDF candidates:", []);
@@ -913,6 +1015,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
             normalizedName: null,
             debug: null,
             error: error?.message || "PDF-Auflösung fehlgeschlagen.",
+            checked: true,
           };
         }
       };
@@ -1862,7 +1965,35 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         );
       };
 
-      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues, pdfResolution }) => {
+      const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues, pdfResolution, detectedPdfFieldKeys = [] }) => {
+        const baseRenderedKeys = useMemo(
+          () =>
+            ZIM_MANTELBOGEN_COMPANY_ONE_PAGES.flatMap((page) =>
+              page.sections.flatMap((section) => section.fields.map((field) => field.key))
+            ),
+          []
+        );
+        const missingFieldKeys = useMemo(
+          () => detectedPdfFieldKeys.filter((key) => !baseRenderedKeys.includes(key)),
+          [detectedPdfFieldKeys, baseRenderedKeys]
+        );
+        const supplementalPages = useMemo(
+          () => buildMantelbogenSupplementPages(missingFieldKeys),
+          [missingFieldKeys]
+        );
+        const allPages = useMemo(
+          () => [...ZIM_MANTELBOGEN_COMPANY_ONE_PAGES, ...supplementalPages],
+          [supplementalPages]
+        );
+        const renderedFieldCount = baseRenderedKeys.length + missingFieldKeys.length;
+
+        useEffect(() => {
+          if (!detectedPdfFieldKeys.length) return;
+          console.log("PDF fields detected:", detectedPdfFieldKeys.length);
+          console.log("Rendered form fields:", renderedFieldCount);
+          console.log("Missing fields:", missingFieldKeys);
+        }, [detectedPdfFieldKeys, renderedFieldCount, missingFieldKeys]);
+
         const getFieldValue = (field) => {
           const storedValue = values?.[field.key];
           if (storedValue !== undefined && storedValue !== null && storedValue !== "") return storedValue;
@@ -1954,23 +2085,23 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
 
         return (
           <div className="space-y-6">
-            {!pdfResolution?.found ? (
+            {pdfResolution?.checked && !pdfResolution?.found ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 Hinweis: Die Datei <strong>A701590</strong> wurde im aktuellen Repo nicht gefunden.
                 {Array.isArray(pdfResolution?.debug?.candidates) && pdfResolution.debug.candidates.length > 0 ? (
                   <span className="block pt-1 text-xs text-amber-800">Bitte Dev-Konsole prüfen: alle PDF-Kandidaten wurden geloggt.</span>
                 ) : null}
               </div>
-            ) : (
+            ) : pdfResolution?.found ? (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                 Quelle erkannt: <strong>{pdfResolution.fileName || "A701590.pdf"}</strong>
                 <span className="ml-2 text-emerald-700">({pdfResolution.resolvedPath})</span>
               </div>
-            )}
+            ) : null}
 
             <div className="max-h-[78vh] overflow-y-auto rounded-lg border border-slate-300/90 bg-slate-200/50 p-5">
               <div className="mx-auto max-w-[900px] space-y-10">
-                {ZIM_MANTELBOGEN_COMPANY_ONE_PAGES.map((page, pageIndex) => (
+                {allPages.map((page, pageIndex) => (
                   <article
                     key={page.id}
                     className="mx-auto w-full rounded-sm border border-slate-300 bg-white px-10 py-8 shadow-[0_16px_36px_rgba(15,23,42,0.20)]"
@@ -1980,7 +2111,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">ZIM-Mantelbögen · Unternehmen 1</p>
                       <h4 className="mt-1 text-lg font-semibold text-slate-900">{page.title}</h4>
                       <p className="text-sm text-slate-600">{page.subtitle}</p>
-                      <p className="mt-1 text-xs text-slate-500">Seite {pageIndex + 1} von {ZIM_MANTELBOGEN_COMPANY_ONE_PAGES.length}</p>
+                      <p className="mt-1 text-xs text-slate-500">Seite {pageIndex + 1} von {allPages.length}</p>
                     </header>
 
                     <div className="space-y-5">
@@ -2796,13 +2927,26 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           normalizedName: null,
           debug: null,
           error: null,
+          checked: false,
         });
+        const [companyOneDetectedPdfFieldKeys, setCompanyOneDetectedPdfFieldKeys] = useState([]);
 
         useEffect(() => {
           let isMounted = true;
           resolveA701590PdfSource().then((result) => {
             if (!isMounted) return;
             setCompanyOneMantelbogenPdfResolution(result);
+            if (!result?.found) return;
+            detectA701590PdfFields()
+              .then((keys) => {
+                if (!isMounted) return;
+                setCompanyOneDetectedPdfFieldKeys(Array.isArray(keys) ? keys : []);
+              })
+              .catch((error) => {
+                console.log("PDF field detection failed:", error?.message || error);
+                if (!isMounted) return;
+                setCompanyOneDetectedPdfFieldKeys([]);
+              });
           });
           return () => {
             isMounted = false;
@@ -5847,6 +5991,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                         onFieldChange={updateCompanyOneMantelbogenField}
                         prefillValues={companyOneMantelbogenPrefill}
                         pdfResolution={companyOneMantelbogenPdfResolution}
+                        detectedPdfFieldKeys={companyOneDetectedPdfFieldKeys}
                       />
                     ) : (
                       <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
