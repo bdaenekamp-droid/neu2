@@ -805,7 +805,51 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         pm: Array(5).fill(""),
       });
 
-      const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
+      
+      const COMPANY_ONE_SCREENSHOT_FILES = [
+        "Captura de pantalla 2026-04-26 180424.jpg",
+        "Captura de pantalla 2026-04-26 180447.jpg",
+        "Captura de pantalla 2026-04-26 180504.jpg",
+        "Captura de pantalla 2026-04-26 180530.jpg",
+        "Captura de pantalla 2026-04-26 180548.jpg",
+        "Captura de pantalla 2026-04-26 180612.jpg",
+        "Captura de pantalla 2026-04-26 180630.jpg",
+        "Captura de pantalla 2026-04-26 180646.jpg",
+        "Captura de pantalla 2026-04-26 180703.jpg",
+        "Captura de pantalla 2026-04-26 180718.jpg",
+        "Captura de pantalla 2026-04-26 180742.jpg",
+        "Captura de pantalla 2026-04-26 180758.jpg",
+        "Captura de pantalla 2026-04-26 180813.jpg",
+        "Captura de pantalla 2026-04-26 180831.jpg",
+        "Captura de pantalla 2026-04-26 180851.jpg",
+        "Captura de pantalla 2026-04-26 180912.jpg",
+        "Captura de pantalla 2026-04-26 180928.jpg",
+        "Captura de pantalla 2026-04-26 180948.jpg",
+        "Captura de pantalla 2026-04-26 181004.jpg",
+        "Captura de pantalla 2026-04-26 181018.jpg",
+        "Captura de pantalla 2026-04-26 181033.jpg",
+        "Captura de pantalla 2026-04-26 181046.jpg",
+        "Captura de pantalla 2026-04-26 181103.jpg",
+        "Captura de pantalla 2026-04-26 181118.jpg",
+        "Captura de pantalla 2026-04-26 181131.jpg",
+      ];
+
+      const buildCompanyOnePagesFromScreenshotsAndSchema = (schemaPages = [], screenshotFiles = []) => {
+        const allSections = (schemaPages || []).flatMap((page) => page.sections || []);
+        const totalPages = screenshotFiles.length || 1;
+        const sectionsPerPage = Math.max(1, Math.ceil(allSections.length / totalPages));
+        return screenshotFiles.map((fileName, index) => {
+          const start = index * sectionsPerPage;
+          const end = start + sectionsPerPage;
+          const pageSections = allSections.slice(start, end);
+          return {
+            title: `Screenshot-Vorlage ${index + 1}`,
+            sourceScreenshot: fileName,
+            sections: pageSections,
+          };
+        });
+      };
+const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         pages.map((page, pageIndex) => ({
           ...page,
           sections: (page.sections || []).map((section, sectionIndex) => ({
@@ -1781,19 +1825,22 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
 
       const ZimMantelbogenCompanyOneView = ({ values, onFieldChange, prefillValues }) => {
         const [staticSchema, setStaticSchema] = useState(() => buildStaticZimMantelbogenCompanyOneSchema());
+        const screenshotFiles = useMemo(() => [...COMPANY_ONE_SCREENSHOT_FILES], []);
         useEffect(() => {
           let isMounted = true;
           fetch("/seeds/zim-mantelbogen-unternehmen1-schema.json", { cache: "no-store" })
             .then((response) => (response.ok ? response.json() : null))
             .then((schemaJson) => {
               if (!isMounted || !Array.isArray(schemaJson) || !schemaJson.length) return;
-              setStaticSchema(buildStaticZimMantelbogenCompanyOneSchema(schemaJson));
+              const normalizedSchema = buildStaticZimMantelbogenCompanyOneSchema(schemaJson);
+              const pagesFromScreenshots = buildCompanyOnePagesFromScreenshotsAndSchema(normalizedSchema, screenshotFiles);
+              setStaticSchema(pagesFromScreenshots);
             })
             .catch(() => {});
           return () => {
             isMounted = false;
           };
-        }, []);
+        }, [screenshotFiles]);
         const schemaFields = useMemo(
           () =>
             staticSchema.flatMap((page) =>
@@ -1802,6 +1849,22 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           [staticSchema]
         );
         const pagesWithFields = useMemo(() => groupCompanyOneSchemaByPage(staticSchema), [staticSchema]);
+
+        useEffect(() => {
+          console.log("Found screenshot pages:", screenshotFiles);
+          const orderedPages = pagesWithFields.map((page) => ({
+            pageNumber: page.pageNumber,
+            title: page.pageTitle,
+            sourceScreenshot: staticSchema[page.pageNumber - 1]?.sourceScreenshot || "",
+          }));
+          console.log("Final page order:", orderedPages);
+          console.log("Rendered page count:", pagesWithFields.length);
+          pagesWithFields.forEach((page) => {
+            const detectedFieldCount = (page.sections || []).reduce((sum, section) => sum + (section.fields || []).length, 0);
+            console.log(`Detected blue fields on page ${page.pageNumber}:`, detectedFieldCount);
+            console.log(`Rendered inputs on page ${page.pageNumber}:`, detectedFieldCount);
+          });
+        }, [pagesWithFields, screenshotFiles, staticSchema]);
 
         const setInitialValues = useCallback((fields) => {
           fields.forEach((field) => {
@@ -1823,7 +1886,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
           const storageKey = field?.storageKey;
           const currentValue = values?.[storageKey];
           const commonProps = {
-            className: "ca-focus mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900",
+            className: "ca-focus mt-1 w-full rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-slate-900",
             value: currentValue ?? "",
             onChange: (event) => onFieldChange(storageKey, event.target.value),
           };
@@ -1857,7 +1920,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
         return (
           <div className="space-y-6">
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-              Statischer Nachbau des Mantelbogens (Unternehmen 1): jede Seite wird als echte Formularseite gerendert.
+              Statischer Nachbau des Mantelbogens (Unternehmen 1) auf Basis aller Captura-de-pantalla-Vorlagen.
             </div>
             <div className="space-y-10">
               {pagesWithFields.map((pageConfig) => {
@@ -1867,7 +1930,7 @@ Ich habe eine Word-Datei mit einem Arbeitsplan. Analysiere das Dokument strikt s
                       <h3 className="text-base font-semibold text-slate-900">
                         ZIM-Antrag A701590 · Seite {pageConfig.pageNumber}
                       </h3>
-                      <span className="text-xs text-slate-500">{pageConfig.pageTitle}</span>
+                      <span className="text-xs text-slate-500">Vorlage: {staticSchema[pageConfig.pageNumber - 1]?.sourceScreenshot || pageConfig.pageTitle}</span>
                     </div>
                     <div className="mt-4 space-y-3">
                       {pageConfig.sections.length ? (
