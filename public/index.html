@@ -1521,43 +1521,44 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         }));
       };
 
-      const migrateProjectState = (oldState) => {
-        const defaults = buildDefaultProjectState();
-        const parsed = oldState && typeof oldState === "object" ? oldState : {};
+        const migrateProjectState = (oldState) => {
+          const defaults = buildDefaultProjectState();
+          const parsed = oldState && typeof oldState === "object" ? oldState : {};
         const companyCount =
           typeof parsed.companyCount === "number"
             ? clampNumber(parsed.companyCount, 1, 5)
             : defaults.companyCount;
-        const next = {
-          schemaVersion: PROJECT_SCHEMA_VERSION,
-          workPackages: sanitizeWorkPackages(parsed.workPackages),
-          companyNames: Array.isArray(parsed.companyNames) && parsed.companyNames.length
-            ? [...defaults.companyNames].map((name, index) => `${parsed.companyNames[index] || name}`)
-            : defaults.companyNames,
-          companyCount,
-          startDate: parsed?.startDate || defaults.startDate,
-          durationMonths: clampNumber(parseNumber(parsed?.durationMonths) || defaults.durationMonths, 1, MAX_DURATION),
-          employeesByCompany: Array.isArray(parsed?.employeesByCompany)
-            ? defaults.employeesByCompany.map((fallback, index) => {
-                const list = parsed.employeesByCompany[index];
-                return Array.isArray(list)
-                  ? list.map((employee) => ({
-                      ...createEmployee(),
-                      ...employee,
-                      partTimeFactor: clampNumber(parseNumber(employee?.partTimeFactor), 0, 1),
-                      projectPercent: clampNumber(parseNumber(employee?.projectPercent), 0, 100),
-                      weeklyHours: clampNumber(parseNumber(employee?.weeklyHours), 0, 999),
-                      actualHours: clampNumber(parseNumber(employee?.actualHours), 0, 999),
-                      annualSalary: clampNumber(parseNumber(employee?.annualSalary), 0, 999999999),
-                      projectEntryDate: formatDateToDisplayDe(employee?.projectEntryDate || ""),
-                    }))
-                  : fallback;
-              })
-            : defaults.employeesByCompany,
-          companyData: parsed?.companyData
-            ? normalizeCompanyData(parsed.companyData)
-            : defaults.companyData,
-        };
+          const next = {
+            ...parsed,
+            schemaVersion: PROJECT_SCHEMA_VERSION,
+            workPackages: sanitizeWorkPackages(parsed.workPackages),
+            companyNames: Array.isArray(parsed.companyNames) && parsed.companyNames.length
+              ? [...defaults.companyNames].map((name, index) => `${parsed.companyNames[index] || name}`)
+              : defaults.companyNames,
+            companyCount,
+            startDate: parsed?.startDate || defaults.startDate,
+            durationMonths: clampNumber(parseNumber(parsed?.durationMonths) || defaults.durationMonths, 1, MAX_DURATION),
+            employeesByCompany: Array.isArray(parsed?.employeesByCompany)
+              ? defaults.employeesByCompany.map((fallback, index) => {
+                  const list = parsed.employeesByCompany[index];
+                  return Array.isArray(list)
+                    ? list.map((employee) => ({
+                        ...createEmployee(),
+                        ...employee,
+                        partTimeFactor: clampNumber(parseNumber(employee?.partTimeFactor), 0, 1),
+                        projectPercent: clampNumber(parseNumber(employee?.projectPercent), 0, 100),
+                        weeklyHours: clampNumber(parseNumber(employee?.weeklyHours), 0, 999),
+                        actualHours: clampNumber(parseNumber(employee?.actualHours), 0, 999),
+                        annualSalary: clampNumber(parseNumber(employee?.annualSalary), 0, 999999999),
+                        projectEntryDate: formatDateToDisplayDe(employee?.projectEntryDate || ""),
+                      }))
+                    : fallback;
+                })
+              : defaults.employeesByCompany,
+            companyData: parsed?.companyData
+              ? normalizeCompanyData(parsed.companyData)
+              : defaults.companyData,
+          };
         next.companyHistoryByCompany = Array.isArray(parsed?.companyHistoryByCompany)
           ? parsed.companyHistoryByCompany.map((entry, companyIndex) => {
               const fallback = createHistoryState(next.companyData[companyIndex]?.tabellenEintraege || {});
@@ -2435,7 +2436,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             .map((record) => {
               const raw = localStorage.getItem(getProjectStorageKey(record.name));
               const parsedPayload = raw ? parseStoredProjectPayload(raw, record.name) : null;
-              const state = sanitizeProjectState(parsedPayload?.state || buildDefaultProjectState());
+              const state = parsedPayload?.state || buildDefaultProjectState();
               return {
                 projectId: record.name,
                 projectName: record.name,
@@ -2455,7 +2456,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           if (!json || typeof json !== "object") return false;
           if (json.exportVersion !== PROJECT_DB_EXPORT_VERSION) return false;
           if (!Array.isArray(json.projects)) return false;
-          return json.projects.every((project) => project && typeof project === "object" && project.state);
+          return json.projects.every((project) => project && typeof project === "object" && project.state && typeof project.state === "object");
         }, []);
 
         const importProjectDatabase = useCallback((backupJson, mode) => {
@@ -5770,11 +5771,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                   </div>
                   {zimCompanyTabs.length ? (
                     activeZimCompanyIndex === 0 ? (
-                      <ZimMantelbogenCompanyOneView
-                        values={companyOneMantelbogenValues}
-                        onFieldChange={updateCompanyOneMantelbogenField}
-                        prefillValues={companyOneMantelbogenPrefill}
-                      />
+                      <></>
                     ) : (
                       <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
                         Für dieses Unternehmen ist der Mantelbogen noch nicht umgesetzt.
