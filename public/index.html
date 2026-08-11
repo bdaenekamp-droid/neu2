@@ -1335,6 +1335,14 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         window.setTimeout(() => URL.revokeObjectURL(url), 0);
       };
 
+      const normalizePmValue = (value) => {
+        if (value === "" || value === null || value === undefined) return 0;
+        if (typeof value === "number") return value;
+        const normalized = `${value}`.trim().replace(",", ".");
+        const parsed = Number.parseFloat(normalized);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      };
+
       const getMinimumValidEndDate = (startDate, assignedPM) => {
         const base = startDate instanceof Date ? startDate : parseDate(startDate);
         const requiredMonths = Math.max(1, Math.ceil(normalizePmValue(assignedPM)));
@@ -2852,14 +2860,6 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           });
           return list;
         }, [workPackages]);
-
-        const normalizePmValue = (value) => {
-          if (value === "" || value === null || value === undefined) return 0;
-          if (typeof value === "number") return value;
-          const normalized = `${value}`.trim().replace(",", ".");
-          const parsed = Number.parseFloat(normalized);
-          return Number.isNaN(parsed) ? 0 : parsed;
-        };
 
         const filteredWorkPackageRowsByCompany = useMemo(() => {
           return activeCompanyIndexes.reduce((acc, companyIndex) => {
