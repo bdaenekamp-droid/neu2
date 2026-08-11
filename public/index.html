@@ -143,7 +143,14 @@
     <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-    <script src="/version.js"></script>
+    <script>
+      // Deployment metadata must never come from the browser cache. A unique
+      // request URL also protects against intermediary caches that ignore the
+      // no-store response header.
+      document.write(
+        `<script src="/version.js?cacheBust=${Date.now()}"><\/script>`,
+      );
+    </script>
     <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
     <script type="text/babel" data-presets="typescript,react">
       const { useMemo, useState, useEffect, useRef, useCallback } = React;
