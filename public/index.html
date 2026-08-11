@@ -158,6 +158,7 @@
       const YEAR_CAP_PM = 10.5;
       const PM_STEP = 0.25;
       const PM_EPSILON = 1e-9;
+      const MAX_AUTO_WORK_PACKAGE_MONTHS = 10;
       const PROJECTS_INDEX_KEY = "ca_projectplanning_projects_index";
       const CURRENT_PROJECT_KEY = "ca_projectplanning_current_project";
       const PROJECT_KEY_PREFIX = "project:";
@@ -1333,6 +1334,21 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         const endYear = base.getFullYear();
         const endMonthIndex = base.getMonth() + requiredMonths;
         return new Date(endYear, endMonthIndex, 0);
+      };
+
+      const getBufferedWorkPackageDurationMonths = (plannedMonths, projectMonths) => {
+        const normalizedPlannedMonths = Math.max(1, normalizePmValue(plannedMonths));
+        const bufferFactor = normalizedPlannedMonths <= 6 ? 1.5 : 1.25;
+        const bufferedMonths = Math.ceil(normalizedPlannedMonths * bufferFactor);
+        const durationWithoutExtendingTenMonths =
+          normalizedPlannedMonths >= MAX_AUTO_WORK_PACKAGE_MONTHS
+            ? Math.ceil(normalizedPlannedMonths)
+            : Math.min(bufferedMonths, MAX_AUTO_WORK_PACKAGE_MONTHS);
+        return clampNumber(
+          durationWithoutExtendingTenMonths,
+          1,
+          Math.min(12, Math.max(1, projectMonths))
+        );
       };
 
       const getEmployeeAvailableFrom = (projectStart, employeeEntryDate) => {
@@ -3167,6 +3183,14 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               nextRowEntry[field] = value;
             }
 
+            if (field === "mitarbeiterNummer") {
+              const employeeNumber = Number.parseInt(value, 10);
+              nextRowEntry.notPlannable = !(
+                employeeNumber >= 1
+                && employeeNumber <= (employeesByCompany[companyIndex] || []).length
+              );
+            }
+
             if (JSON.stringify(currentRowEntry) === JSON.stringify(nextRowEntry)) return prev;
             beforeSnapshot = createCompanyHistorySnapshot(tabellenEintraege);
             tabellenEintraege[rowId] = nextRowEntry;
@@ -3351,7 +3375,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             const rowCount = rowsWithPm.length;
             const timelineLength = projectEndIndex - projectStartIndex + 1;
             const durations = rowsWithPm.map((entry) =>
-              clampNumber(Math.ceil(entry.pmDemand), 1, timelineLength)
+              getBufferedWorkPackageDurationMonths(entry.pmDemand, timelineLength)
             );
             const lastDuration = durations[rowCount - 1] || 1;
             const lastRowStart = Math.max(projectStartIndex, projectEndIndex - lastDuration + 1);
