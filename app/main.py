@@ -12,6 +12,17 @@ app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def frontend_file_response(path: Path) -> FileResponse:
+    """Serve deployment metadata and HTML without stale browser caches."""
+    headers = NO_CACHE_HEADERS if path.name == "version.js" or path.suffix == ".html" else None
+    return FileResponse(str(path), headers=headers)
 
 
 @app.get("/health")
@@ -70,7 +81,7 @@ if STATIC_DIR.exists():
 @app.get("/")
 def root():
     if INDEX_FILE.exists():
-        return FileResponse(str(INDEX_FILE))
+        return frontend_file_response(INDEX_FILE)
     return {"detail": "Frontend not built"}
 
 
@@ -80,7 +91,7 @@ def spa_fallback(full_path: str):
         raise HTTPException(status_code=404, detail="Not Found")
     target = STATIC_DIR / full_path
     if target.exists() and target.is_file():
-        return FileResponse(str(target))
+        return frontend_file_response(target)
     if INDEX_FILE.exists():
-        return FileResponse(str(INDEX_FILE))
+        return frontend_file_response(INDEX_FILE)
     return {"detail": "Frontend not built"}
