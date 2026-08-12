@@ -1708,6 +1708,47 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         return allowedPMFullYear * (availableMonthsInYear / 12);
       };
 
+      const getCompanyCapacityViolations = (
+        companyIndex,
+        employees,
+        entries,
+        sourceWorkPackages,
+        projectRange
+      ) => {
+        const assignedByEmployeeAndYear = {};
+        (sourceWorkPackages || []).forEach((workPackage) => {
+          (workPackage.sub || []).forEach((subPackage) => {
+            const pmDemand = normalizePmValue(subPackage.pm?.[companyIndex]);
+            const entry = entries?.[subPackage.id] || {};
+            const employeeIndex = Number.parseInt(entry.mitarbeiterNummer, 10) - 1;
+            const monthSpan = getMonthSpan(entry.start, entry.ende);
+            if (!pmDemand || !employees?.[employeeIndex] || !monthSpan?.totalMonths) return;
+            const pmPerMonth = pmDemand / monthSpan.totalMonths;
+            Object.entries(monthSpan.monthsByYear).forEach(([year, months]) => {
+              const key = `${employeeIndex}:${year}`;
+              assignedByEmployeeAndYear[key] =
+                (assignedByEmployeeAndYear[key] || 0) + pmPerMonth * months;
+            });
+          });
+        });
+
+        return Object.entries(assignedByEmployeeAndYear).flatMap(([key, assignedPM]) => {
+          const [employeeIndexValue, yearValue] = key.split(":");
+          const employeeIndex = Number.parseInt(employeeIndexValue, 10);
+          const year = Number.parseInt(yearValue, 10);
+          const employee = employees[employeeIndex];
+          const allowedPM = getEmployeeAllowedPMInYear(
+            employee,
+            projectRange,
+            employee.projectEntryDate,
+            year
+          );
+          return assignedPM > allowedPM
+            ? [{ employeeIndex, year, assignedPM, allowedPM }]
+            : [];
+        });
+      };
+
       const getAssignedPMInYear = (companyId, employeeId, year, assignments) => {
         if (!assignments || !Number.isFinite(employeeId)) return 0;
         return Object.values(assignments).reduce((sum, assignment) => {
@@ -1754,7 +1795,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             employees[employeeId]?.projectEntryDate,
             year
           );
-          return assignedPMSoFar + pmInYear <= allowedPMInYear + PM_EPSILON;
+          return assignedPMSoFar + pmInYear <= allowedPMInYear;
         });
       };
 
@@ -2950,6 +2991,22 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             sub[subIndex] = subItem;
             wp.sub = sub;
             next[wpIndex] = wp;
+            const projectStart = parseDate(startDate);
+            const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
+            const violations = getCompanyCapacityViolations(
+              companyIndex,
+              employeesByCompany[companyIndex] || [],
+              companyData[companyIndex]?.tabellenEintraege || {},
+              next,
+              { start: projectStartIndex, end: projectStartIndex + durationMonths - 1 }
+            );
+            if (violations.length) {
+              setCompanyInlineWarning(
+                companyIndex,
+                `Projekteinsatz überschritten: MA ${violations[0].employeeIndex + 1} darf im Jahr ${violations[0].year} höchstens ${formatNumberDe(violations[0].allowedPM, 2)} PM erhalten.`
+              );
+              return prev;
+            }
             return next;
           });
         };
@@ -3108,7 +3165,55 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         ) => {
           const numeric = parseNumber(value);
           const clamped = max === null ? Math.max(min, numeric) : clampNumber(numeric, min, max);
+          if (field === "projectPercent") {
+            const candidateEmployees = (employeesByCompany[companyIndex] || []).map((employee, index) =>
+              index === employeeIndex ? { ...employee, projectPercent: clamped } : employee
+            );
+            const projectStart = parseDate(startDate);
+            const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
+            const violations = getCompanyCapacityViolations(
+              companyIndex,
+              candidateEmployees,
+              companyData[companyIndex]?.tabellenEintraege || {},
+              workPackages,
+              { start: projectStartIndex, end: projectStartIndex + durationMonths - 1 }
+            );
+            if (violations.length) {
+              setCompanyInlineWarning(
+                companyIndex,
+                `Der Projekteinsatz kann nicht auf ${formatNumberDe(clamped, 1)} % gesetzt werden: Die Jahresgrenze wäre überschritten.`
+              );
+              return;
+            }
+          }
           updateEmployeeField(companyIndex, employeeIndex, field, clamped);
+        };
+
+        const updateProjectRange = (nextStartDate, nextDurationMonths) => {
+          const parsedStart = parseDate(nextStartDate);
+          const projectStartIndex = parsedStart.getFullYear() * 12 + parsedStart.getMonth();
+          const projectRange = {
+            start: projectStartIndex,
+            end: projectStartIndex + nextDurationMonths - 1,
+          };
+          const companyWithViolation = activeCompanyIndexes.find((companyIndex) =>
+            getCompanyCapacityViolations(
+              companyIndex,
+              employeesByCompany[companyIndex] || [],
+              companyData[companyIndex]?.tabellenEintraege || {},
+              workPackages,
+              projectRange
+            ).length > 0
+          );
+          if (companyWithViolation !== undefined) {
+            setCompanyInlineWarning(
+              companyWithViolation,
+              "Projektzeitraum nicht geändert: Dadurch würde ein jährlicher Projekteinsatz überschritten."
+            );
+            return;
+          }
+          setStartDate(nextStartDate);
+          setDurationMonths(nextDurationMonths);
         };
 
         const getPmDemandForCompanyRow = (companyIndex, rowId) => {
@@ -3195,6 +3300,25 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               nextRowEntry.notPlannable = !(
                 employeeNumber >= 1
                 && employeeNumber <= (employeesByCompany[companyIndex] || []).length
+              );
+            }
+
+            const projectStart = parseDate(startDate);
+            const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
+            const candidateEntries = { ...tabellenEintraege, [rowId]: nextRowEntry };
+            const violations = getCompanyCapacityViolations(
+              companyIndex,
+              employeesByCompany[companyIndex] || [],
+              candidateEntries,
+              workPackages,
+              { start: projectStartIndex, end: projectStartIndex + durationMonths - 1 }
+            );
+            if (violations.length) {
+              nextRowEntry.mitarbeiterNummer = "";
+              nextRowEntry.notPlannable = true;
+              setCompanyInlineWarning(
+                companyIndex,
+                `Zuordnung entfernt: Der Projekteinsatz von MA ${violations[0].employeeIndex + 1} würde im Jahr ${violations[0].year} überschritten.`
               );
             }
 
@@ -3486,7 +3610,28 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               end: span.end,
             };
 
-            if (!shouldOptimizeEmployees) return;
+            if (!shouldOptimizeEmployees) {
+              const lockedEmployeeIndex = Number.parseInt(existingRowEntry.mitarbeiterNummer, 10) - 1;
+              const lockedAssignmentIsValid = canAssignWorkPackageToEmployee(
+                companyIndex,
+                lockedEmployeeIndex,
+                { id: row.id, pmDemand },
+                span.start,
+                span.end,
+                assignments,
+                companyEmployees,
+                projectRange
+              );
+              if (!lockedAssignmentIsValid) {
+                assignments[row.id].mitarbeiterNummer = "";
+                assignments[row.id].notPlannable = true;
+                unplannableRowIds.push(row.id);
+                return;
+              }
+              assignments[row.id].employeeIndex = lockedEmployeeIndex;
+              assignments[row.id].pmByYear = pmByYear;
+              return;
+            }
 
             const selectedCandidate = [...employeeOrder]
               .sort((a, b) => a.annualSalary - b.annualSalary || a.employeeIndex - b.employeeIndex)
@@ -4040,7 +4185,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               projectYears.forEach((year) => {
                 const assignedPM = calcEmployeeYearPM(companyIndex, employeeIndex, year);
                 const allowedPM = getEmployeeYearCapacity(companyIndex, employeeIndex, year);
-                if (assignedPM > allowedPM + PM_EPSILON) {
+                if (assignedPM > allowedPM) {
                   warnings.push({
                     companyIndex,
                     employeeIndex,
@@ -4739,7 +4884,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                     type="date"
                     value={startDate}
                     onChange={(event) => {
-                      setStartDate(event.target.value);
+                      updateProjectRange(event.target.value, durationMonths);
                     }}
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                   />
@@ -4756,12 +4901,9 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                     value={durationMonths}
                     onChange={(event) =>
                       {
-                        setDurationMonths(
-                          clampNumber(
-                            parseInt(event.target.value || "1", 10),
-                            1,
-                            MAX_DURATION
-                          )
+                        updateProjectRange(
+                          startDate,
+                          clampNumber(parseInt(event.target.value || "1", 10), 1, MAX_DURATION)
                         );
                       }
                     }
