@@ -1749,6 +1749,14 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         });
       };
 
+      const selectHighestSalaryCapableEmployee = (employees, currentEmployeeIndex, canTakeWorkPackage) =>
+        (employees || [])
+          .map((employee, employeeIndex) => ({ employee, employeeIndex }))
+          .filter(({ employeeIndex }) => employeeIndex !== currentEmployeeIndex)
+          .filter(({ employeeIndex }) => canTakeWorkPackage(employeeIndex))
+          .sort((a, b) => parseNumber(b.employee.annualSalary) - parseNumber(a.employee.annualSalary))[0]
+          ?.employeeIndex;
+
       const getAssignedPMInYear = (companyId, employeeId, year, assignments) => {
         if (!assignments || !Number.isFinite(employeeId)) return 0;
         return Object.values(assignments).reduce((sum, assignment) => {
@@ -2083,6 +2091,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         const [pmInputDrafts, setPmInputDrafts] = useState({});
         const [pmInputHint, setPmInputHint] = useState({ key: "", message: "" });
         const [assignmentWarningsByCompany, setAssignmentWarningsByCompany] = useState({});
+        const [pendingCapacityReassignment, setPendingCapacityReassignment] = useState(null);
         const [invalidAssignmentRowsByCompany, setInvalidAssignmentRowsByCompany] = useState({});
         const [rowHeights, setRowHeights] = useState({});
         const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
@@ -2980,9 +2989,9 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
         const updatePm = (wpIndex, subIndex, companyIndex, value) => {
           if (subIndex === null) return;
-          setWorkPackages((prev) => {
-            const next = [...prev];
-            const wp = { ...next[wpIndex] };
+          const previousWorkPackages = workPackages;
+          const next = [...previousWorkPackages];
+          const wp = { ...next[wpIndex] };
             const sub = [...wp.sub];
             const subItem = { ...sub[subIndex] };
             const pm = [...subItem.pm];
@@ -2991,23 +3000,85 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             sub[subIndex] = subItem;
             wp.sub = sub;
             next[wpIndex] = wp;
-            const projectStart = parseDate(startDate);
-            const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
-            const violations = getCompanyCapacityViolations(
-              companyIndex,
-              employeesByCompany[companyIndex] || [],
-              companyData[companyIndex]?.tabellenEintraege || {},
-              next,
-              { start: projectStartIndex, end: projectStartIndex + durationMonths - 1 }
-            );
-            if (violations.length) {
-              setCompanyInlineWarning(
-                companyIndex,
-                `Projekteinsatz überschritten: MA ${violations[0].employeeIndex + 1} darf im Jahr ${violations[0].year} höchstens ${formatNumberDe(violations[0].allowedPM, 2)} PM erhalten.`
-              );
-              return prev;
+          // PM demand is project data. Persist it before assignment capacity is evaluated.
+          setWorkPackages(next);
+
+          const rowId = subItem.id;
+          const employees = employeesByCompany[companyIndex] || [];
+          const entries = companyData[companyIndex]?.tabellenEintraege || {};
+          const currentEntry = entries[rowId];
+          const currentEmployeeIndex = Number.parseInt(currentEntry?.mitarbeiterNummer, 10) - 1;
+          const projectStart = parseDate(startDate);
+          const projectStartIndex = projectStart.getFullYear() * 12 + projectStart.getMonth();
+          const projectRange = { start: projectStartIndex, end: projectStartIndex + durationMonths - 1 };
+          const beforeSnapshot = createCompanyHistorySnapshot(
+            entries,
+            getCompanyPmSnapshot(companyIndex, previousWorkPackages)
+          );
+          const baseAfterSnapshot = createCompanyHistorySnapshot(
+            entries,
+            getCompanyPmSnapshot(companyIndex, next)
+          );
+
+          if (!currentEntry || currentEmployeeIndex < 0 || normalizePmValue(value) <= 0) {
+            commitCompanyHistoryStep(companyIndex, beforeSnapshot, baseAfterSnapshot);
+            return;
+          }
+
+          const violations = getCompanyCapacityViolations(
+            companyIndex, employees, entries, next, projectRange
+          );
+          const currentEmployeeHasConflict = violations.some(
+            (violation) => violation.employeeIndex === currentEmployeeIndex
+          );
+          if (!currentEmployeeHasConflict) {
+            commitCompanyHistoryStep(companyIndex, beforeSnapshot, baseAfterSnapshot);
+            return;
+          }
+
+          const invalidEntries = cloneTableEntries(entries);
+          invalidEntries[rowId] = { ...currentEntry, notPlannable: true, capacityIssue: true };
+          setCompanyData((prev) => prev.map((entry, index) =>
+            index === companyIndex ? { ...entry, tabellenEintraege: invalidEntries } : entry
+          ));
+
+          // Use the same annual-capacity audit as auto planning and retain employee order for salary ties.
+          const suggestedEmployeeIndex = selectHighestSalaryCapableEmployee(
+            employees,
+            currentEmployeeIndex,
+            (employeeIndex) => {
+              const candidateEntries = cloneTableEntries(entries);
+              candidateEntries[rowId] = {
+                ...currentEntry,
+                mitarbeiterNummer: `${employeeIndex + 1}`,
+                notPlannable: false,
+                capacityIssue: false,
+              };
+              return getCompanyCapacityViolations(
+                companyIndex, employees, candidateEntries, next, projectRange
+              ).length === 0;
             }
-            return next;
+          );
+
+          const invalidAfterSnapshot = createCompanyHistorySnapshot(
+            invalidEntries,
+            getCompanyPmSnapshot(companyIndex, next)
+          );
+          if (suggestedEmployeeIndex === undefined) {
+            commitCompanyHistoryStep(companyIndex, beforeSnapshot, invalidAfterSnapshot);
+            setCompanyInlineWarning(companyIndex, "Für die erhöhte Anzahl an Personenmonaten steht aktuell kein Mitarbeiter mit ausreichender freier Kapazität zur Verfügung.");
+            return;
+          }
+
+          setPendingCapacityReassignment({
+            companyIndex,
+            rowId,
+            workPackageNumber: `${wpIndex + 1}.${subIndex + 1}`,
+            currentEmployeeIndex,
+            suggestedEmployeeIndex,
+            requiredPm: normalizePmValue(value),
+            beforeSnapshot,
+            invalidAfterSnapshot,
           });
         };
 
@@ -3411,6 +3482,45 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             };
             return nextHistory;
           });
+        };
+
+        const declineCapacityReassignment = () => {
+          if (!pendingCapacityReassignment) return;
+          const { companyIndex, beforeSnapshot, invalidAfterSnapshot } = pendingCapacityReassignment;
+          commitCompanyHistoryStep(companyIndex, beforeSnapshot, invalidAfterSnapshot);
+          setCompanyInlineWarning(
+            companyIndex,
+            "Für die aktuelle PM-Anzahl besteht noch keine gültige Mitarbeitenden-Zuordnung."
+          );
+          setPendingCapacityReassignment(null);
+        };
+
+        const confirmCapacityReassignment = () => {
+          if (!pendingCapacityReassignment) return;
+          const {
+            companyIndex,
+            rowId,
+            suggestedEmployeeIndex,
+            beforeSnapshot,
+          } = pendingCapacityReassignment;
+          const reassignedEntries = cloneTableEntries(
+            companyData[companyIndex]?.tabellenEintraege || {}
+          );
+          reassignedEntries[rowId] = {
+              ...(reassignedEntries[rowId] || {}),
+              mitarbeiterNummer: `${suggestedEmployeeIndex + 1}`,
+              notPlannable: false,
+              capacityIssue: false,
+          };
+          setCompanyData((prev) => prev.map((entry, index) =>
+            index === companyIndex ? { ...entry, tabellenEintraege: reassignedEntries } : entry
+          ));
+          const afterSnapshot = createCompanyHistorySnapshot(
+            reassignedEntries,
+            getCompanyPmSnapshot(companyIndex)
+          );
+          commitCompanyHistoryStep(companyIndex, beforeSnapshot, afterSnapshot);
+          setPendingCapacityReassignment(null);
         };
 
         const undoCompanyAssignment = (companyIndex) => {
@@ -6398,6 +6508,36 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                       className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
                     >
                       Abbrechen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {pendingCapacityReassignment ? (
+              <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true" aria-labelledby="capacity-dialog-title">
+                <div className="w-full max-w-lg rounded-xl border border-amber-200 bg-white p-5 shadow-2xl">
+                  <h3 id="capacity-dialog-title" className="text-lg font-semibold text-slate-900">Kapazitätsproblem</h3>
+                  <p className="mt-3 text-sm text-slate-700">
+                    Der aktuell zugeordnete Mitarbeiter kann die erhöhte Anzahl an Personenmonaten nicht mehr vollständig übernehmen.
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-slate-800">
+                    Soll das Arbeitspaket AP {pendingCapacityReassignment.workPackageNumber} dem Mitarbeiter {employeesByCompany[pendingCapacityReassignment.companyIndex]?.[pendingCapacityReassignment.suggestedEmployeeIndex]?.name || `MA ${pendingCapacityReassignment.suggestedEmployeeIndex + 1}`} zugeordnet werden?
+                  </p>
+                  <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md bg-slate-50 p-3 text-xs text-slate-600">
+                    <dt>Aktuell</dt>
+                    <dd className="font-medium">{employeesByCompany[pendingCapacityReassignment.companyIndex]?.[pendingCapacityReassignment.currentEmployeeIndex]?.name || `MA ${pendingCapacityReassignment.currentEmployeeIndex + 1}`}</dd>
+                    <dt>Vorgeschlagen</dt>
+                    <dd className="font-medium">{employeesByCompany[pendingCapacityReassignment.companyIndex]?.[pendingCapacityReassignment.suggestedEmployeeIndex]?.name || `MA ${pendingCapacityReassignment.suggestedEmployeeIndex + 1}`}</dd>
+                    <dt>Benötigt</dt>
+                    <dd className="font-medium">{formatNumberDe(pendingCapacityReassignment.requiredPm, 2)} PM</dd>
+                  </dl>
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button type="button" onClick={declineCapacityReassignment} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
+                      Nein
+                    </button>
+                    <button type="button" onClick={confirmCapacityReassignment} className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white">
+                      Ja, neu zuordnen
                     </button>
                   </div>
                 </div>
