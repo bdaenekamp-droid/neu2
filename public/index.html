@@ -4484,6 +4484,14 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             maximumFractionDigits: 1,
           }).format(value || 0);
 
+        const formatAnnualSalary = (value) =>
+          new Intl.NumberFormat("de-DE", {
+            style: "currency",
+            currency: "EUR",
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          }).format(parseNumber(value));
+
         const buildCompanyPlanningExportData = useCallback((projectState, companyIndex) => {
           if (companyIndex === null || companyIndex === undefined) return null;
           const companyName = projectState.companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`;
@@ -4547,6 +4555,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               return {
                 employeeNumber: employee.number || employeeIndex + 1,
                 name: employee.name || `Mitarbeiter ${employeeIndex + 1}`,
+                annualSalary,
                 year,
                 pm,
                 cost: pm * (annualSalary / 12),
@@ -4565,6 +4574,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             employees: companyEmployees.map((employee, employeeIndex) => ({
               number: employee.number || employeeIndex + 1,
               name: employee.name || `Mitarbeiter ${employeeIndex + 1}`,
+              annualSalary: parseNumber(employee.annualSalary),
               years: projectState.projectYears.reduce((acc, year) => {
                 const pm = pmByYear[employeeIndex]?.[year] || 0;
                 const annualSalary = parseNumber(employee.annualSalary);
@@ -4605,6 +4615,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
         const hasExportableData = !!fullscreenCompanyData && (
           fullscreenCompanyData.workPackages.length
+          || fullscreenCompanyData.employees.length
           || fullscreenCompanyData.employeeYearRows.some((row) => row.pm > 0 || row.cost > 0)
           || fullscreenCompanyData.yearlyFundingRows.some((row) => row.foerderung > 0)
         );
@@ -4635,9 +4646,9 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           rows.push([]);
 
           rows.push(["ABSCHNITT 2 — Mitarbeiterauswertung"]);
-          rows.push(["Mitarbeitenden-Nr.", "Name", "Jahr", "Personenmonate", "Kosten"]);
+          rows.push(["Mitarbeitenden-Nr.", "Name", "Jahresgehalt", "Jahr", "Personenmonate", "Kosten"]);
           fullscreenCompanyData.employeeYearRows.forEach((row) => {
-            rows.push([row.employeeNumber, row.name, row.year, formatNumberDe(row.pm, 2), formatCurrency(row.cost)]);
+            rows.push([row.employeeNumber, row.name, formatAnnualSalary(row.annualSalary), row.year, formatNumberDe(row.pm, 2), formatCurrency(row.cost)]);
           });
           rows.push([]);
 
@@ -4703,8 +4714,8 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           y += 8;
           doc.autoTable({
             startY: y,
-            head: [["Mitarbeitenden-Nr.", "Name", "Jahr", "Personenmonate", "Kosten"]],
-            body: fullscreenCompanyData.employeeYearRows.map((row) => [row.employeeNumber, row.name, row.year, formatNumberDe(row.pm, 2), formatCurrency(row.cost)]),
+            head: [["Mitarbeitenden-Nr.", "Name", "Jahresgehalt", "Jahr", "Personenmonate", "Kosten"]],
+            body: fullscreenCompanyData.employeeYearRows.map((row) => [row.employeeNumber, row.name, formatAnnualSalary(row.annualSalary), row.year, formatNumberDe(row.pm, 2), formatCurrency(row.cost)]),
             theme: "grid",
             styles: { fontSize: 9, cellPadding: 4 },
             headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42] },
@@ -6160,6 +6171,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                             <tr>
                               <th className="px-3 py-2">MA-Nr.</th>
                               <th className="px-3 py-2">Name</th>
+                              <th className="px-3 py-2 text-right">Jahresgehalt</th>
                               <th className="px-3 py-2">Jahresübersicht</th>
                             </tr>
                           </thead>
@@ -6168,6 +6180,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                               <tr key={`fs-emp-${index}`}>
                                 <td className="px-3 py-2 align-top font-semibold text-slate-700">{employee.number}</td>
                                 <td className="px-3 py-2 align-top text-slate-700">{employee.name}</td>
+                                <td className="px-3 py-2 text-right align-top font-semibold text-slate-800">{formatAnnualSalary(employee.annualSalary)}</td>
                                 <td className="px-3 py-2">
                                   <div className="overflow-hidden rounded-md border border-slate-200">
                                     {fullscreenCompanyData.projectYears.map((year, yearIndex) => (
@@ -6183,7 +6196,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                             ))}
                             {!fullscreenCompanyData.employees.length ? (
                               <tr>
-                                <td colSpan={3} className="px-3 py-3 text-center text-slate-500">Keine Mitarbeitenden vorhanden.</td>
+                                <td colSpan={4} className="px-3 py-3 text-center text-slate-500">Keine Mitarbeitenden vorhanden.</td>
                               </tr>
                             ) : null}
                           </tbody>
