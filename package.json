@@ -6,6 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test",
     "build": "mkdir -p dist && cp -r public/. dist/",
     "generate:build-info": "node scripts/generate-build-info.js",
     "prestart": "npm run generate:build-info",
