@@ -143,6 +143,7 @@
     <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="/employee-capacity.js"></script>
     <script>
       // Deployment metadata must never come from the browser cache. A unique
       // request URL also protects against intermediary caches that ignore the
@@ -155,6 +156,7 @@
     <script type="text/babel" data-presets="typescript,react">
       const { useMemo, useState, useEffect, useRef, useCallback } = React;
       const { jsPDF } = window.jspdf || {};
+      const EmployeeCapacity = window.EmployeeCapacity;
 
       const MAX_WP = 20;
       const MAX_SUB = 20;
@@ -162,7 +164,7 @@
       const MAX_EMPLOYEES = 10;
       const DEFAULT_ACTIVE_COMPANY_COUNT = 2;
       const MAX_HISTORY_STEPS = 10;
-      const YEAR_CAP_PM = 10.5;
+      const YEAR_CAP_PM = EmployeeCapacity.FULL_YEAR_PM;
       const PM_STEP = 0.25;
       const PM_EPSILON = 1e-9;
       const MAX_AUTO_WORK_PACKAGE_MONTHS = 10;
@@ -1386,18 +1388,16 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         if (!Number.isFinite(projectStartIndex) || !Number.isFinite(projectEndIndex) || projectEndIndex < projectStartIndex) {
           return 0;
         }
-        const employeeAvailableFrom = getEmployeeAvailableFrom(
-          new Date(Math.floor(projectStartIndex / 12), projectStartIndex % 12, 1),
-          employeeEntryDate
+        const parsedEntry = parseDisplayDateToDate(employeeEntryDate);
+        const employeeStartIndex = parsedEntry
+          ? parsedEntry.getFullYear() * 12 + parsedEntry.getMonth()
+          : null;
+        return EmployeeCapacity.availableMonthsInYear(
+          projectStartIndex,
+          projectEndIndex,
+          employeeStartIndex,
+          year
         );
-        const employeeStartIndex = employeeAvailableFrom.getFullYear() * 12 + employeeAvailableFrom.getMonth();
-        const effectiveStart = Math.max(projectStartIndex, employeeStartIndex);
-        const yearStart = year * 12;
-        const yearEnd = yearStart + 11;
-        const overlapStart = Math.max(effectiveStart, yearStart);
-        const overlapEnd = Math.min(projectEndIndex, yearEnd);
-        if (overlapEnd < overlapStart) return 0;
-        return overlapEnd - overlapStart + 1;
       };
 
       const getMonthSpan = (startValue, endValue) => {
@@ -1697,15 +1697,15 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
       const getEmployeeAllowedPMInYear = (employee, projectRange, employeeEntryDate, year) => {
         if (!employee) return 0;
-        const projectPercent = getEffectiveProjectPercent(employee.projectPercent);
-        const allowedPMFullYear = YEAR_CAP_PM * (projectPercent / 100);
-        const availableMonthsInYear = getEmployeeAvailableMonthsInYear(
-          projectRange?.start,
-          projectRange?.end,
-          employeeEntryDate || employee.projectEntryDate,
-          year
-        );
-        return allowedPMFullYear * (availableMonthsInYear / 12);
+        const entryDate = parseDisplayDateToDate(employeeEntryDate || employee.projectEntryDate);
+        const entryMonth = entryDate ? entryDate.getFullYear() * 12 + entryDate.getMonth() : null;
+        return EmployeeCapacity.maxPmForYear({
+          projectStart: projectRange?.start,
+          projectEnd: projectRange?.end,
+          employeeEntry: entryMonth,
+          projectPercent: getEffectiveProjectPercent(employee.projectPercent),
+          year,
+        });
       };
 
       const getCompanyCapacityViolations = (
@@ -1715,7 +1715,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         sourceWorkPackages,
         projectRange
       ) => {
-        const assignedByEmployeeAndYear = {};
+        const assignments = [];
         (sourceWorkPackages || []).forEach((workPackage) => {
           (workPackage.sub || []).forEach((subPackage) => {
             const pmDemand = normalizePmValue(subPackage.pm?.[companyIndex]);
@@ -1723,30 +1723,33 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             const employeeIndex = Number.parseInt(entry.mitarbeiterNummer, 10) - 1;
             const monthSpan = getMonthSpan(entry.start, entry.ende);
             if (!pmDemand || !employees?.[employeeIndex] || !monthSpan?.totalMonths) return;
-            const pmPerMonth = pmDemand / monthSpan.totalMonths;
-            Object.entries(monthSpan.monthsByYear).forEach(([year, months]) => {
-              const key = `${employeeIndex}:${year}`;
-              assignedByEmployeeAndYear[key] =
-                (assignedByEmployeeAndYear[key] || 0) + pmPerMonth * months;
+            const parsedStart = parseMonthYear(entry.start);
+            const parsedEnd = parseMonthYear(entry.ende);
+            assignments.push({
+              employeeIndex,
+              pm: pmDemand,
+              start: parsedStart.year * 12 + parsedStart.month,
+              end: parsedEnd.year * 12 + parsedEnd.month,
             });
           });
         });
-
-        return Object.entries(assignedByEmployeeAndYear).flatMap(([key, assignedPM]) => {
-          const [employeeIndexValue, yearValue] = key.split(":");
-          const employeeIndex = Number.parseInt(employeeIndexValue, 10);
-          const year = Number.parseInt(yearValue, 10);
-          const employee = employees[employeeIndex];
-          const allowedPM = getEmployeeAllowedPMInYear(
-            employee,
-            projectRange,
-            employee.projectEntryDate,
-            year
-          );
-          return assignedPM > allowedPM
-            ? [{ employeeIndex, year, assignedPM, allowedPM }]
-            : [];
+        const capacityEmployees = (employees || []).map((employee) => {
+          const entryDate = parseDisplayDateToDate(employee.projectEntryDate);
+          return {
+            projectPercent: getEffectiveProjectPercent(employee.projectPercent),
+            entryMonth: entryDate ? entryDate.getFullYear() * 12 + entryDate.getMonth() : null,
+          };
         });
+        return EmployeeCapacity.findViolations({
+          assignments,
+          employees: capacityEmployees,
+          projectStart: projectRange?.start,
+          projectEnd: projectRange?.end,
+        }).map(({ assignedPm, allowedPm, ...violation }) => ({
+          ...violation,
+          assignedPM: assignedPm,
+          allowedPM: allowedPm,
+        }));
       };
 
       const selectHighestSalaryCapableEmployee = (employees, currentEmployeeIndex, canTakeWorkPackage) =>
@@ -3706,12 +3709,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             }
 
             const durationMonths = Math.max(1, span.end - span.start + 1);
-            const pmPerMonth = pmDemand / durationMonths;
-            const monthsByYear = getMonthsByYearFromRange(span.start, span.end);
-            const pmByYear = Object.entries(monthsByYear).reduce((acc, [year, months]) => {
-              acc[year] = pmPerMonth * months;
-              return acc;
-            }, {});
+            const pmByYear = EmployeeCapacity.splitPmByYear(pmDemand, span.start, span.end);
 
             rowPlanningData[row.id] = {
               pmDemand,
@@ -4243,11 +4241,17 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               if (!usedByYear[employeeIndex]) return;
               const monthSpan = getMonthSpan(entry.start, entry.ende);
               if (!monthSpan || !monthSpan.totalMonths) return;
-              const pmPerMonth = pmDemand / monthSpan.totalMonths;
               totals[employeeIndex] += pmDemand;
-              Object.entries(monthSpan.monthsByYear).forEach(([year, months]) => {
+              const parsedStart = parseMonthYear(entry.start);
+              const parsedEnd = parseMonthYear(entry.ende);
+              const pmByYear = EmployeeCapacity.splitPmByYear(
+                pmDemand,
+                parsedStart.year * 12 + parsedStart.month,
+                parsedEnd.year * 12 + parsedEnd.month
+              );
+              Object.entries(pmByYear).forEach(([year, pm]) => {
                 usedByYear[employeeIndex][year] =
-                  (usedByYear[employeeIndex][year] || 0) + pmPerMonth * months;
+                  (usedByYear[employeeIndex][year] || 0) + pm;
               });
             });
             acc[companyIndex] = { byYear: usedByYear, totals };
