@@ -131,6 +131,15 @@ const runPythonXfa = async ({ action, fileBuffer, payload, confirmMismatch = fal
 const validProject = (body) => body && typeof body === "object" && body.state && typeof body.state === "object" && !Array.isArray(body.state);
 const apiError = (res, error) => res.status(500).json({ error: error.message || "Datenbankfehler." });
 
+app.get("/api/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok", database: "connected" });
+  } catch (error) {
+    res.status(503).json({ status: "error", database: "unavailable" });
+  }
+});
+
 app.get("/api/projects", async (_req, res) => {
   try { res.json(await projects.list()); } catch (error) { apiError(res, error); }
 });
@@ -214,7 +223,10 @@ app.post("/api/zim/fill", multipartParser, async (req, res) => {
 });
 
 
-projects.initialize().then(() => app.listen(port, () => console.log(`Server running on port ${port}`))).catch((error) => {
+projects.inspectAndInitialize().then(({ tableExisted, projectCount }) => {
+  console.log(`PostgreSQL connected; projects table ${tableExisted ? "already existed" : "created"}; existing projects: ${projectCount}`);
+  app.listen(port, () => console.log(`Server running on port ${port}`));
+}).catch((error) => {
   console.error("PostgreSQL konnte nicht initialisiert werden", error);
   process.exit(1);
 });

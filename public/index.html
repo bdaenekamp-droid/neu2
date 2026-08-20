@@ -2215,6 +2215,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
         const revisionRef = useRef({});
         const [localMigration, setLocalMigration] = useState({ projects: [], conflicts: [] });
+        const [projectListStatus, setProjectListStatus] = useState("loading");
 
         const requestJson = useCallback(async (url, options = {}) => {
           const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
@@ -2229,10 +2230,18 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         }, []);
 
         const refreshProjects = useCallback(async () => {
-          const records = await requestJson("/api/projects", { cache: "no-store" });
-          setProjectRecords(records);
-          records.forEach((record) => { revisionRef.current[record.projectId] = record.revision; });
-          return records;
+          setProjectListStatus("loading");
+          try {
+            const records = await requestJson("/api/projects", { cache: "no-store" });
+            if (!Array.isArray(records)) throw new Error("Ungültige Antwort der Projekt-API.");
+            setProjectRecords(records);
+            setProjectListStatus(records.length ? "success" : "empty");
+            records.forEach((record) => { revisionRef.current[record.projectId] = record.revision; });
+            return records;
+          } catch (error) {
+            setProjectListStatus("error");
+            throw error;
+          }
         }, [requestJson]);
 
         const persistProject = useCallback(async (projectName, projectState, options = {}) => {
@@ -2291,7 +2300,10 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               discoverLegacyProjects(records);
               setCurrentProjectName("");
               setStorageError("");
-            } catch (error) { setStorageError(`Gemeinsame Projektliste konnte nicht geladen werden: ${error.message}`); }
+            } catch (error) {
+              discoverLegacyProjects([]);
+              setStorageError(`Die gemeinsame Projektdatenbank konnte nicht erreicht werden. Ihre vorhandenen lokalen Projektdaten wurden nicht verändert. Request: GET /api/projects; Status: ${error.status || "Netzwerkfehler"}; Zeitpunkt: ${new Date().toLocaleString("de-DE")}.`);
+            }
             finally { hasInitializedRef.current = true; }
           })();
         }, [discoverLegacyProjects, refreshProjects]);
@@ -2317,6 +2329,14 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             setDatabaseManagementMessage({ type: "success", text: "Lokale Projekte wurden vollständig in die gemeinsame Datenbank übertragen." });
           } catch (error) { setDatabaseManagementMessage({ type: "error", text: `Migration fehlgeschlagen: ${error.message}` }); }
         }, [localMigration, persistProject, projectRecords, refreshProjects]);
+
+        const downloadLocalProjectBackup = useCallback(() => {
+          const projects = [...localMigration.projects, ...localMigration.conflicts];
+          if (!projects.length) return;
+          const backup = { format: "campusalliance-zim-local-rescue", formatVersion: 1, exportedAt: new Date().toISOString(), projects };
+          const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" }));
+          const link = document.createElement("a"); link.href = url; link.download = `ZIM_Lokale_Datenrettung_${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
+        }, [localMigration]);
 
         const projectStateSnapshot = collectProjectState();
         const projectSnapshotString = useMemo(() => JSON.stringify(projectStateSnapshot), [projectStateSnapshot]);
@@ -4926,7 +4946,13 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                 <>
               {storageError ? (
                 <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {storageError}
+                  <p>{storageError}</p>
+                  {projectListStatus === "error" && (localMigration.projects.length || localMigration.conflicts.length) ? (
+                    <div className="mt-3 border-t border-red-200 pt-3">
+                      <p className="font-semibold">Es wurden lokale Projektdaten gefunden. Die gemeinsame Projektdatenbank ist aktuell nicht erreichbar. Die lokalen Daten wurden nicht verändert.</p>
+                      <button type="button" onClick={downloadLocalProjectBackup} className="mt-2 rounded-md border border-red-300 bg-white px-3 py-2 font-semibold text-red-800">Lokale Projektdaten sichern</button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="mb-6 grid gap-4 lg:grid-cols-[2.2fr_1.2fr_1fr]">
@@ -6619,6 +6645,12 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                       <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
                         <p className="text-sm text-amber-900">Es wurden lokal gespeicherte Projekte gefunden, die noch nicht in der gemeinsamen Projektdatenbank vorhanden sind.</p>
                         <button type="button" onClick={migrateLocalProjects} className="mt-2 rounded-md bg-amber-800 px-3 py-2 text-sm font-semibold text-white">Lokale Projekte in gemeinsame Datenbank übertragen</button>
+                      </div>
+                    ) : null}
+                    {projectListStatus === "error" && (localMigration.projects.length || localMigration.conflicts.length) ? (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                        <p className="text-sm text-amber-900">Die lokalen Daten wurden nicht verändert und können vor einer Migration gesichert werden.</p>
+                        <button type="button" onClick={downloadLocalProjectBackup} className="mt-2 rounded-md border border-amber-500 bg-white px-3 py-2 text-sm font-semibold text-amber-900">Lokale Projektdaten sichern</button>
                       </div>
                     ) : null}
                     {localMigration.conflicts.length ? (

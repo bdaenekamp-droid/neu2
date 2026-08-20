@@ -5,7 +5,14 @@ class ProjectRepository {
     this.pool = pool;
   }
 
-  async initialize() {
+  async inspectAndInitialize() {
+    const inspection = await this.pool.query("SELECT to_regclass('public.projects') AS table_name");
+    const tableExisted = Boolean(inspection.rows[0]?.table_name);
+    let projectCount = 0;
+    if (tableExisted) {
+      const count = await this.pool.query("SELECT COUNT(*)::integer AS count FROM projects");
+      projectCount = Number(count.rows[0].count);
+    }
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
@@ -18,6 +25,7 @@ class ProjectRepository {
       )
     `);
     await this.pool.query("CREATE INDEX IF NOT EXISTS projects_updated_at_idx ON projects (updated_at DESC)");
+    return { tableExisted, projectCount };
   }
 
   summary(row) {
