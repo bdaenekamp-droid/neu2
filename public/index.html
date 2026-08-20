@@ -4229,13 +4229,12 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             result.push({ type: "heading", number: `${wpIndex + 1}`, title: wp.title });
             wp.sub.forEach((sub, subIndex) => {
               const bar = ganttBarsByRowId[sub.id];
-              if (!bar) return;
               result.push({
                 type: "task",
                 number: `${wpIndex + 1}.${subIndex + 1}`,
                 title: sub.title,
                 bar,
-                pm: normalizePmValue(sub.pm?.[bar.companyIndex]),
+                pm: bar ? normalizePmValue(sub.pm?.[bar.companyIndex]) : 0,
               });
             });
           });
@@ -4265,7 +4264,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             ],
             ...ganttExportRows.map((row) => {
               const isTask = row.type === "task";
-              const companyName = isTask
+              const companyName = isTask && row.bar
                 ? companyNames[row.bar.companyIndex] || `Unternehmen ${row.bar.companyIndex + 1}`
                 : "";
               const formatTimelineMonth = (index) => {
@@ -4277,11 +4276,11 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                 row.title || "",
                 isTask ? "Unterarbeitspaket" : "Hauptarbeitspaket",
                 companyName,
-                isTask ? formatTimelineMonth(row.bar.start) : "",
-                isTask ? formatTimelineMonth(row.bar.end) : "",
-                isTask ? formatNumberDe(row.pm, 2) : "",
+                isTask && row.bar ? formatTimelineMonth(row.bar.start) : "",
+                isTask && row.bar ? formatTimelineMonth(row.bar.end) : "",
+                isTask && row.bar ? formatNumberDe(row.pm, 2) : "",
                 ...timeline.map((_, monthIndex) => (
-                  isTask && monthIndex >= row.bar.start && monthIndex <= row.bar.end
+                  isTask && row.bar && monthIndex >= row.bar.start && monthIndex <= row.bar.end
                     ? companyName
                     : ""
                 )),
@@ -4304,12 +4303,28 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             return;
           }
           const margin = 32;
-          const apWidth = 78;
+          // The PDF deliberately uses one custom-sized page.  It must describe the
+          // complete chart, not the dimensions of the scrollable browser viewport.
+          const apWidth = 58;
           const monthWidth = 38;
           const rowHeight = 25;
           const titleHeight = 104;
-          const pageWidth = margin * 2 + apWidth + timeline.length * monthWidth;
-          const pageHeight = margin * 2 + titleHeight + Math.max(1, ganttExportRows.length) * rowHeight;
+          const timelineHeaderHeight = 42;
+          const pmLabelReserve = 62;
+          const pdfRows = [...ganttExportRows];
+          const pdfTimeline = [...timeline];
+          const renderedRowCount = pdfRows.length;
+          const renderedMonthCount = pdfTimeline.length;
+          const pageWidth = margin * 2 + apWidth + renderedMonthCount * monthWidth + pmLabelReserve;
+          const pageHeight = margin * 2 + titleHeight + timelineHeaderHeight + Math.max(1, renderedRowCount) * rowHeight;
+          const completeRows = renderedRowCount === ganttExportRows.length
+            && (!renderedRowCount || (pdfRows[0] === ganttExportRows[0] && pdfRows.at(-1) === ganttExportRows.at(-1)));
+          const completeTimeline = renderedMonthCount === timeline.length
+            && (!renderedMonthCount || (pdfTimeline[0] === timeline[0] && pdfTimeline.at(-1) === timeline.at(-1)));
+          if (!completeRows || !completeTimeline) {
+            setExportWarning("PDF-Export abgebrochen: Das Gantt-Chart konnte nicht vollständig aufgebaut werden.");
+            return;
+          }
           const pdf = new jsPDF({ orientation: "landscape", unit: "pt", format: [pageWidth, pageHeight], compress: true });
           const gridX = margin;
           const gridY = margin + titleHeight;
@@ -4330,7 +4345,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             legendX += Math.max(90, pdf.getTextWidth(entry.name) + 32);
           });
           pdf.setFillColor(232, 239, 231);
-          pdf.rect(gridX, gridY, pageWidth - margin * 2, 42, "F");
+          pdf.rect(gridX, gridY, pageWidth - margin * 2, timelineHeaderHeight, "F");
           pdf.setDrawColor(191, 208, 185);
           pdf.setFont("helvetica", "bold");
           pdf.setFontSize(9);
@@ -4347,7 +4362,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             pdf.setFontSize(7.5);
             pdf.text(month.label, x + monthWidth / 2, gridY + 35, { align: "center" });
           });
-          ganttExportRows.forEach((row, rowIndex) => {
+          pdfRows.forEach((row, rowIndex) => {
             const y = gridY + 42 + rowIndex * rowHeight;
             const isHeading = row.type === "heading";
             pdf.setFillColor(isHeading ? 242 : 255, isHeading ? 244 : 255, isHeading ? 245 : 255);
@@ -4355,9 +4370,11 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             pdf.setFont("helvetica", isHeading ? "bold" : "normal");
             pdf.setFontSize(8.5);
             pdf.setTextColor(31, 41, 55);
-            pdf.text(`${row.number}${isHeading && row.title ? `  ${row.title}` : ""}`, gridX + 7, y + 16, { maxWidth: apWidth - 12 });
+            // Export labels contain the AP number only; descriptions remain in the
+            // project model and are intentionally not copied into PDF/DOCX output.
+            pdf.text(row.number, gridX + 7, y + 16, { maxWidth: apWidth - 12 });
             timeline.forEach((_, index) => pdf.line(timelineX + index * monthWidth, y, timelineX + index * monthWidth, y + rowHeight));
-            if (row.type !== "task") return;
+            if (row.type !== "task" || !row.bar) return;
             const barX = timelineX + row.bar.start * monthWidth + 2;
             const barWidth = (row.bar.end - row.bar.start + 1) * monthWidth - 4;
             pdf.setFillColor(getCompanyColorHex(row.bar.companyIndex));
@@ -4383,9 +4400,20 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             setExportWarning("Word-Export ist aktuell nicht verfügbar.");
             return;
           }
-          const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ShadingType, AlignmentType, PageOrientation, PageBreak } = Docx;
-          const pageMonthCount = 18;
-          const rowsPerPage = 18;
+          const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ShadingType, AlignmentType, PageOrientation, HeightRule, VerticalAlign } = Docx;
+          // DOCX dimensions are twips.  Derive both axes from A4 landscape instead
+          // of using the former arbitrary limit of 18 rows per page.
+          const pageWidth = 16838;
+          const pageHeight = 11906;
+          const pageMargin = 480;
+          const apColumnWidth = 620;
+          const minimumMonthWidth = 760;
+          const pageMonthCount = Math.max(1, Math.floor((pageWidth - pageMargin * 2 - apColumnWidth) / minimumMonthWidth));
+          const titleAndLegendHeight = 1120;
+          const timelineHeaderHeight = 560;
+          const ganttRowHeight = 280;
+          const availableRowHeight = pageHeight - pageMargin * 2 - titleAndLegendHeight - timelineHeaderHeight;
+          const rowsPerPage = Math.max(1, Math.floor(availableRowHeight / ganttRowHeight));
           const monthRanges = [];
           for (let start = 0; start < timeline.length; start += pageMonthCount) monthRanges.push([start, Math.min(timeline.length, start + pageMonthCount)]);
           const rowChunks = [];
@@ -4396,11 +4424,13 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             columnSpan: options.span,
             shading: { type: ShadingType.CLEAR, fill: options.fill || "FFFFFF" },
             width: { size: options.width || 430, type: WidthType.DXA },
-            children: [new Paragraph({ alignment: options.center ? AlignmentType.CENTER : AlignmentType.LEFT, children: [new TextRun({ text: `${text || ""}`, bold: !!options.bold, color: options.color || "1F2937", size: options.size || 14 })] })],
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 20, bottom: 20, left: 40, right: 40 },
+            children: [new Paragraph({ spacing: { before: 0, after: 0 }, alignment: options.center ? AlignmentType.CENTER : AlignmentType.LEFT, children: [new TextRun({ text: `${text || ""}`, bold: !!options.bold, color: options.color || "1F2937", size: options.size || 14 })] })],
           });
           monthRanges.forEach(([rangeStart, rangeEnd]) => rowChunks.forEach((chunk, chunkIndex) => {
-            if (children.length) children.push(new Paragraph({ children: [new PageBreak()] }));
-            children.push(new Paragraph({ children: [new TextRun({ text: `Projektplanung – ${currentProjectName || "Projekt"}`, bold: true, size: 30, color: "1F2937" })] }));
+            const startsNewPage = children.length > 0;
+            children.push(new Paragraph({ pageBreakBefore: startsNewPage, children: [new TextRun({ text: `Projektplanung – ${currentProjectName || "Projekt"}`, bold: true, size: 30, color: "1F2937" })] }));
             children.push(new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: "Gantt-Chart", bold: true, size: 22, color: "5F7F50" })] }));
             children.push(new Paragraph({ spacing: { after: 120 }, children: ganttLegend.flatMap((entry) => [new TextRun({ text: "■ ", bold: true, color: entry.color.replace("#", ""), size: 20 }), new TextRun({ text: `${entry.name}    `, size: 18 })]) }));
             const years = [];
@@ -4411,22 +4441,22 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               i = end;
             }
             const tableRows = [
-              new TableRow({ children: [cell("AP", { fill: "E8EFE7", bold: true, center: true, width: 900 }), ...years] }),
-              new TableRow({ children: [cell("", { fill: "E8EFE7", width: 900 }), ...timeline.slice(rangeStart, rangeEnd).map((month) => cell(month.label, { fill: "E8EFE7", bold: true, center: true }))] }),
+              new TableRow({ height: { value: timelineHeaderHeight / 2, rule: HeightRule.EXACT }, children: [cell("AP", { fill: "E8EFE7", bold: true, center: true, width: apColumnWidth }), ...years] }),
+              new TableRow({ height: { value: timelineHeaderHeight / 2, rule: HeightRule.EXACT }, children: [cell("", { fill: "E8EFE7", width: apColumnWidth }), ...timeline.slice(rangeStart, rangeEnd).map((month) => cell(month.label, { fill: "E8EFE7", bold: true, center: true }))] }),
             ];
             chunk.forEach((row) => {
               const isHeading = row.type === "heading";
               const monthCells = timeline.slice(rangeStart, rangeEnd).map((_, localIndex) => {
                 const monthIndex = rangeStart + localIndex;
-                const active = row.type === "task" && monthIndex >= row.bar.start && monthIndex <= row.bar.end;
-                const lastVisibleBarMonth = row.type === "task" && monthIndex === Math.min(row.bar.end, rangeEnd - 1) && row.bar.end >= rangeStart && row.bar.start < rangeEnd;
+                const active = row.type === "task" && row.bar && monthIndex >= row.bar.start && monthIndex <= row.bar.end;
+                const lastVisibleBarMonth = row.type === "task" && row.bar && monthIndex === Math.min(row.bar.end, rangeEnd - 1) && row.bar.end >= rangeStart && row.bar.start < rangeEnd;
                 return cell(lastVisibleBarMonth ? `${formatNumberDe(row.pm, 2)} PM` : "", { fill: active ? getCompanyColorHex(row.bar.companyIndex).replace("#", "") : (isHeading ? "F2F4F5" : "FFFFFF"), bold: active, color: active ? "FFFFFF" : "1F2937", center: true, size: 11 });
               });
-              tableRows.push(new TableRow({ children: [cell(`${row.number}${isHeading && row.title ? `  ${row.title}` : ""}`, { fill: isHeading ? "F2F4F5" : "FFFFFF", bold: isHeading, width: 900, size: 13 }), ...monthCells] }));
+              tableRows.push(new TableRow({ cantSplit: true, height: { value: ganttRowHeight, rule: HeightRule.EXACT }, children: [cell(row.number, { fill: isHeading ? "F2F4F5" : "FFFFFF", bold: isHeading, width: apColumnWidth, size: 13 }), ...monthCells] }));
             });
             children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: tableRows }));
           }));
-          const document = new Document({ sections: [{ properties: { page: { size: { width: 16838, height: 11906, orientation: PageOrientation.LANDSCAPE }, margin: { top: 600, right: 600, bottom: 600, left: 600 } } }, children }] });
+          const document = new Document({ sections: [{ properties: { page: { size: { width: pageWidth, height: pageHeight, orientation: PageOrientation.LANDSCAPE }, margin: { top: pageMargin, right: pageMargin, bottom: pageMargin, left: pageMargin } } }, children }] });
           downloadBlob(await Packer.toBlob(document), ganttExportName("docx"));
         };
 
