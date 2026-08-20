@@ -6,7 +6,7 @@ cmds = [
   "python -m venv .venv",
   ".venv/bin/python -m pip install --upgrade pip setuptools wheel",
   ".venv/bin/python -m pip install -r requirements.txt",
-  "npm ci"
+  "npm install"
 ]
 
 [phases.build]

@@ -145,7 +145,7 @@
     <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
     <script src="/employee-capacity.js"></script>
-    <script src="/project-csv.js"></script>
+    <script src="/project-json.js"></script>
     <script>
       // Deployment metadata must never come from the browser cache. A unique
       // request URL also protects against intermediary caches that ignore the
@@ -2133,7 +2133,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         const [workplanImportText, setWorkplanImportText] = useState("");
         const [pendingImportedWorkplan, setPendingImportedWorkplan] = useState(null);
         const projectDbImportInputRef = useRef(null);
-        const projectCsvImportInputRef = useRef(null);
+        const projectJsonImportInputRef = useRef(null);
         const [fullscreenCompanyIndex, setFullscreenCompanyIndex] = useState(null);
         const [exportWarning, setExportWarning] = useState("");
         const [isUpdateInfoOpen, setIsUpdateInfoOpen] = useState(false);
@@ -2213,167 +2213,116 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           ]
         );
 
-        const persistProject = useCallback((projectName, projectState, options = {}) => {
-          const key = getProjectStorageKey(projectName);
-          const tempKey = `${key}:tmp`;
-          const existingRaw = localStorage.getItem(key);
-          const existingPayload = existingRaw
-            ? parseStoredProjectPayload(existingRaw, projectName)
-            : null;
-          const createdAt = options.createdAt || existingPayload?.createdAt || new Date().toISOString();
-          const lastModified = options.lastModified || new Date().toISOString();
-          const sanitizedState = parseStoredProject(projectState);
-          const payload = {
-            projectId: projectName,
-            name: projectName,
-            createdAt,
-            lastModified,
-            state: sanitizedState,
-          };
+        const revisionRef = useRef({});
+        const [localMigration, setLocalMigration] = useState({ projects: [], conflicts: [] });
 
-          localStorage.setItem(tempKey, JSON.stringify(payload));
-          localStorage.setItem(key, localStorage.getItem(tempKey));
-          localStorage.removeItem(tempKey);
-          localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
-          setProjectRecords((prev) => {
-            const withoutCurrent = prev.filter((entry) => entry.name !== projectName);
-            const next = [...withoutCurrent, { name: projectName, createdAt, lastModified }]
-              .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-            localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(next.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified }))));
-            return next;
-          });
-
-          fetch("/api/project/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            keepalive: true,
-          }).catch(() => {});
+        const requestJson = useCallback(async (url, options = {}) => {
+          const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+          const body = response.status === 204 ? null : await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const error = new Error(body?.error || `Serverfehler (${response.status})`);
+            error.status = response.status;
+            error.body = body;
+            throw error;
+          }
+          return body;
         }, []);
 
-        const saveNow = useCallback((overrideState = null, knownSnapshotString = "") => {
+        const refreshProjects = useCallback(async () => {
+          const records = await requestJson("/api/projects", { cache: "no-store" });
+          setProjectRecords(records);
+          records.forEach((record) => { revisionRef.current[record.projectId] = record.revision; });
+          return records;
+        }, [requestJson]);
+
+        const persistProject = useCallback(async (projectName, projectState, options = {}) => {
+          const sanitizedState = parseStoredProject(projectState);
+          const exists = Number.isInteger(revisionRef.current[projectName]);
+          const payload = { projectId: projectName, name: projectName, schemaVersion: PROJECT_SCHEMA_VERSION, state: sanitizedState };
+          const saved = await requestJson(`/api/projects${exists ? `/${encodeURIComponent(projectName)}` : ""}`, {
+            method: exists ? "PUT" : "POST",
+            body: JSON.stringify(exists ? { ...payload, revision: revisionRef.current[projectName] } : { ...payload, createdAt: options.createdAt, lastModified: options.lastModified }),
+            keepalive: true,
+          });
+          revisionRef.current[projectName] = saved.revision;
+          setProjectRecords((prev) => [...prev.filter((entry) => entry.projectId !== projectName), saved]
+            .sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified)));
+          return saved;
+        }, [requestJson]);
+
+        const saveNow = useCallback(async (overrideState = null, knownSnapshotString = "") => {
           if (!hasInitializedRef.current || !activeProjectId) return;
+          const snapshot = overrideState || collectProjectState();
+          const serializedSnapshot = knownSnapshotString || JSON.stringify(snapshot);
           try {
-            const snapshot = overrideState || collectProjectState();
-            const serializedSnapshot = knownSnapshotString || JSON.stringify(snapshot);
-            persistProject(activeProjectId, snapshot);
+            await persistProject(activeProjectId, snapshot);
             lastSavedSnapshotRef.current = serializedSnapshot;
+            setStorageError("");
           } catch (error) {
-            console.warn("Projekt konnte nicht gespeichert werden", error);
-            setStorageError("Projekt konnte nicht gespeichert werden.");
+            if (error.status === 409) setStorageError("Speicherkonflikt: Das Projekt wurde zwischenzeitlich geändert. Bitte Projekt neu laden; Ihre lokale Ansicht wurde nicht überschrieben.");
+            else setStorageError(`Projekt konnte nicht zentral gespeichert werden: ${error.message}`);
           }
         }, [activeProjectId, collectProjectState, persistProject]);
 
         const loadCryoVisionSeedState = useCallback(async () => {
+          const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
+          return response.ok ? parseStoredProject(await response.json()) : buildSeedCryoVisionState();
+        }, []);
+
+        const discoverLegacyProjects = useCallback((serverRecords) => {
           try {
-            const response = await fetch(CRYOVISION_SEED_PATH, { cache: "no-store" });
-            if (response.ok) {
-              const seedJson = await response.json();
-              const parsedSeed = parseStoredProject(seedJson);
-              if (isCryoVisionStateValid(parsedSeed)) {
-                return parsedSeed;
-              }
-            }
-          } catch (error) {
-            // Fallback auf eingebauten Seed
-          }
-          return buildSeedCryoVisionState();
+            const index = JSON.parse(localStorage.getItem(PROJECTS_INDEX_KEY) || "[]");
+            const serverIds = new Set(serverRecords.map((record) => record.projectId));
+            const localProjects = (Array.isArray(index) ? index : []).map((entry) => {
+              const name = typeof entry === "string" ? entry : entry?.name;
+              const raw = name && localStorage.getItem(getProjectStorageKey(name));
+              return raw ? parseStoredProjectPayload(raw, name) : null;
+            }).filter((project) => project?.state);
+            const projects = localProjects.filter((project) => !serverIds.has(project.projectId || project.name));
+            const conflicts = localProjects.filter((project) => serverIds.has(project.projectId || project.name));
+            setLocalMigration({ projects, conflicts });
+          } catch (error) { console.warn("Lokale Altdaten konnten nicht geprüft werden", error); }
         }, []);
 
         useEffect(() => {
           (async () => {
             try {
-              const rawIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
-              const parsedIndex = rawIndex ? JSON.parse(rawIndex) : [];
-              const nowIso = new Date().toISOString();
-              const indexRecords = Array.isArray(parsedIndex)
-                ? parsedIndex
-                    .map((entry) => {
-                      if (typeof entry === "string") {
-                        return { name: entry.trim(), createdAt: nowIso, lastModified: nowIso };
-                      }
-                      if (entry && typeof entry === "object" && entry.name) {
-                        return {
-                          name: `${entry.name}`.trim(),
-                          createdAt: entry.createdAt || nowIso,
-                          lastModified: entry.lastModified || entry.createdAt || nowIso,
-                        };
-                      }
-                      return null;
-                    })
-                    .filter((entry) => entry && entry.name)
-                : [];
-
-              let records = indexRecords.filter((record) => {
-                const key = getProjectStorageKey(record.name);
-                const raw = localStorage.getItem(key);
-                if (!raw) {
-                  return false;
-                }
-                const payload = parseStoredProjectPayload(raw, record.name);
-                if (!payload.state) {
-                  return false;
-                }
-                localStorage.setItem(
-                  key,
-                  JSON.stringify({
-                    projectId: record.name,
-                    name: record.name,
-                    createdAt: record.createdAt || payload.createdAt,
-                    lastModified: record.lastModified || payload.lastModified,
-                    state: payload.state,
-                  })
-                );
-                return true;
-              });
-
-              const cryoRecord = records.find((entry) => entry.name === SEED_PROJECT_NAME);
-              let cryoNeedsRestore = true;
-              if (cryoRecord) {
-                const cryoRaw = localStorage.getItem(getProjectStorageKey(SEED_PROJECT_NAME));
-                if (cryoRaw) {
-                  const parsedCryo = parseStoredProjectPayload(cryoRaw, SEED_PROJECT_NAME);
-                  cryoNeedsRestore = !parsedCryo.state || !isCryoVisionStateValid(parsedCryo.state);
-                }
-              }
-              if (cryoNeedsRestore) {
-                const timestamp = new Date().toISOString();
-                const restoredSeed = await loadCryoVisionSeedState();
-                persistProject(SEED_PROJECT_NAME, restoredSeed, {
-                  createdAt: cryoRecord?.createdAt || timestamp,
-                  lastModified: timestamp,
-                });
-              }
-
-              const refreshedIndex = localStorage.getItem(PROJECTS_INDEX_KEY);
-              records = (refreshedIndex ? JSON.parse(refreshedIndex) : [])
-                .filter((entry) => entry && entry.name)
-                .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-
-              localStorage.setItem(
-                PROJECTS_INDEX_KEY,
-                JSON.stringify(records.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
-              );
-              setProjectRecords(records);
+              const records = await refreshProjects();
+              discoverLegacyProjects(records);
               setCurrentProjectName("");
-              localStorage.removeItem(CURRENT_PROJECT_KEY);
               setStorageError("");
-              hasInitializedRef.current = true;
-            } catch (error) {
-              console.warn("Projektliste konnte nicht geladen werden", error);
-              setStorageError("Projektliste konnte nicht geladen werden.");
-              hasInitializedRef.current = true;
-            }
+            } catch (error) { setStorageError(`Gemeinsame Projektliste konnte nicht geladen werden: ${error.message}`); }
+            finally { hasInitializedRef.current = true; }
           })();
-        }, [loadCryoVisionSeedState, persistProject]);
+        }, [discoverLegacyProjects, refreshProjects]);
+
+        const migrateLocalProjects = useCallback(async (conflictMode = "server") => {
+          try {
+            for (const project of localMigration.projects) await persistProject(project.projectId || project.name, project.state, project);
+            for (const project of localMigration.conflicts) {
+              const id = project.projectId || project.name;
+              if (conflictMode === "local") {
+                const server = projectRecords.find((record) => record.projectId === id);
+                revisionRef.current[id] = server?.revision;
+                await persistProject(id, project.state, project);
+              } else if (conflictMode === "new") {
+                const used = new Set(projectRecords.map((record) => record.name.toLowerCase()));
+                const base = `${project.name || "Projekt"} (Import)`; let newName = base; let suffix = 2;
+                while (used.has(newName.toLowerCase())) newName = `${base} ${suffix++}`;
+                await persistProject(newName, project.state, project);
+              }
+            }
+            await refreshProjects();
+            setLocalMigration({ projects: [], conflicts: [] });
+            setDatabaseManagementMessage({ type: "success", text: "Lokale Projekte wurden vollständig in die gemeinsame Datenbank übertragen." });
+          } catch (error) { setDatabaseManagementMessage({ type: "error", text: `Migration fehlgeschlagen: ${error.message}` }); }
+        }, [localMigration, persistProject, projectRecords, refreshProjects]);
 
         const projectStateSnapshot = collectProjectState();
         const projectSnapshotString = useMemo(() => JSON.stringify(projectStateSnapshot), [projectStateSnapshot]);
 
         const requestProjectCreationBeforeChange = useCallback((onProjectCreated = null) => {
-          if (activeProjectId) {
-            return true;
-          }
+          if (activeProjectId) return true;
           pendingActionAfterProjectCreationRef.current = typeof onProjectCreated === "function" ? onProjectCreated : null;
           setProjectCreationPromptOpen(true);
           return false;
@@ -2381,356 +2330,107 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
         useEffect(() => {
           if (!hasInitializedRef.current) return;
-          if (activeProjectId) {
-            setProjectCreationPromptOpen(false);
-            setHasDeclinedProjectCreationForCurrentSession(false);
-            noProjectBaselineSnapshotRef.current = "";
-            return;
-          }
-          if (!noProjectBaselineSnapshotRef.current) {
-            noProjectBaselineSnapshotRef.current = projectSnapshotString;
-          }
+          if (activeProjectId) { setProjectCreationPromptOpen(false); setHasDeclinedProjectCreationForCurrentSession(false); noProjectBaselineSnapshotRef.current = ""; return; }
+          if (!noProjectBaselineSnapshotRef.current) noProjectBaselineSnapshotRef.current = projectSnapshotString;
         }, [activeProjectId, projectSnapshotString]);
 
         useEffect(() => {
-          if (!hasInitializedRef.current || activeProjectId) return;
-          if (projectCreationPromptOpen || hasDeclinedProjectCreationForCurrentSession) return;
-          if (!noProjectBaselineSnapshotRef.current) return;
-          if (projectSnapshotString === noProjectBaselineSnapshotRef.current) return;
+          if (!hasInitializedRef.current || activeProjectId || projectCreationPromptOpen || hasDeclinedProjectCreationForCurrentSession || !noProjectBaselineSnapshotRef.current || projectSnapshotString === noProjectBaselineSnapshotRef.current) return;
           requestProjectCreationBeforeChange();
-        }, [
-          activeProjectId,
-          hasDeclinedProjectCreationForCurrentSession,
-          projectCreationPromptOpen,
-          projectSnapshotString,
-          requestProjectCreationBeforeChange,
-        ]);
+        }, [activeProjectId, hasDeclinedProjectCreationForCurrentSession, projectCreationPromptOpen, projectSnapshotString, requestProjectCreationBeforeChange]);
 
         useEffect(() => {
-          if (!hasInitializedRef.current || !activeProjectId) return;
-          if (projectSnapshotString === lastSavedSnapshotRef.current) return;
-          if (debounceSaveRef.current) {
-            clearTimeout(debounceSaveRef.current);
-          }
-          debounceSaveRef.current = setTimeout(() => {
-            saveNow(projectStateSnapshot, projectSnapshotString);
-          }, AUTO_SAVE_DEBOUNCE_MS);
+          if (!hasInitializedRef.current || !activeProjectId || projectSnapshotString === lastSavedSnapshotRef.current) return;
+          clearTimeout(debounceSaveRef.current);
+          debounceSaveRef.current = setTimeout(() => saveNow(projectStateSnapshot, projectSnapshotString), AUTO_SAVE_DEBOUNCE_MS);
+          return () => clearTimeout(debounceSaveRef.current);
+        }, [activeProjectId, projectSnapshotString, saveNow]);
 
-          return () => {
-            if (debounceSaveRef.current) {
-              clearTimeout(debounceSaveRef.current);
-            }
-          };
-        }, [activeProjectId, projectSnapshotString, projectStateSnapshot, saveNow]);
-
-        useEffect(() => {
-          const handleBeforeUnload = () => {
-            if (!hasInitializedRef.current || !activeProjectId) return;
-            const snapshot = collectProjectState();
-            const serializedSnapshot = JSON.stringify(snapshot);
-            if (serializedSnapshot !== lastSavedSnapshotRef.current) {
-              saveNow(snapshot, serializedSnapshot);
-            }
-          };
-          window.addEventListener("beforeunload", handleBeforeUnload);
-          return () => {
-            window.removeEventListener("beforeunload", handleBeforeUnload);
-          };
-        }, [activeProjectId, collectProjectState, saveNow]);
-
-        const createNewProject = () => {
+        const createNewProject = async () => {
           const trimmedName = newProjectName.trim();
-          if (!trimmedName) {
-            setProjectError("Projektname ist erforderlich.");
-            return;
-          }
-          if (projectRecords.some((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase())) {
-            setProjectError("Projektname existiert bereits. Bitte anderen Namen wählen.");
-            return;
-          }
+          if (!trimmedName) return setProjectError("Projektname ist erforderlich.");
+          if (projectRecords.some((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase())) return setProjectError("Projektname existiert bereits. Bitte anderen Namen wählen.");
           const initialState = buildDefaultProjectState();
           try {
-            persistProject(trimmedName, initialState);
-            applyProjectState(initialState);
-            setCurrentProjectName(trimmedName);
-            lastSavedSnapshotRef.current = JSON.stringify(parseStoredProject(initialState));
-            setProjectError("");
-            setNewProjectModalOpen(false);
-            setNewProjectName("");
-            const pendingAction = pendingActionAfterProjectCreationRef.current;
-            pendingActionAfterProjectCreationRef.current = null;
-            if (typeof pendingAction === "function") {
-              pendingAction();
-            }
-          } catch (error) {
-            console.warn("Neues Projekt konnte nicht erstellt werden", error);
-            setProjectError("Projekt konnte nicht erstellt werden.");
-          }
+            await persistProject(trimmedName, initialState);
+            applyProjectState(initialState); setCurrentProjectName(trimmedName); lastSavedSnapshotRef.current = JSON.stringify(parseStoredProject(initialState));
+            setProjectError(""); setNewProjectModalOpen(false); setNewProjectName("");
+            const pendingAction = pendingActionAfterProjectCreationRef.current; pendingActionAfterProjectCreationRef.current = null; if (pendingAction) pendingAction();
+          } catch (error) { setProjectError(`Projekt konnte nicht erstellt werden: ${error.message}`); }
         };
 
-        const handleProjectLoad = (projectName) => {
-          if (!projectName) return;
+        const handleProjectLoad = async (projectId) => {
+          if (!projectId) return;
           try {
-            const raw = localStorage.getItem(getProjectStorageKey(projectName));
-            if (!raw) throw new Error("Projekt fehlt");
-            const parsedPayload = parseStoredProjectPayload(raw, projectName);
-            if (!parsedPayload.state) {
-              throw new Error("Projekt konnte nicht geparst werden");
-            }
-            let nextState = parsedPayload.state;
-            if (projectName === SEED_PROJECT_NAME && !isCryoVisionStateValid(nextState)) {
-              throw new Error("CryoVision ist unvollständig");
-            }
-            setCurrentProjectName(projectName);
-            localStorage.setItem(CURRENT_PROJECT_KEY, projectName);
-            applyProjectState(nextState);
-            lastSavedSnapshotRef.current = JSON.stringify(nextState);
-            setLoadProjectModalOpen(false);
-            setStorageError("");
-          } catch (error) {
-            console.warn("Projekt konnte nicht geladen werden", error);
-            if (projectName === SEED_PROJECT_NAME) {
-              (async () => {
-                const recoveredState = await loadCryoVisionSeedState();
-                persistProject(SEED_PROJECT_NAME, recoveredState);
-                setCurrentProjectName(SEED_PROJECT_NAME);
-                applyProjectState(recoveredState);
-                lastSavedSnapshotRef.current = JSON.stringify(recoveredState);
-                setLoadProjectModalOpen(false);
-                setStorageError("");
-              })();
-              return;
-            }
-            setStorageError("Projekt konnte nicht geladen werden.");
-          }
+            const project = await requestJson(`/api/projects/${encodeURIComponent(projectId)}`, { cache: "no-store" });
+            revisionRef.current[projectId] = project.revision;
+            setCurrentProjectName(projectId); applyProjectState(project.state); lastSavedSnapshotRef.current = JSON.stringify(parseStoredProject(project.state));
+            setLoadProjectModalOpen(false); setStorageError("");
+          } catch (error) { setStorageError(`Projekt konnte nicht frisch vom Server geladen werden: ${error.message}`); }
         };
 
         const buildUniqueImportedProjectName = useCallback((baseName, usedNamesLowerCase) => {
-          const fallbackName = `${baseName || "Projekt"}`.trim() || "Projekt";
-          const firstCandidate = `${fallbackName}_importiert`;
-          if (!usedNamesLowerCase.has(firstCandidate.toLowerCase())) {
-            usedNamesLowerCase.add(firstCandidate.toLowerCase());
-            return firstCandidate;
-          }
-          let suffix = 2;
-          while (usedNamesLowerCase.has(`${firstCandidate}_${suffix}`.toLowerCase())) {
-            suffix += 1;
-          }
-          const uniqueName = `${firstCandidate}_${suffix}`;
-          usedNamesLowerCase.add(uniqueName.toLowerCase());
-          return uniqueName;
+          const base = `${baseName || "Projekt"} (Import)`; let candidate = base; let suffix = 2;
+          while (usedNamesLowerCase.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+          return candidate;
         }, []);
 
-        const exportProjectDatabase = useCallback(() => {
-          const nowIso = new Date().toISOString();
-          const projects = [...projectRecords]
-            .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
-            .map((record) => {
-              const raw = localStorage.getItem(getProjectStorageKey(record.name));
-              const parsedPayload = raw ? parseStoredProjectPayload(raw, record.name) : null;
-              const state = parsedPayload?.state || buildDefaultProjectState();
-              return {
-                projectId: record.name,
-                projectName: record.name,
-                createdAt: record.createdAt || parsedPayload?.createdAt || nowIso,
-                lastModified: record.lastModified || parsedPayload?.lastModified || nowIso,
-                state,
-              };
-            });
-          return {
-            exportVersion: PROJECT_DB_EXPORT_VERSION,
-            exportedAt: nowIso,
-            projects,
-          };
-        }, [projectRecords]);
+        const validateProjectBackup = useCallback((json) => json?.format === "campusalliance-zim-database-backup" && json?.formatVersion === PROJECT_DB_EXPORT_VERSION && Array.isArray(json.projects), []);
 
-        const validateProjectBackup = useCallback((json) => {
-          if (!json || typeof json !== "object") return false;
-          if (json.exportVersion !== PROJECT_DB_EXPORT_VERSION) return false;
-          if (!Array.isArray(json.projects)) return false;
-          return json.projects.every((project) => project && typeof project === "object" && project.state && typeof project.state === "object");
-        }, []);
-
-        const importProjectDatabase = useCallback((backupJson, mode) => {
-          if (!validateProjectBackup(backupJson)) {
-            throw new Error("invalid_backup");
-          }
-          const nowIso = new Date().toISOString();
-          const normalizedProjects = backupJson.projects.map((project, index) => {
-            const fallbackName = `${project.projectName || project.projectId || `Projekt_${index + 1}`}`.trim() || `Projekt_${index + 1}`;
-            const state = sanitizeProjectState(migrateProjectState(project.state));
-            return {
-              projectId: `${project.projectId || fallbackName}`.trim() || fallbackName,
-              projectName: fallbackName,
-              createdAt: project.createdAt || nowIso,
-              lastModified: project.lastModified || nowIso,
-              state,
-            };
-          });
-
-          if (mode === "replace") {
-            projectRecords.forEach((record) => {
-              localStorage.removeItem(getProjectStorageKey(record.name));
-            });
-          }
-
-          const existingNames = mode === "replace" ? [] : projectRecords.map((record) => record.name);
-          const usedNamesLowerCase = new Set(existingNames.map((name) => name.toLowerCase()));
-          const usedProjectIds = new Set(mode === "replace" ? [] : projectRecords.map((record) => record.name));
-
-          normalizedProjects.forEach((project) => {
-            let targetProjectId = project.projectId;
-            let targetProjectName = project.projectName;
-            const idConflict = usedProjectIds.has(targetProjectId);
-            const nameConflict = usedNamesLowerCase.has(targetProjectName.toLowerCase());
-            if (mode === "merge" && (idConflict || nameConflict)) {
-              targetProjectName = buildUniqueImportedProjectName(targetProjectName, usedNamesLowerCase);
-              targetProjectId = targetProjectName;
-            } else {
-              usedNamesLowerCase.add(targetProjectName.toLowerCase());
-            }
-            usedProjectIds.add(targetProjectId);
-            persistProject(targetProjectName, project.state, {
-              createdAt: project.createdAt,
-              lastModified: project.lastModified,
-            });
-          });
-
-          const refreshedRaw = localStorage.getItem(PROJECTS_INDEX_KEY);
-          const refreshedIndex = refreshedRaw ? JSON.parse(refreshedRaw) : [];
-          const cleanedIndex = Array.isArray(refreshedIndex)
-            ? refreshedIndex
-                .filter((entry) => entry && entry.name)
-                .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
-            : [];
-          localStorage.setItem(
-            PROJECTS_INDEX_KEY,
-            JSON.stringify(cleanedIndex.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
-          );
-          setProjectRecords(cleanedIndex);
-          setStorageError("");
-        }, [buildUniqueImportedProjectName, persistProject, projectRecords, validateProjectBackup]);
-
-        const downloadProjectDatabaseBackup = useCallback(() => {
+        const downloadProjectDatabaseBackup = useCallback(async () => {
           try {
-            const backupJson = exportProjectDatabase();
-            const backupBlob = new Blob([JSON.stringify(backupJson, null, 2)], { type: "application/json" });
-            const now = new Date();
-            const fileTimestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
-            const downloadName = `CampusAlliance_ProjektDB_Backup_${fileTimestamp}.json`;
-            const downloadUrl = URL.createObjectURL(backupBlob);
-            const link = document.createElement("a");
-            link.href = downloadUrl;
-            link.download = downloadName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(downloadUrl);
-            setDatabaseManagementMessage({ type: "success", text: "Projektdatenbank-Backup wurde heruntergeladen." });
-          } catch (error) {
-            setDatabaseManagementMessage({ type: "error", text: "Projektdatenbank-Backup konnte nicht erstellt werden." });
-          }
-        }, [exportProjectDatabase]);
+            const backup = await requestJson("/api/projects-backup", { cache: "no-store" });
+            const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" }));
+            const link = document.createElement("a"); link.href = url; link.download = `CampusAlliance_ProjektDB_Backup_${new Date().toISOString().replace(/[:.]/g, "-")}.json`; link.click(); URL.revokeObjectURL(url);
+            setDatabaseManagementMessage({ type: "success", text: "Zentrales Projektdatenbank-Backup wurde heruntergeladen." });
+          } catch (error) { setDatabaseManagementMessage({ type: "error", text: error.message }); }
+        }, [requestJson]);
 
         const handleProjectDatabaseImportFile = useCallback(async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (!file) return;
-          try {
-            const rawText = await file.text();
-            const parsedJson = JSON.parse(rawText);
-            if (!validateProjectBackup(parsedJson)) {
-              setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
-              return;
-            }
-            setImportModeDialogState({ open: true, backup: parsedJson });
-            setDatabaseManagementMessage({ type: "", text: "" });
-          } catch (error) {
-            setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
-          }
+          const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+          try { const json = JSON.parse(await file.text()); if (!validateProjectBackup(json)) throw new Error("Ungültiges Backupformat."); setImportModeDialogState({ open: true, backup: json }); }
+          catch (error) { setDatabaseManagementMessage({ type: "error", text: error.message }); }
         }, [validateProjectBackup]);
 
-        const confirmProjectDatabaseImport = useCallback((mode) => {
-          const backup = importModeDialogState.backup;
-          if (!backup) return;
+        const confirmProjectDatabaseImport = useCallback(async () => {
           try {
-            importProjectDatabase(backup, mode);
-            setImportModeDialogState({ open: false, backup: null });
-            setDatabaseManagementMessage({
-              type: "success",
-              text: mode === "replace"
-                ? "Backup erfolgreich importiert. Bestehende Projekte wurden ersetzt."
-                : "Backup erfolgreich importiert und mit bestehenden Projekten zusammengeführt.",
-            });
-          } catch (error) {
-            setDatabaseManagementMessage({ type: "error", text: "Die ausgewählte Datei ist kein gültiges Projektdatenbank-Backup." });
-          }
-        }, [importModeDialogState.backup, importProjectDatabase]);
+            await requestJson("/api/projects-backup", { method: "POST", body: JSON.stringify(importModeDialogState.backup) });
+            await refreshProjects(); setImportModeDialogState({ open: false, backup: null }); setDatabaseManagementMessage({ type: "success", text: "Backup wurde zentral importiert." });
+          } catch (error) { setDatabaseManagementMessage({ type: "error", text: error.message }); }
+        }, [importModeDialogState.backup, refreshProjects, requestJson]);
 
-        const downloadCurrentProjectCsv = useCallback(() => {
+        const downloadCurrentProjectJson = useCallback(async () => {
           if (!activeProjectId) return;
           try {
-            const raw = localStorage.getItem(getProjectStorageKey(activeProjectId));
-            const stored = raw ? parseStoredProjectPayload(raw, activeProjectId) : null;
-            const record = projectRecords.find((entry) => entry.name === activeProjectId);
-            const csv = ProjectCsv.serializeProjectToCsv({
-              projectId: activeProjectId,
-              name: activeProjectId,
-              createdAt: stored?.createdAt || record?.createdAt || new Date().toISOString(),
-              lastModified: stored?.lastModified || record?.lastModified || new Date().toISOString(),
-              state: collectProjectState(),
-            });
-            const date = new Date().toISOString().slice(0, 10);
-            const safeName = activeProjectId.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/[. ]+$/g, "") || "Projekt";
-            const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `ZIM-Projekt_${safeName}_${date}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-            setProjectCsvMessage({ type: "success", text: "Projekt-CSV wurde vollständig exportiert." });
-          } catch (error) {
-            setProjectCsvMessage({ type: "error", text: error.message || "Projekt-CSV konnte nicht erstellt werden." });
-          }
-        }, [activeProjectId, collectProjectState, projectRecords]);
+            const current = await requestJson(`/api/projects/${encodeURIComponent(activeProjectId)}`, { cache: "no-store" });
+            const exported = ProjectJson.serializeProjectToJson(current);
+            const safeName = current.name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/[. ]+$/g, "") || "Projekt";
+            const url = URL.createObjectURL(new Blob([JSON.stringify(exported, null, 2)], { type: "application/json;charset=utf-8" }));
+            const link = document.createElement("a"); link.href = url; link.download = `ZIM-Projekt_${safeName}_${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
+            setProjectCsvMessage({ type: "success", text: "Projekt-JSON wurde vollständig und lesbar exportiert." });
+          } catch (error) { setProjectCsvMessage({ type: "error", text: error.message }); }
+        }, [activeProjectId, requestJson]);
 
-        const finishProjectCsvImport = useCallback((payload, mode) => {
-          if (!payload) return;
-          let targetName = payload.name;
-          if (mode === "new") {
-            const used = new Set(projectRecords.map((entry) => entry.name.toLowerCase()));
-            const base = `${payload.name} (Import)`;
-            targetName = base;
-            let number = 2;
-            while (used.has(targetName.toLowerCase())) targetName = `${base} ${number++}`;
-          }
-          const sanitizedState = parseStoredProject(payload.state);
-          persistProject(targetName, sanitizedState, {
-            createdAt: payload.createdAt || new Date().toISOString(),
-            lastModified: payload.lastModified || new Date().toISOString(),
-          });
-          setCurrentProjectName(targetName);
-          applyProjectState(sanitizedState);
-          lastSavedSnapshotRef.current = JSON.stringify(sanitizedState);
-          setProjectCsvConflict({ open: false, payload: null });
-          setProjectCsvMessage({ type: "success", text: `Projekt „${targetName}“ wurde vollständig importiert.` });
-        }, [applyProjectState, persistProject, projectRecords]);
-
-        const handleProjectCsvImportFile = useCallback(async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (!file) return;
+        const finishProjectJsonImport = useCallback(async (payload, mode) => {
           try {
-            const payload = ProjectCsv.deserializeProjectFromCsv(await file.text());
-            const conflict = projectRecords.some((entry) => entry.name.toLowerCase() === payload.name.toLowerCase() || entry.name === payload.projectId);
-            if (conflict) setProjectCsvConflict({ open: true, payload });
-            else finishProjectCsvImport(payload, "replace");
-          } catch (error) {
-            setProjectCsvMessage({ type: "error", text: `Die CSV konnte nicht importiert werden. ${error.message || "Unbekannter Fehler."}` });
-          }
-        }, [finishProjectCsvImport, projectRecords]);
+            let targetName = payload.name;
+            if (mode === "new") targetName = buildUniqueImportedProjectName(payload.name, new Set(projectRecords.map((entry) => entry.name.toLowerCase())));
+            if (mode === "replace") revisionRef.current[targetName] = projectRecords.find((entry) => entry.projectId === targetName)?.revision;
+            await persistProject(targetName, payload.state, payload);
+            await handleProjectLoad(targetName); await refreshProjects();
+            setProjectCsvConflict({ open: false, payload: null }); setProjectCsvMessage({ type: "success", text: `Projekt „${targetName}“ wurde zentral importiert.` });
+          } catch (error) { setProjectCsvMessage({ type: "error", text: error.message }); }
+        }, [buildUniqueImportedProjectName, persistProject, projectRecords, refreshProjects]);
+
+        const handleProjectJsonImportFile = useCallback(async (event) => {
+          const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+          try {
+            if (!file.name.toLowerCase().endsWith(".json")) throw new Error("Nur .json-Dateien sind zulässig.");
+            const payload = ProjectJson.deserializeProjectFromJson(await file.text());
+            const conflict = projectRecords.some((entry) => entry.projectId === payload.projectId || entry.name.toLowerCase() === payload.name.toLowerCase());
+            conflict ? setProjectCsvConflict({ open: true, payload }) : await finishProjectJsonImport(payload, "new");
+          } catch (error) { setProjectCsvMessage({ type: "error", text: `Die JSON-Datei konnte nicht importiert werden. ${error.message}` }); }
+        }, [finishProjectJsonImport, projectRecords]);
 
         const applyImportedWorkplan = useCallback((importedPlan) => {
           if (!importedPlan) return;
@@ -2828,7 +2528,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         const restoreCryoVisionProject = async () => {
           const seedState = await loadCryoVisionSeedState();
           const now = new Date().toISOString();
-          persistProject(SEED_PROJECT_NAME, seedState, {
+          await persistProject(SEED_PROJECT_NAME, seedState, {
             createdAt: now,
             lastModified: now,
           });
@@ -2847,21 +2547,15 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           noProjectBaselineSnapshotRef.current = JSON.stringify(parseStoredProject(emptyState));
         }, [applyProjectState]);
 
-        const deleteProjectByName = useCallback((projectName) => {
+        const deleteProjectByName = useCallback(async (projectName) => {
           if (!projectName) return;
-          localStorage.removeItem(getProjectStorageKey(projectName));
-          setProjectRecords((prev) => {
-            const next = prev.filter((entry) => entry.name !== projectName);
-            localStorage.setItem(
-              PROJECTS_INDEX_KEY,
-              JSON.stringify(next.map(({ name, createdAt, lastModified }) => ({ name, createdAt, lastModified })))
-            );
-            return next;
-          });
-          if (currentProjectName === projectName) {
-            resetToNoProjectLoaded();
-          }
-        }, [currentProjectName, resetToNoProjectLoaded]);
+          try {
+            await requestJson(`/api/projects/${encodeURIComponent(projectName)}`, { method: "DELETE" });
+            delete revisionRef.current[projectName];
+            await refreshProjects();
+            if (currentProjectName === projectName) resetToNoProjectLoaded();
+          } catch (error) { setStorageError(`Projekt konnte nicht gelöscht werden: ${error.message}`); }
+        }, [currentProjectName, refreshProjects, requestJson, resetToNoProjectLoaded]);
 
         const activeCompanyIndexes = useMemo(
           () => Array.from({ length: companyCount }, (_, index) => index),
@@ -5139,6 +4833,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                         <button
                           type="button"
                           onClick={() => {
+                            refreshProjects().catch((error) => setStorageError(error.message));
                             setLoadProjectModalOpen(true);
                             setProjectSearchTerm("");
                             setIsProjectMenuOpen(false);
@@ -5161,30 +4856,30 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                         <button
                           type="button"
                           onClick={() => {
-                            downloadCurrentProjectCsv();
+                            downloadCurrentProjectJson();
                             setIsProjectMenuOpen(false);
                           }}
                           disabled={!currentProjectName}
                           className="w-full rounded px-3 py-2 text-left font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
                         >
-                          Projekt als CSV exportieren
+                          Projekt exportieren
                         </button>
                         <input
-                          ref={projectCsvImportInputRef}
+                          ref={projectJsonImportInputRef}
                           type="file"
-                          accept="text/csv,.csv"
-                          onChange={handleProjectCsvImportFile}
+                          accept="application/json,.json"
+                          onChange={handleProjectJsonImportFile}
                           className="hidden"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            projectCsvImportInputRef.current?.click();
+                            projectJsonImportInputRef.current?.click();
                             setIsProjectMenuOpen(false);
                           }}
                           className="w-full rounded px-3 py-2 text-left font-medium text-slate-700 transition hover:bg-slate-100"
                         >
-                          Projekt aus CSV importieren
+                          Projekt importieren
                         </button>
                         <button
                           type="button"
@@ -6920,6 +6615,22 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                 <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
                   <h3 className="text-lg font-semibold text-slate-900">Datenbankmanagement</h3>
                   <div className="mt-4 space-y-4">
+                    {localMigration.projects.length ? (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                        <p className="text-sm text-amber-900">Es wurden lokal gespeicherte Projekte gefunden, die noch nicht in der gemeinsamen Projektdatenbank vorhanden sind.</p>
+                        <button type="button" onClick={migrateLocalProjects} className="mt-2 rounded-md bg-amber-800 px-3 py-2 text-sm font-semibold text-white">Lokale Projekte in gemeinsame Datenbank übertragen</button>
+                      </div>
+                    ) : null}
+                    {localMigration.conflicts.length ? (
+                      <div className="rounded-lg border border-amber-300 p-3 text-xs text-amber-900">
+                        <p>Konflikte: {localMigration.conflicts.map((project) => project.name).join(", ")}. Wählen Sie ausdrücklich eine Strategie; es wird nichts still überschrieben.</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button type="button" onClick={() => migrateLocalProjects("local")} className="rounded border border-amber-500 px-2 py-1">Lokale Version übernehmen</button>
+                          <button type="button" onClick={() => migrateLocalProjects("server")} className="rounded border border-slate-400 px-2 py-1">Server-Version behalten</button>
+                          <button type="button" onClick={() => migrateLocalProjects("new")} className="rounded border border-slate-400 px-2 py-1">Als neues Projekt übertragen</button>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="rounded-lg border border-slate-200 p-3">
                       <h4 className="text-sm font-semibold text-slate-800">Backup</h4>
                       <button
@@ -7017,10 +6728,10 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                     Ein Projekt mit der ID bzw. dem Namen „{projectCsvConflict.payload?.name}“ existiert bereits. Die Datensätze werden nicht vermischt.
                   </p>
                   <div className="mt-4 flex flex-col gap-2">
-                    <button type="button" onClick={() => finishProjectCsvImport(projectCsvConflict.payload, "new")} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
+                    <button type="button" onClick={() => finishProjectJsonImport(projectCsvConflict.payload, "new")} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
                       Als neues Projekt importieren
                     </button>
-                    <button type="button" onClick={() => finishProjectCsvImport(projectCsvConflict.payload, "replace")} className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                    <button type="button" onClick={() => finishProjectJsonImport(projectCsvConflict.payload, "replace")} className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
                       Bestehendes Projekt ersetzen
                     </button>
                   </div>
