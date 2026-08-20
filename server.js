@@ -204,7 +204,7 @@ app.post("/api/projects", async (req, res) => {
 });
 
 app.put("/api/projects/:id", async (req, res) => {
-  if (!validProject(req.body) || !Number.isInteger(req.body.revision)) return res.status(400).json({ error: "Vollständiger State und ganzzahlige revision sind erforderlich." });
+  if (!validProject(req.body) || !Number.isInteger(req.body.expectedRevision)) return res.status(400).json({ error: "Vollständiger State und ganzzahlige expectedRevision sind erforderlich." });
   try {
     const result = await projects.update(req.params.id, req.body);
     if (!result.project) return res.status(404).json({ error: "Projekt nicht gefunden." });
