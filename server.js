@@ -3,9 +3,20 @@ const path = require("path");
 const fs = require("fs/promises");
 const os = require("os");
 const { spawn } = require("child_process");
+const { ProjectRepository } = require("./project-repository");
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL fehlt. Projekte dürfen nicht in einer flüchtigen Container-Datei gespeichert werden.");
+}
+const { Pool } = require("pg");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
+});
+const projects = new ProjectRepository(pool);
 
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "30mb" }));
@@ -117,23 +128,62 @@ const runPythonXfa = async ({ action, fileBuffer, payload, confirmMismatch = fal
 };
 
 
-app.post("/api/project/save", async (req, res) => {
+const validProject = (body) => body && typeof body === "object" && body.state && typeof body.state === "object" && !Array.isArray(body.state);
+const apiError = (res, error) => res.status(500).json({ error: error.message || "Datenbankfehler." });
+
+app.get("/api/projects", async (_req, res) => {
+  try { res.json(await projects.list()); } catch (error) { apiError(res, error); }
+});
+
+app.get("/api/projects/:id", async (req, res) => {
   try {
-    const payload = req.body && typeof req.body === "object" ? req.body : {};
-    const projectId = `${payload.projectId || payload.name || ""}`.trim();
-    if (!projectId) {
-      return res.status(400).json({ error: "projectId fehlt." });
-    }
+    const project = await projects.get(req.params.id);
+    project ? res.json(project) : res.status(404).json({ error: "Projekt nicht gefunden." });
+  } catch (error) { apiError(res, error); }
+});
 
-    const dirPath = path.join(__dirname, ".data", "projects");
-    await fs.mkdir(dirPath, { recursive: true });
-    const filePath = path.join(dirPath, `${encodeURIComponent(projectId)}.json`);
-    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
+app.post("/api/projects", async (req, res) => {
+  if (!validProject(req.body)) return res.status(400).json({ error: "Ein vollständiger Projekt-State fehlt." });
+  const projectId = `${req.body.projectId || req.body.name || ""}`.trim();
+  if (!projectId) return res.status(400).json({ error: "projectId fehlt." });
+  try {
+    const created = await projects.create({ ...req.body, projectId, name: `${req.body.name || projectId}`.trim() || projectId });
+    created ? res.status(201).json(created) : res.status(409).json({ error: "Projekt bereits vorhanden.", current: await projects.get(projectId) });
+  } catch (error) { apiError(res, error); }
+});
 
-    return res.json({ ok: true, projectId });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || "Speichern fehlgeschlagen." });
+app.put("/api/projects/:id", async (req, res) => {
+  if (!validProject(req.body) || !Number.isInteger(req.body.revision)) return res.status(400).json({ error: "Vollständiger State und ganzzahlige revision sind erforderlich." });
+  try {
+    const result = await projects.update(req.params.id, req.body);
+    if (!result.project) return res.status(404).json({ error: "Projekt nicht gefunden." });
+    if (result.conflict) return res.status(409).json({ error: "Das Projekt wurde zwischenzeitlich geändert. Bitte neu laden.", current: result.project });
+    res.json(result.project);
+  } catch (error) { apiError(res, error); }
+});
+
+app.delete("/api/projects/:id", async (req, res) => {
+  try { (await projects.delete(req.params.id)) ? res.status(204).end() : res.status(404).json({ error: "Projekt nicht gefunden." }); }
+  catch (error) { apiError(res, error); }
+});
+
+app.get("/api/projects-backup", async (_req, res) => {
+  try { res.json({ format: "campusalliance-zim-database-backup", formatVersion: 1, exportedAt: new Date().toISOString(), projects: await projects.allComplete() }); }
+  catch (error) { apiError(res, error); }
+});
+
+app.post("/api/projects-backup", async (req, res) => {
+  const backup = req.body;
+  if (!backup || backup.format !== "campusalliance-zim-database-backup" || backup.formatVersion !== 1 || !Array.isArray(backup.projects)) {
+    return res.status(400).json({ error: "Ungültiges Datenbank-Backup." });
   }
+  try {
+    for (const project of backup.projects) {
+      if (!validProject(project)) return res.status(400).json({ error: "Ein Projekt im Backup besitzt keinen vollständigen State." });
+      await projects.replace(`${project.projectId || project.name}`, project);
+    }
+    res.json({ ok: true, imported: backup.projects.length });
+  } catch (error) { apiError(res, error); }
 });
 
 app.post("/api/zim/fields", multipartParser, async (req, res) => {
@@ -164,6 +214,7 @@ app.post("/api/zim/fill", multipartParser, async (req, res) => {
 });
 
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+projects.initialize().then(() => app.listen(port, () => console.log(`Server running on port ${port}`))).catch((error) => {
+  console.error("PostgreSQL konnte nicht initialisiert werden", error);
+  process.exit(1);
 });
