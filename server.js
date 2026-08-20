@@ -17,6 +17,14 @@ const projects = pool ? new ProjectRepository(pool) : null;
 let databaseState = databaseUrl ? "connecting" : "not_configured";
 let initializationPromise = null;
 
+const safeDatabaseError = (error) => {
+  const message = `${error?.message || error?.code || "unknown error"}`.split("\n")[0];
+  return message
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, "[database URL redacted]")
+    .replace(/password\s*[=:]\s*[^\s,;]+/gi, "password=[redacted]")
+    .slice(0, 240);
+};
+
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "30mb" }));
 
@@ -128,14 +136,20 @@ const runPythonXfa = async ({ action, fileBuffer, payload, confirmMismatch = fal
 
 
 const validProject = (body) => body && typeof body === "object" && body.state && typeof body.state === "object" && !Array.isArray(body.state);
+const isConnectionError = (error) => !error?.code
+  || `${error.code}`.startsWith("08")
+  || ["57P01", "57P02", "57P03", "ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "ETIMEDOUT"].includes(error.code);
 const apiError = (res, error) => {
-  databaseState = pool ? "connection_failed" : "not_configured";
-  console.error("Project database request failed", { code: error?.code || "unknown" });
-  return res.status(503).json({
-    status: "error",
-    database: databaseState === "not_configured" ? "not_configured" : "connection_failed",
-    error: "Die gemeinsame Projektdatenbank ist derzeit nicht verfügbar.",
-  });
+  console.error(`Project database request failed: ${safeDatabaseError(error)}`);
+  if (error?.code === "42P01") {
+    databaseState = "schema_failed";
+    return res.status(503).json({ status: "error", database: "schema_failed" });
+  }
+  if (isConnectionError(error)) {
+    databaseState = pool ? "connection_failed" : "not_configured";
+    return res.status(503).json({ status: "error", database: databaseState });
+  }
+  return res.status(500).json({ status: "error", error: "Backend error while accessing projects." });
 };
 
 const initializeDatabase = async () => {
@@ -145,16 +159,27 @@ const initializeDatabase = async () => {
 
   databaseState = "connecting";
   console.log("Connecting to PostgreSQL...");
-  initializationPromise = projects.inspectAndInitialize().then(({ tableExisted, projectCount }) => {
-    databaseState = "connected";
-    console.log("PostgreSQL connected");
-    console.log(`Projects table ${tableExisted ? "already existed" : "created"}; existing projects: ${projectCount}`);
-    return true;
-  }).catch((error) => {
-    databaseState = "connection_failed";
-    console.error("PostgreSQL connection failed", { code: error?.code || "unknown" });
-    return false;
-  }).finally(() => { initializationPromise = null; });
+  initializationPromise = (async () => {
+    try {
+      await pool.query("SELECT 1");
+      console.log("PostgreSQL connected");
+    } catch (error) {
+      databaseState = "connection_failed";
+      console.error(`PostgreSQL connection failed: ${safeDatabaseError(error)}`);
+      return false;
+    }
+
+    try {
+      await projects.inspectAndInitialize();
+      databaseState = "connected";
+      console.log("Projects table ready");
+      return true;
+    } catch (error) {
+      databaseState = "schema_failed";
+      console.error(`PostgreSQL schema initialization failed: ${safeDatabaseError(error)}`);
+      return false;
+    }
+  })().finally(() => { initializationPromise = null; });
   return initializationPromise;
 };
 
@@ -163,21 +188,20 @@ const requireDatabase = async (_req, res, next) => {
     return res.status(503).json({
       status: "error",
       database: "not_configured",
-      error: "DATABASE_URL is not configured",
+      message: "DATABASE_URL is not configured.",
     });
   }
   if (await initializeDatabase()) return next();
   return res.status(503).json({
     status: "error",
-    database: "connection_failed",
-    error: "Die gemeinsame Projektdatenbank ist derzeit nicht verfügbar.",
+    database: databaseState,
   });
 };
 
 app.get("/api/health", async (_req, res) => {
-  if (!pool) return res.status(503).json({ status: "error", database: "not_configured" });
+  if (!pool) return res.status(503).json({ status: "error", database: "not_configured", message: "DATABASE_URL is not configured." });
   if (await initializeDatabase()) return res.json({ status: "ok", database: "connected" });
-  return res.status(503).json({ status: "error", database: "connection_failed" });
+  return res.status(503).json({ status: "error", database: databaseState });
 });
 
 app.use(["/api/projects", "/api/projects-backup"], requireDatabase);
