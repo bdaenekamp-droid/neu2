@@ -171,9 +171,6 @@
       const PM_STEP = 0.25;
       const PM_EPSILON = 1e-9;
       const MAX_AUTO_WORK_PACKAGE_MONTHS = 10;
-      const PROJECTS_INDEX_KEY = "ca_projectplanning_projects_index";
-      const CURRENT_PROJECT_KEY = "ca_projectplanning_current_project";
-      const PROJECT_KEY_PREFIX = "project:";
       const SEED_PROJECT_NAME = "CryoVision";
       const AUTO_SAVE_DEBOUNCE_MS = 650;
       const PROJECT_SCHEMA_VERSION = 1;
@@ -1510,9 +1507,6 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         };
       };
 
-      const getProjectStorageKey = (projectId) =>
-        `${PROJECT_KEY_PREFIX}${encodeURIComponent(projectId)}`;
-
       const sanitizePmValue = (value) => {
         if (value === "" || value === null || value === undefined) return "";
         const parsed = Number.parseFloat(`${value}`.replace(",", "."));
@@ -1615,31 +1609,6 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
       const sanitizeProjectState = (state) => {
         return migrateProjectState(state);
-      };
-
-      const parseStoredProjectPayload = (rawValue, fallbackProjectName = "") => {
-        const nowIso = new Date().toISOString();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(rawValue);
-        } catch (error) {
-          return {
-            name: fallbackProjectName || "",
-            createdAt: nowIso,
-            lastModified: nowIso,
-            state: null,
-            error: "parse_error",
-          };
-        }
-        const payload = parsed && typeof parsed === "object" && parsed.state ? parsed : null;
-        const stateSource = payload ? payload.state : parsed;
-        return {
-          name: payload?.name || fallbackProjectName || "",
-          createdAt: payload?.createdAt || nowIso,
-          lastModified: payload?.lastModified || payload?.createdAt || nowIso,
-          state: parseStoredProject(stateSource),
-          error: null,
-        };
       };
 
       const isLikelyMinimalDefaultState = (state) => {
@@ -2143,6 +2112,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         const hasInitializedRef = useRef(false);
         const debounceSaveRef = useRef(null);
         const lastSavedSnapshotRef = useRef("");
+        const projectStateExtrasRef = useRef({});
         const noProjectBaselineSnapshotRef = useRef("");
         const pendingActionAfterProjectCreationRef = useRef(null);
 
@@ -2172,6 +2142,8 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
         const applyProjectState = useCallback((projectState) => {
           const parsed = parseStoredProject(projectState);
+          const knownKeys = new Set(["schemaVersion", "workPackages", "companyCount", "companyNames", "startDate", "durationMonths", "employeesByCompany", "companyData", "companyHistoryByCompany"]);
+          projectStateExtrasRef.current = Object.fromEntries(Object.entries(projectState || {}).filter(([key]) => !knownKeys.has(key)));
           setWorkPackages(parsed.workPackages);
           setCompanyNames(parsed.companyNames);
           setCompanyCount(parsed.companyCount);
@@ -2191,6 +2163,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
 
         const collectProjectState = useCallback(
           () => ({
+            ...projectStateExtrasRef.current,
             schemaVersion: PROJECT_SCHEMA_VERSION,
             workPackages,
             companyCount,
@@ -2214,8 +2187,8 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         );
 
         const revisionRef = useRef({});
-        const [localMigration, setLocalMigration] = useState({ projects: [], conflicts: [] });
         const [projectListStatus, setProjectListStatus] = useState("loading");
+        const [saveStatus, setSaveStatus] = useState("idle");
 
         const requestJson = useCallback(async (url, options = {}) => {
           const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
@@ -2245,12 +2218,13 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         }, [requestJson]);
 
         const persistProject = useCallback(async (projectName, projectState, options = {}) => {
-          const sanitizedState = parseStoredProject(projectState);
           const exists = Number.isInteger(revisionRef.current[projectName]);
-          const payload = { projectId: projectName, name: projectName, schemaVersion: PROJECT_SCHEMA_VERSION, state: sanitizedState };
+          const now = new Date().toISOString();
+          const completeState = { ...projectState, projectId: projectName, projectName, createdAt: projectState.createdAt || options.createdAt || now, lastModified: now, schemaVersion: PROJECT_SCHEMA_VERSION };
+          const payload = { projectId: projectName, projectName, name: projectName, schemaVersion: PROJECT_SCHEMA_VERSION, state: completeState };
           const saved = await requestJson(`/api/projects${exists ? `/${encodeURIComponent(projectName)}` : ""}`, {
             method: exists ? "PUT" : "POST",
-            body: JSON.stringify(exists ? { ...payload, revision: revisionRef.current[projectName] } : { ...payload, createdAt: options.createdAt, lastModified: options.lastModified }),
+            body: JSON.stringify(exists ? { ...payload, expectedRevision: revisionRef.current[projectName] } : { ...payload, createdAt: options.createdAt, lastModified: options.lastModified }),
             keepalive: true,
           });
           revisionRef.current[projectName] = saved.revision;
@@ -2264,10 +2238,13 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           const snapshot = overrideState || collectProjectState();
           const serializedSnapshot = knownSnapshotString || JSON.stringify(snapshot);
           try {
+            setSaveStatus("saving");
             await persistProject(activeProjectId, snapshot);
             lastSavedSnapshotRef.current = serializedSnapshot;
             setStorageError("");
+            setSaveStatus("saved");
           } catch (error) {
+            setSaveStatus("error");
             if (error.status === 409) setStorageError("Speicherkonflikt: Das Projekt wurde zwischenzeitlich geändert. Bitte Projekt neu laden; Ihre lokale Ansicht wurde nicht überschrieben.");
             else setStorageError(`Projekt konnte nicht zentral gespeichert werden: ${error.message}`);
           }
@@ -2278,65 +2255,18 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           return response.ok ? parseStoredProject(await response.json()) : buildSeedCryoVisionState();
         }, []);
 
-        const discoverLegacyProjects = useCallback((serverRecords) => {
-          try {
-            const index = JSON.parse(localStorage.getItem(PROJECTS_INDEX_KEY) || "[]");
-            const serverIds = new Set(serverRecords.map((record) => record.projectId));
-            const localProjects = (Array.isArray(index) ? index : []).map((entry) => {
-              const name = typeof entry === "string" ? entry : entry?.name;
-              const raw = name && localStorage.getItem(getProjectStorageKey(name));
-              return raw ? parseStoredProjectPayload(raw, name) : null;
-            }).filter((project) => project?.state);
-            const projects = localProjects.filter((project) => !serverIds.has(project.projectId || project.name));
-            const conflicts = localProjects.filter((project) => serverIds.has(project.projectId || project.name));
-            setLocalMigration({ projects, conflicts });
-          } catch (error) { console.warn("Lokale Altdaten konnten nicht geprüft werden", error); }
-        }, []);
-
         useEffect(() => {
           (async () => {
             try {
-              const records = await refreshProjects();
-              discoverLegacyProjects(records);
+              await refreshProjects();
               setCurrentProjectName("");
               setStorageError("");
             } catch (error) {
-              discoverLegacyProjects([]);
-              setStorageError(`Die gemeinsame Projektdatenbank konnte nicht erreicht werden. Ihre vorhandenen lokalen Projektdaten wurden nicht verändert. Request: GET /api/projects; Status: ${error.status || "Netzwerkfehler"}; Zeitpunkt: ${new Date().toLocaleString("de-DE")}.`);
+              setStorageError(`Die gemeinsame Projektdatenbank konnte nicht erreicht werden. Request: GET /api/projects; Status: ${error.status || "Netzwerkfehler"}.`);
             }
             finally { hasInitializedRef.current = true; }
           })();
-        }, [discoverLegacyProjects, refreshProjects]);
-
-        const migrateLocalProjects = useCallback(async (conflictMode = "server") => {
-          try {
-            for (const project of localMigration.projects) await persistProject(project.projectId || project.name, project.state, project);
-            for (const project of localMigration.conflicts) {
-              const id = project.projectId || project.name;
-              if (conflictMode === "local") {
-                const server = projectRecords.find((record) => record.projectId === id);
-                revisionRef.current[id] = server?.revision;
-                await persistProject(id, project.state, project);
-              } else if (conflictMode === "new") {
-                const used = new Set(projectRecords.map((record) => record.name.toLowerCase()));
-                const base = `${project.name || "Projekt"} (Import)`; let newName = base; let suffix = 2;
-                while (used.has(newName.toLowerCase())) newName = `${base} ${suffix++}`;
-                await persistProject(newName, project.state, project);
-              }
-            }
-            await refreshProjects();
-            setLocalMigration({ projects: [], conflicts: [] });
-            setDatabaseManagementMessage({ type: "success", text: "Lokale Projekte wurden vollständig in die gemeinsame Datenbank übertragen." });
-          } catch (error) { setDatabaseManagementMessage({ type: "error", text: `Migration fehlgeschlagen: ${error.message}` }); }
-        }, [localMigration, persistProject, projectRecords, refreshProjects]);
-
-        const downloadLocalProjectBackup = useCallback(() => {
-          const projects = [...localMigration.projects, ...localMigration.conflicts];
-          if (!projects.length) return;
-          const backup = { format: "campusalliance-zim-local-rescue", formatVersion: 1, exportedAt: new Date().toISOString(), projects };
-          const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" }));
-          const link = document.createElement("a"); link.href = url; link.download = `ZIM_Lokale_Datenrettung_${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
-        }, [localMigration]);
+        }, [refreshProjects]);
 
         const projectStateSnapshot = collectProjectState();
         const projectSnapshotString = useMemo(() => JSON.stringify(projectStateSnapshot), [projectStateSnapshot]);
@@ -2370,13 +2300,14 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           const trimmedName = newProjectName.trim();
           if (!trimmedName) return setProjectError("Projektname ist erforderlich.");
           if (projectRecords.some((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase())) return setProjectError("Projektname existiert bereits. Bitte anderen Namen wählen.");
-          const initialState = buildDefaultProjectState();
+          const now = new Date().toISOString();
+          const initialState = { ...buildDefaultProjectState(), projectId: trimmedName, projectName: trimmedName, createdAt: now, lastModified: now };
           try {
             await persistProject(trimmedName, initialState);
             applyProjectState(initialState); setCurrentProjectName(trimmedName); lastSavedSnapshotRef.current = JSON.stringify(parseStoredProject(initialState));
             setProjectError(""); setNewProjectModalOpen(false); setNewProjectName("");
             const pendingAction = pendingActionAfterProjectCreationRef.current; pendingActionAfterProjectCreationRef.current = null; if (pendingAction) pendingAction();
-          } catch (error) { setProjectError(`Projekt konnte nicht erstellt werden: ${error.message}`); }
+          } catch (error) { setProjectError("Das Projekt konnte nicht in der gemeinsamen Projektdatenbank gespeichert werden."); }
         };
 
         const handleProjectLoad = async (projectId) => {
@@ -2559,7 +2490,6 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           const emptyState = buildDefaultProjectState();
           applyProjectState(emptyState);
           setCurrentProjectName("");
-          localStorage.removeItem(CURRENT_PROJECT_KEY);
           lastSavedSnapshotRef.current = "";
           pendingActionAfterProjectCreationRef.current = null;
           setProjectCreationPromptOpen(false);
@@ -4828,6 +4758,11 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                   <div className="rounded-md border border-white/30 bg-white/10 px-4 py-2 text-base font-semibold text-white">
                     Projekt: {currentProjectName || "–"}
                   </div>
+                  {activeProjectId ? (
+                    <div className="text-xs font-semibold text-white" role="status">
+                      {saveStatus === "saving" ? "Speichert…" : saveStatus === "error" ? "Speicherfehler" : "Gespeichert"}
+                    </div>
+                  ) : null}
                   <div className="relative">
                     <button
                       type="button"
@@ -4947,12 +4882,6 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               {storageError ? (
                 <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   <p>{storageError}</p>
-                  {projectListStatus === "error" && (localMigration.projects.length || localMigration.conflicts.length) ? (
-                    <div className="mt-3 border-t border-red-200 pt-3">
-                      <p className="font-semibold">Es wurden lokale Projektdaten gefunden. Die gemeinsame Projektdatenbank ist aktuell nicht erreichbar. Die lokalen Daten wurden nicht verändert.</p>
-                      <button type="button" onClick={downloadLocalProjectBackup} className="mt-2 rounded-md border border-red-300 bg-white px-3 py-2 font-semibold text-red-800">Lokale Projektdaten sichern</button>
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
               <div className="mb-6 grid gap-4 lg:grid-cols-[2.2fr_1.2fr_1fr]">
@@ -6641,28 +6570,6 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                 <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
                   <h3 className="text-lg font-semibold text-slate-900">Datenbankmanagement</h3>
                   <div className="mt-4 space-y-4">
-                    {localMigration.projects.length ? (
-                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-                        <p className="text-sm text-amber-900">Es wurden lokal gespeicherte Projekte gefunden, die noch nicht in der gemeinsamen Projektdatenbank vorhanden sind.</p>
-                        <button type="button" onClick={migrateLocalProjects} className="mt-2 rounded-md bg-amber-800 px-3 py-2 text-sm font-semibold text-white">Lokale Projekte in gemeinsame Datenbank übertragen</button>
-                      </div>
-                    ) : null}
-                    {projectListStatus === "error" && (localMigration.projects.length || localMigration.conflicts.length) ? (
-                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-                        <p className="text-sm text-amber-900">Die lokalen Daten wurden nicht verändert und können vor einer Migration gesichert werden.</p>
-                        <button type="button" onClick={downloadLocalProjectBackup} className="mt-2 rounded-md border border-amber-500 bg-white px-3 py-2 text-sm font-semibold text-amber-900">Lokale Projektdaten sichern</button>
-                      </div>
-                    ) : null}
-                    {localMigration.conflicts.length ? (
-                      <div className="rounded-lg border border-amber-300 p-3 text-xs text-amber-900">
-                        <p>Konflikte: {localMigration.conflicts.map((project) => project.name).join(", ")}. Wählen Sie ausdrücklich eine Strategie; es wird nichts still überschrieben.</p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <button type="button" onClick={() => migrateLocalProjects("local")} className="rounded border border-amber-500 px-2 py-1">Lokale Version übernehmen</button>
-                          <button type="button" onClick={() => migrateLocalProjects("server")} className="rounded border border-slate-400 px-2 py-1">Server-Version behalten</button>
-                          <button type="button" onClick={() => migrateLocalProjects("new")} className="rounded border border-slate-400 px-2 py-1">Als neues Projekt übertragen</button>
-                        </div>
-                      </div>
-                    ) : null}
                     <div className="rounded-lg border border-slate-200 p-3">
                       <h4 className="text-sm font-semibold text-slate-800">Backup</h4>
                       <button

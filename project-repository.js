@@ -32,6 +32,7 @@ class ProjectRepository {
     return {
       projectId: row.id,
       name: row.name,
+      projectName: row.name,
       createdAt: new Date(row.created_at).toISOString(),
       lastModified: new Date(row.updated_at).toISOString(),
       revision: Number(row.revision),
@@ -69,7 +70,7 @@ class ProjectRepository {
       `UPDATE projects SET name = $2, state = $3::jsonb, schema_version = $4,
        revision = revision + 1, updated_at = NOW()
        WHERE id = $1 AND revision = $5 RETURNING *`,
-      [id, payload.name || id, JSON.stringify(payload.state), payload.schemaVersion || PROJECT_SCHEMA_VERSION, payload.revision]
+      [id, payload.name || payload.projectName || id, JSON.stringify(payload.state), payload.schemaVersion || PROJECT_SCHEMA_VERSION, payload.expectedRevision]
     );
     if (rows[0]) return { project: this.complete(rows[0]), conflict: false };
     const current = await this.get(id);
@@ -79,7 +80,7 @@ class ProjectRepository {
   async replace(id, payload) {
     const current = await this.get(id);
     if (!current) return this.create({ ...payload, projectId: id });
-    return (await this.update(id, { ...payload, revision: current.revision })).project;
+    return (await this.update(id, { ...payload, expectedRevision: current.revision })).project;
   }
 
   async delete(id) {
