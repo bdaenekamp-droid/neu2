@@ -4251,6 +4251,53 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
         const ganttExportName = (extension) =>
           `Gantt_${sanitizeFileSegment(currentProjectName, "Projekt")}.${extension}`;
 
+        const exportGanttCsv = () => {
+          const rows = [
+            [
+              "Arbeitspaket",
+              "Beschreibung",
+              "Typ",
+              "Unternehmen",
+              "Beginn",
+              "Ende",
+              "Personenmonate",
+              ...timeline.map((month) => `${month.label} ${month.year}`),
+            ],
+            ...ganttExportRows.map((row) => {
+              const isTask = row.type === "task";
+              const companyName = isTask
+                ? companyNames[row.bar.companyIndex] || `Unternehmen ${row.bar.companyIndex + 1}`
+                : "";
+              const formatTimelineMonth = (index) => {
+                const month = timeline[index];
+                return month ? `${String(month.month + 1).padStart(2, "0")}/${month.year}` : "";
+              };
+              return [
+                row.number,
+                row.title || "",
+                isTask ? "Unterarbeitspaket" : "Hauptarbeitspaket",
+                companyName,
+                isTask ? formatTimelineMonth(row.bar.start) : "",
+                isTask ? formatTimelineMonth(row.bar.end) : "",
+                isTask ? formatNumberDe(row.pm, 2) : "",
+                ...timeline.map((_, monthIndex) => (
+                  isTask && monthIndex >= row.bar.start && monthIndex <= row.bar.end
+                    ? companyName
+                    : ""
+                )),
+              ];
+            }),
+          ];
+          const csv = `\uFEFF${rows
+            .map((row) => row.map((cell) => escapeCsvCell(cell)).join(";"))
+            .join("\r\n")}`;
+          downloadBlob(
+            new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+            ganttExportName("csv")
+          );
+          setExportWarning("");
+        };
+
         const exportGanttPdf = () => {
           if (!jsPDF) {
             setExportWarning("PDF-Export ist aktuell nicht verfügbar.");
@@ -5211,10 +5258,17 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                     Projektplanung gesamt
                   </h2>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={exportGanttWord} className="ca-primary-btn rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition hover:shadow">Gantt als Word exportieren</button>
-                  <button type="button" onClick={exportGanttPdf} className="rounded-md border border-[var(--ca-green)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ca-green)] shadow-sm transition hover:bg-[var(--ca-green-soft)]">Gantt als PDF exportieren</button>
-                </div>
+                <details className="group relative">
+                  <summary className="ca-primary-btn flex cursor-pointer list-none items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition hover:shadow">
+                    Exportieren
+                    <span aria-hidden="true" className="text-xs transition group-open:rotate-180">▼</span>
+                  </summary>
+                  <div className="absolute right-0 z-50 mt-2 min-w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                    <button type="button" onClick={(event) => { exportGanttCsv(); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-[var(--ca-green-soft)]">Als CSV-Datei exportieren</button>
+                    <button type="button" onClick={(event) => { exportGanttWord(); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-[var(--ca-green-soft)]">Als Word-Datei exportieren</button>
+                    <button type="button" onClick={(event) => { exportGanttPdf(); event.currentTarget.closest("details")?.removeAttribute("open"); }} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-[var(--ca-green-soft)]">Als PDF-Datei exportieren</button>
+                  </div>
+                </details>
               </div>
 
               {exportWarning ? <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{exportWarning}</div> : null}
