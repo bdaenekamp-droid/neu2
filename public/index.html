@@ -2217,6 +2217,26 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
           }
         }, [requestJson]);
 
+        const describeProjectDatabaseError = useCallback(async (error) => {
+          let explanation = "";
+          if (error.status === 503) {
+            try {
+              const healthResponse = await fetch("/api/health", { cache: "no-store" });
+              const health = await healthResponse.json().catch(() => ({}));
+              if (health.database === "not_configured") {
+                explanation = " Die gemeinsame Projektdatenbank ist noch nicht mit dem Railway-App-Service verbunden.";
+              } else if (health.database === "connection_failed") {
+                explanation = " Die PostgreSQL-Datenbank ist konfiguriert, aber die Verbindung konnte nicht hergestellt werden.";
+              } else if (health.database === "schema_failed") {
+                explanation = " Die PostgreSQL-Verbindung funktioniert, aber die Projekttabelle konnte nicht vorbereitet werden.";
+              }
+            } catch (_healthError) {
+              // Keep the original request error if the diagnostic endpoint is unreachable too.
+            }
+          }
+          return `Die gemeinsame Projektdatenbank konnte nicht erreicht werden. Request: GET /api/projects; Status: ${error.status || "Netzwerkfehler"}.${explanation}`;
+        }, []);
+
         const persistProject = useCallback(async (projectName, projectState, options = {}) => {
           const exists = Number.isInteger(revisionRef.current[projectName]);
           const now = new Date().toISOString();
@@ -2262,11 +2282,11 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
               setCurrentProjectName("");
               setStorageError("");
             } catch (error) {
-              setStorageError(`Die gemeinsame Projektdatenbank konnte nicht erreicht werden. Request: GET /api/projects; Status: ${error.status || "Netzwerkfehler"}.`);
+              setStorageError(await describeProjectDatabaseError(error));
             }
             finally { hasInitializedRef.current = true; }
           })();
-        }, [refreshProjects]);
+        }, [describeProjectDatabaseError, refreshProjects]);
 
         const projectStateSnapshot = collectProjectState();
         const projectSnapshotString = useMemo(() => JSON.stringify(projectStateSnapshot), [projectStateSnapshot]);
@@ -4788,7 +4808,7 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                         <button
                           type="button"
                           onClick={() => {
-                            refreshProjects().catch((error) => setStorageError(error.message));
+                            refreshProjects().catch(async (error) => setStorageError(await describeProjectDatabaseError(error)));
                             setLoadProjectModalOpen(true);
                             setProjectSearchTerm("");
                             setIsProjectMenuOpen(false);
