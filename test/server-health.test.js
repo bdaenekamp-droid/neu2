@@ -27,7 +27,8 @@ test("health and projects explain a missing DATABASE_URL without exposing a fall
   assert.deepEqual(await health.json(), {
     status: "error",
     database: "not_configured",
-    message: "DATABASE_URL is not configured.",
+    databaseUrlConfigured: false,
+    message: "DATABASE_URL is not configured for this Railway service.",
   });
 
   const projects = await fetch(`http://127.0.0.1:${port}/api/projects`);
@@ -35,6 +36,7 @@ test("health and projects explain a missing DATABASE_URL without exposing a fall
   assert.deepEqual(await projects.json(), {
     status: "error",
     database: "not_configured",
-    message: "DATABASE_URL is not configured.",
+    databaseUrlConfigured: false,
+    message: "DATABASE_URL is not configured for this Railway service.",
   });
 });

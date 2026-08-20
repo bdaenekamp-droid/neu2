@@ -25,6 +25,13 @@ const safeDatabaseError = (error) => {
     .slice(0, 240);
 };
 
+if (pool) {
+  pool.on("error", (error) => {
+    databaseState = "connection_failed";
+    console.error(`PostgreSQL pool error: ${safeDatabaseError(error)}`);
+  });
+}
+
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "30mb" }));
 
@@ -143,11 +150,11 @@ const apiError = (res, error) => {
   console.error(`Project database request failed: ${safeDatabaseError(error)}`);
   if (error?.code === "42P01") {
     databaseState = "schema_failed";
-    return res.status(503).json({ status: "error", database: "schema_failed" });
+    return res.status(503).json({ status: "error", database: "schema_failed", databaseUrlConfigured: Boolean(pool) });
   }
   if (isConnectionError(error)) {
     databaseState = pool ? "connection_failed" : "not_configured";
-    return res.status(503).json({ status: "error", database: databaseState });
+    return res.status(503).json({ status: "error", database: databaseState, databaseUrlConfigured: Boolean(pool) });
   }
   return res.status(500).json({ status: "error", error: "Backend error while accessing projects." });
 };
@@ -188,20 +195,27 @@ const requireDatabase = async (_req, res, next) => {
     return res.status(503).json({
       status: "error",
       database: "not_configured",
-      message: "DATABASE_URL is not configured.",
+      databaseUrlConfigured: false,
+      message: "DATABASE_URL is not configured for this Railway service.",
     });
   }
   if (await initializeDatabase()) return next();
   return res.status(503).json({
     status: "error",
     database: databaseState,
+    databaseUrlConfigured: true,
   });
 };
 
 app.get("/api/health", async (_req, res) => {
-  if (!pool) return res.status(503).json({ status: "error", database: "not_configured", message: "DATABASE_URL is not configured." });
-  if (await initializeDatabase()) return res.json({ status: "ok", database: "connected" });
-  return res.status(503).json({ status: "error", database: databaseState });
+  if (!pool) return res.status(503).json({
+    status: "error",
+    database: "not_configured",
+    databaseUrlConfigured: false,
+    message: "DATABASE_URL is not configured for this Railway service.",
+  });
+  if (await initializeDatabase()) return res.json({ status: "ok", database: "connected", databaseUrlConfigured: true });
+  return res.status(503).json({ status: "error", database: databaseState, databaseUrlConfigured: true });
 });
 
 app.use(["/api/projects", "/api/projects-backup"], requireDatabase);
@@ -291,6 +305,6 @@ app.post("/api/zim/fill", multipartParser, async (req, res) => {
 
 console.log("Server starting...");
 console.log(`DATABASE_URL configured: ${databaseUrl ? "yes" : "no"}`);
-if (!databaseUrl) console.warn("Database features unavailable until DATABASE_URL is configured");
+if (!databaseUrl) console.warn("DATABASE_URL is not configured for this service.");
 app.listen(port, () => console.log(`Server listening on port ${port}`));
 if (databaseUrl) void initializeDatabase();
