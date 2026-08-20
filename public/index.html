@@ -143,6 +143,7 @@
     <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
     <script src="/employee-capacity.js"></script>
     <script>
       // Deployment metadata must never come from the browser cache. A unique
@@ -156,6 +157,7 @@
     <script type="text/babel" data-presets="typescript,react">
       const { useMemo, useState, useEffect, useRef, useCallback } = React;
       const { jsPDF } = window.jspdf || {};
+      const Docx = window.docx;
       const EmployeeCapacity = window.EmployeeCapacity;
 
       const MAX_WP = 20;
@@ -4218,6 +4220,169 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
             maximumFractionDigits,
           }).format(value || 0);
 
+        // Both exporters consume the already calculated timeline and Gantt bars used by
+        // the screen. This intentionally keeps dates, clipping and company assignment in
+        // one place instead of introducing a second planning calculation.
+        const ganttExportRows = useMemo(() => {
+          const result = [];
+          workPackages.forEach((wp, wpIndex) => {
+            result.push({ type: "heading", number: `${wpIndex + 1}`, title: wp.title });
+            wp.sub.forEach((sub, subIndex) => {
+              const bar = ganttBarsByRowId[sub.id];
+              if (!bar) return;
+              result.push({
+                type: "task",
+                number: `${wpIndex + 1}.${subIndex + 1}`,
+                title: sub.title,
+                bar,
+                pm: normalizePmValue(sub.pm?.[bar.companyIndex]),
+              });
+            });
+          });
+          return result;
+        }, [workPackages, ganttBarsByRowId]);
+
+        const ganttLegend = useMemo(() => activeCompanyIndexes.map((companyIndex) => ({
+          companyIndex,
+          name: companyNames[companyIndex] || `Unternehmen ${companyIndex + 1}`,
+          color: getCompanyColorHex(companyIndex),
+        })), [activeCompanyIndexes, companyNames]);
+
+        const ganttExportName = (extension) =>
+          `Gantt_${sanitizeFileSegment(currentProjectName, "Projekt")}.${extension}`;
+
+        const exportGanttPdf = () => {
+          if (!jsPDF) {
+            setExportWarning("PDF-Export ist aktuell nicht verfügbar.");
+            return;
+          }
+          const margin = 32;
+          const apWidth = 78;
+          const monthWidth = 38;
+          const rowHeight = 25;
+          const titleHeight = 104;
+          const pageWidth = margin * 2 + apWidth + timeline.length * monthWidth;
+          const pageHeight = margin * 2 + titleHeight + Math.max(1, ganttExportRows.length) * rowHeight;
+          const pdf = new jsPDF({ orientation: "landscape", unit: "pt", format: [pageWidth, pageHeight], compress: true });
+          const gridX = margin;
+          const gridY = margin + titleHeight;
+          const timelineX = gridX + apWidth;
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(31, 41, 55);
+          pdf.setFontSize(18);
+          pdf.text(`Projektplanung – ${currentProjectName || "Projekt"}`, margin, margin + 8);
+          pdf.setFontSize(12);
+          pdf.text("Gantt-Chart", margin, margin + 29);
+          let legendX = margin;
+          ganttLegend.forEach((entry) => {
+            pdf.setFillColor(entry.color);
+            pdf.rect(legendX, margin + 43, 10, 10, "F");
+            pdf.setFont("helvetica", "normal");
+            pdf.setFontSize(9);
+            pdf.text(entry.name, legendX + 15, margin + 52);
+            legendX += Math.max(90, pdf.getTextWidth(entry.name) + 32);
+          });
+          pdf.setFillColor(232, 239, 231);
+          pdf.rect(gridX, gridY, pageWidth - margin * 2, 42, "F");
+          pdf.setDrawColor(191, 208, 185);
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(9);
+          pdf.text("AP", gridX + 8, gridY + 27);
+          yearSegments.forEach((segment) => {
+            const start = timeline.findIndex((month) => month.year === segment.year);
+            const x = timelineX + start * monthWidth;
+            pdf.rect(x, gridY, segment.span * monthWidth, 21);
+            pdf.text(`${segment.year}`, x + segment.span * monthWidth / 2, gridY + 14, { align: "center" });
+          });
+          timeline.forEach((month, index) => {
+            const x = timelineX + index * monthWidth;
+            pdf.rect(x, gridY + 21, monthWidth, 21);
+            pdf.setFontSize(7.5);
+            pdf.text(month.label, x + monthWidth / 2, gridY + 35, { align: "center" });
+          });
+          ganttExportRows.forEach((row, rowIndex) => {
+            const y = gridY + 42 + rowIndex * rowHeight;
+            const isHeading = row.type === "heading";
+            pdf.setFillColor(isHeading ? 242 : 255, isHeading ? 244 : 255, isHeading ? 245 : 255);
+            pdf.rect(gridX, y, pageWidth - margin * 2, rowHeight, "FD");
+            pdf.setFont("helvetica", isHeading ? "bold" : "normal");
+            pdf.setFontSize(8.5);
+            pdf.setTextColor(31, 41, 55);
+            pdf.text(`${row.number}${isHeading && row.title ? `  ${row.title}` : ""}`, gridX + 7, y + 16, { maxWidth: apWidth - 12 });
+            timeline.forEach((_, index) => pdf.line(timelineX + index * monthWidth, y, timelineX + index * monthWidth, y + rowHeight));
+            if (row.type !== "task") return;
+            const barX = timelineX + row.bar.start * monthWidth + 2;
+            const barWidth = (row.bar.end - row.bar.start + 1) * monthWidth - 4;
+            pdf.setFillColor(getCompanyColorHex(row.bar.companyIndex));
+            pdf.roundedRect(barX, y + 5, barWidth, 15, 3, 3, "F");
+            const pmLabel = `${formatNumberDe(row.pm, 2)} PM`;
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(7.5);
+            const labelWidth = pdf.getTextWidth(pmLabel);
+            const afterX = barX + barWidth + 4;
+            if (afterX + labelWidth <= pageWidth - margin) {
+              pdf.setTextColor(31, 41, 55);
+              pdf.text(pmLabel, afterX, y + 16);
+            } else {
+              pdf.setTextColor(255, 255, 255);
+              pdf.text(pmLabel, barX + barWidth - 4, y + 16, { align: "right" });
+            }
+          });
+          pdf.save(ganttExportName("pdf"));
+        };
+
+        const exportGanttWord = async () => {
+          if (!Docx) {
+            setExportWarning("Word-Export ist aktuell nicht verfügbar.");
+            return;
+          }
+          const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ShadingType, AlignmentType, PageOrientation, PageBreak } = Docx;
+          const pageMonthCount = 18;
+          const rowsPerPage = 18;
+          const monthRanges = [];
+          for (let start = 0; start < timeline.length; start += pageMonthCount) monthRanges.push([start, Math.min(timeline.length, start + pageMonthCount)]);
+          const rowChunks = [];
+          for (let start = 0; start < ganttExportRows.length; start += rowsPerPage) rowChunks.push(ganttExportRows.slice(start, start + rowsPerPage));
+          if (!rowChunks.length) rowChunks.push([]);
+          const children = [];
+          const cell = (text, options = {}) => new TableCell({
+            columnSpan: options.span,
+            shading: { type: ShadingType.CLEAR, fill: options.fill || "FFFFFF" },
+            width: { size: options.width || 430, type: WidthType.DXA },
+            children: [new Paragraph({ alignment: options.center ? AlignmentType.CENTER : AlignmentType.LEFT, children: [new TextRun({ text: `${text || ""}`, bold: !!options.bold, color: options.color || "1F2937", size: options.size || 14 })] })],
+          });
+          monthRanges.forEach(([rangeStart, rangeEnd]) => rowChunks.forEach((chunk, chunkIndex) => {
+            if (children.length) children.push(new Paragraph({ children: [new PageBreak()] }));
+            children.push(new Paragraph({ children: [new TextRun({ text: `Projektplanung – ${currentProjectName || "Projekt"}`, bold: true, size: 30, color: "1F2937" })] }));
+            children.push(new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: "Gantt-Chart", bold: true, size: 22, color: "5F7F50" })] }));
+            children.push(new Paragraph({ spacing: { after: 120 }, children: ganttLegend.flatMap((entry) => [new TextRun({ text: "■ ", bold: true, color: entry.color.replace("#", ""), size: 20 }), new TextRun({ text: `${entry.name}    `, size: 18 })]) }));
+            const years = [];
+            for (let i = rangeStart; i < rangeEnd;) {
+              let end = i + 1;
+              while (end < rangeEnd && timeline[end].year === timeline[i].year) end++;
+              years.push(cell(timeline[i].year, { span: end - i, fill: "E8EFE7", bold: true, center: true }));
+              i = end;
+            }
+            const tableRows = [
+              new TableRow({ children: [cell("AP", { fill: "E8EFE7", bold: true, center: true, width: 900 }), ...years] }),
+              new TableRow({ children: [cell("", { fill: "E8EFE7", width: 900 }), ...timeline.slice(rangeStart, rangeEnd).map((month) => cell(month.label, { fill: "E8EFE7", bold: true, center: true }))] }),
+            ];
+            chunk.forEach((row) => {
+              const isHeading = row.type === "heading";
+              const monthCells = timeline.slice(rangeStart, rangeEnd).map((_, localIndex) => {
+                const monthIndex = rangeStart + localIndex;
+                const active = row.type === "task" && monthIndex >= row.bar.start && monthIndex <= row.bar.end;
+                const lastVisibleBarMonth = row.type === "task" && monthIndex === Math.min(row.bar.end, rangeEnd - 1) && row.bar.end >= rangeStart && row.bar.start < rangeEnd;
+                return cell(lastVisibleBarMonth ? `${formatNumberDe(row.pm, 2)} PM` : "", { fill: active ? getCompanyColorHex(row.bar.companyIndex).replace("#", "") : (isHeading ? "F2F4F5" : "FFFFFF"), bold: active, color: active ? "FFFFFF" : "1F2937", center: true, size: 11 });
+              });
+              tableRows.push(new TableRow({ children: [cell(`${row.number}${isHeading && row.title ? `  ${row.title}` : ""}`, { fill: isHeading ? "F2F4F5" : "FFFFFF", bold: isHeading, width: 900, size: 13 }), ...monthCells] }));
+            });
+            children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: tableRows }));
+          }));
+          const document = new Document({ sections: [{ properties: { page: { size: { width: 16838, height: 11906, orientation: PageOrientation.LANDSCAPE }, margin: { top: 600, right: 600, bottom: 600, left: 600 } } }, children }] });
+          downloadBlob(await Packer.toBlob(document), ganttExportName("docx"));
+        };
+
         const getCurrencyInputDisplay = (key, value) => {
           if (focusedCurrencyField === key) {
             const numericValue = parseNumber(value);
@@ -5046,7 +5211,13 @@ const buildStaticZimMantelbogenCompanyOneSchema = (pages = []) =>
                     Projektplanung gesamt
                   </h2>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={exportGanttWord} className="ca-primary-btn rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition hover:shadow">Gantt als Word exportieren</button>
+                  <button type="button" onClick={exportGanttPdf} className="rounded-md border border-[var(--ca-green)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ca-green)] shadow-sm transition hover:bg-[var(--ca-green-soft)]">Gantt als PDF exportieren</button>
+                </div>
               </div>
+
+              {exportWarning ? <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{exportWarning}</div> : null}
 
               <div className="rounded-xl border border-[var(--ca-green-border)] bg-white shadow-subtle">
                 <div ref={ganttScrollContainerRef} onScroll={handleGanttScroll} className="overflow-x-auto">
