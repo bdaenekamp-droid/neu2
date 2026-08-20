@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# start using venv python to ensure deps available
-exec .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# The project API and PostgreSQL repository live in server.js.  Starting the
+# former FastAPI-only entry point made every /api/projects request fall through
+# to its SPA guard and return 404.
+exec node server.js
