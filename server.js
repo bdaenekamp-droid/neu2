@@ -7,16 +7,15 @@ const { ProjectRepository } = require("./project-repository");
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL fehlt. Projekte dürfen nicht in einer flüchtigen Container-Datei gespeichert werden.");
-}
-const { Pool } = require("pg");
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL.includes("localhost") ? false : { rejectUnauthorized: false },
-});
-const projects = new ProjectRepository(pool);
+const databaseUrl = process.env.DATABASE_URL;
+const pool = databaseUrl ? new (require("pg").Pool)({
+  connectionString: databaseUrl,
+  ssl: databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+  connectionTimeoutMillis: 5000,
+}) : null;
+const projects = pool ? new ProjectRepository(pool) : null;
+let databaseState = databaseUrl ? "connecting" : "not_configured";
+let initializationPromise = null;
 
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "30mb" }));
@@ -129,16 +128,59 @@ const runPythonXfa = async ({ action, fileBuffer, payload, confirmMismatch = fal
 
 
 const validProject = (body) => body && typeof body === "object" && body.state && typeof body.state === "object" && !Array.isArray(body.state);
-const apiError = (res, error) => res.status(500).json({ error: error.message || "Datenbankfehler." });
+const apiError = (res, error) => {
+  databaseState = pool ? "connection_failed" : "not_configured";
+  console.error("Project database request failed", { code: error?.code || "unknown" });
+  return res.status(503).json({
+    status: "error",
+    database: databaseState === "not_configured" ? "not_configured" : "connection_failed",
+    error: "Die gemeinsame Projektdatenbank ist derzeit nicht verfügbar.",
+  });
+};
+
+const initializeDatabase = async () => {
+  if (!pool) return false;
+  if (databaseState === "connected") return true;
+  if (initializationPromise) return initializationPromise;
+
+  databaseState = "connecting";
+  console.log("Connecting to PostgreSQL...");
+  initializationPromise = projects.inspectAndInitialize().then(({ tableExisted, projectCount }) => {
+    databaseState = "connected";
+    console.log("PostgreSQL connected");
+    console.log(`Projects table ${tableExisted ? "already existed" : "created"}; existing projects: ${projectCount}`);
+    return true;
+  }).catch((error) => {
+    databaseState = "connection_failed";
+    console.error("PostgreSQL connection failed", { code: error?.code || "unknown" });
+    return false;
+  }).finally(() => { initializationPromise = null; });
+  return initializationPromise;
+};
+
+const requireDatabase = async (_req, res, next) => {
+  if (!pool) {
+    return res.status(503).json({
+      status: "error",
+      database: "not_configured",
+      error: "DATABASE_URL is not configured",
+    });
+  }
+  if (await initializeDatabase()) return next();
+  return res.status(503).json({
+    status: "error",
+    database: "connection_failed",
+    error: "Die gemeinsame Projektdatenbank ist derzeit nicht verfügbar.",
+  });
+};
 
 app.get("/api/health", async (_req, res) => {
-  try {
-    await pool.query("SELECT 1");
-    res.json({ status: "ok", database: "connected" });
-  } catch (error) {
-    res.status(503).json({ status: "error", database: "unavailable" });
-  }
+  if (!pool) return res.status(503).json({ status: "error", database: "not_configured" });
+  if (await initializeDatabase()) return res.json({ status: "ok", database: "connected" });
+  return res.status(503).json({ status: "error", database: "connection_failed" });
 });
+
+app.use(["/api/projects", "/api/projects-backup"], requireDatabase);
 
 app.get("/api/projects", async (_req, res) => {
   try { res.json(await projects.list()); } catch (error) { apiError(res, error); }
@@ -223,10 +265,8 @@ app.post("/api/zim/fill", multipartParser, async (req, res) => {
 });
 
 
-projects.inspectAndInitialize().then(({ tableExisted, projectCount }) => {
-  console.log(`PostgreSQL connected; projects table ${tableExisted ? "already existed" : "created"}; existing projects: ${projectCount}`);
-  app.listen(port, () => console.log(`Server running on port ${port}`));
-}).catch((error) => {
-  console.error("PostgreSQL konnte nicht initialisiert werden", error);
-  process.exit(1);
-});
+console.log("Server starting...");
+console.log(`DATABASE_URL configured: ${databaseUrl ? "yes" : "no"}`);
+if (!databaseUrl) console.warn("Database features unavailable until DATABASE_URL is configured");
+app.listen(port, () => console.log(`Server listening on port ${port}`));
+if (databaseUrl) void initializeDatabase();
